@@ -139,6 +139,7 @@ export class VirtualTimeScheduler {
     return this.tasks.get(taskId)
   }
 
+
   /**
    * Hot-swap a running loop's function.
    * Preserves virtualTime, bpm, density, random state (SV6).

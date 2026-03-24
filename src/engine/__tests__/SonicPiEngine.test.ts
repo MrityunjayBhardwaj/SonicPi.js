@@ -102,7 +102,7 @@ describe('SonicPiEngine', () => {
     engine.dispose()
   })
 
-  it('parseVizRequests extracts @viz comments', async () => {
+  it('does not provide inlineViz (adapter concern)', async () => {
     const engine = new SonicPiEngine()
     await engine.init()
 
@@ -114,11 +114,8 @@ live_loop("drums", async (ctx) => {
 // @viz scope
     `)
 
-    expect(engine.components.inlineViz).toBeDefined()
-    const requests = engine.components.inlineViz!.vizRequests
-    expect(requests.size).toBe(1)
-    expect(requests.get('drums')).toBeDefined()
-    expect(requests.get('drums')!.vizId).toBe('scope')
+    // Viz parsing is the adapter's responsibility, not the engine's
+    expect(engine.components.inlineViz).toBeUndefined()
 
     engine.dispose()
   })

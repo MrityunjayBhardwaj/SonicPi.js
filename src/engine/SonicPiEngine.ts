@@ -64,7 +64,6 @@ export class SonicPiEngine implements LiveCodingEngine {
   private runtimeErrorHandler: ((err: Error) => void) | null = null
   private currentCode = ''
   private currentStratum: Stratum = Stratum.S1
-  private currentVizRequests = new Map<string, { vizId: string; afterLine: number }>()
   private captureScheduler = new CaptureScheduler()
   private bridgeOptions: SuperSonicBridgeOptions
   private schedAheadTime: number
@@ -104,7 +103,6 @@ export class SonicPiEngine implements LiveCodingEngine {
     try {
       this.currentCode = code
       this.currentStratum = detectStratum(code)
-      this.parseVizRequests(code)
 
       // Create fresh scheduler
       const wasPlaying = this.playing
@@ -204,7 +202,6 @@ export class SonicPiEngine implements LiveCodingEngine {
     this.bridge?.dispose()
     this.bridge = null
     this.initialized = false
-    this.currentVizRequests.clear()
   }
 
   setRuntimeErrorHandler(handler: (err: Error) => void): void {
@@ -248,10 +245,6 @@ export class SonicPiEngine implements LiveCodingEngine {
     }
 
     // Inline viz requests
-    if (this.currentVizRequests.size > 0) {
-      bag.inlineViz = { vizRequests: this.currentVizRequests }
-    }
-
     return bag
   }
 
@@ -348,28 +341,4 @@ export class SonicPiEngine implements LiveCodingEngine {
     }
   }
 
-  private parseVizRequests(code: string): void {
-    this.currentVizRequests.clear()
-    const lines = code.split('\n')
-
-    for (let i = 0; i < lines.length; i++) {
-      const vizMatch = lines[i].match(/\/\/\s*@viz\s+(\w+)/)
-      if (vizMatch) {
-        // Find the preceding live_loop to get the track name
-        let trackName = `track_${i}`
-        for (let j = i - 1; j >= 0; j--) {
-          const loopMatch = lines[j].match(/live_loop\s*\(\s*["'](\w+)["']/)
-          if (loopMatch) {
-            trackName = loopMatch[1]
-            break
-          }
-        }
-
-        this.currentVizRequests.set(trackName, {
-          vizId: vizMatch[1],
-          afterLine: i + 1,
-        })
-      }
-    }
-  }
 }
