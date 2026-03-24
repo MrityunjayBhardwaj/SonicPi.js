@@ -8,8 +8,17 @@ import { chord, scale, chord_invert, note, note_range } from './ChordScale'
 export { Ring, ring, knit, range, line, spread, noteToMidi, midiToFreq, noteToFreq }
 export { chord, scale, chord_invert, note, note_range }
 
+/** Interface for FX bus management — implemented by SuperSonicBridge */
+export interface FxBridge {
+  allocateBus(): number
+  freeBus(busNum: number): void
+  applyFx(fxName: string, params: Record<string, number>, inBus: number, outBus: number): Promise<number>
+  freeNode(nodeId: number): void
+}
+
 export interface DSLOptions {
   scheduler: VirtualTimeScheduler
+  fxBridge?: FxBridge | null
 }
 
 /**
@@ -24,6 +33,8 @@ export interface TaskDSL {
   cue(name: string, ...args: unknown[]): void
   sync(name: string): Promise<unknown[]>
   control(nodeRef: { nodeId: number }, opts: Record<string, number>): void
+  with_fx(name: string, opts: Record<string, number>, fn: (ctx: TaskDSL) => Promise<void>): Promise<void>
+  with_fx(name: string, fn: (ctx: TaskDSL) => Promise<void>): Promise<void>
   use_synth(name: string): void
   use_bpm(bpm: number): void
   rrand(min: number, max: number): number
@@ -52,7 +63,7 @@ export interface TaskDSL {
 }
 
 export function createDSLContext(options: DSLOptions) {
-  const { scheduler } = options
+  const { scheduler, fxBridge } = options
   const randoms = new Map<string, SeededRandom>()
 
   function getRandom(taskId: string): SeededRandom {
@@ -89,7 +100,7 @@ export function createDSLContext(options: DSLOptions) {
         taskId,
         virtualTime: task.virtualTime,
         audioTime: task.virtualTime,
-        params: { synth: task.currentSynth, note: midi, freq, _nodeRef: nodeId, ...opts },
+        params: { synth: task.currentSynth, note: midi, freq, _nodeRef: nodeId, out_bus: task.outBus, ...opts },
       })
       return { nodeId }
     }
@@ -105,8 +116,63 @@ export function createDSLContext(options: DSLOptions) {
         taskId,
         virtualTime: task.virtualTime,
         audioTime: task.virtualTime,
-        params: { name, ...opts },
+        params: { name, out_bus: task.outBus, ...opts },
       })
+    }
+
+    async function with_fx(
+      nameOrOpts: string,
+      optsOrFn: Record<string, number> | ((ctx: TaskDSL) => Promise<void>),
+      maybeFn?: (ctx: TaskDSL) => Promise<void>
+    ): Promise<void> {
+      // Handle both: with_fx("reverb", {room: 0.8}, fn) and with_fx("reverb", fn)
+      let fxName: string
+      let fxOpts: Record<string, number>
+      let fn: (ctx: TaskDSL) => Promise<void>
+
+      if (typeof optsOrFn === 'function') {
+        fxName = nameOrOpts
+        fxOpts = {}
+        fn = optsOrFn
+      } else {
+        fxName = nameOrOpts
+        fxOpts = optsOrFn
+        fn = maybeFn!
+      }
+
+      if (!fxBridge) {
+        // No audio bridge available — just execute the block without FX
+        await fn(makeTaskDSL(taskId))
+        return
+      }
+
+      const task = scheduler.getTask(taskId)!
+      const prevOutBus = task.outBus
+      const newBus = fxBridge.allocateBus()
+
+      // Create FX synth: reads from newBus, writes to prevOutBus
+      let fxNodeId: number | undefined
+      try {
+        fxNodeId = await fxBridge.applyFx(fxName, fxOpts, newBus, prevOutBus)
+      } catch {
+        // FX SynthDef not available — run block without FX
+        fxBridge.freeBus(newBus)
+        await fn(makeTaskDSL(taskId))
+        return
+      }
+
+      // Route all inner synths to the new bus
+      task.outBus = newBus
+
+      try {
+        await fn(makeTaskDSL(taskId))
+      } finally {
+        // Restore previous bus routing
+        task.outBus = prevOutBus
+        fxBridge.freeBus(newBus)
+        // Don't free the FX node immediately — let it finish processing
+        // scsynth will auto-free when the FX synth's envelope completes
+      }
     }
 
     function control(nodeRef: { nodeId: number }, opts: Record<string, number>): void {
@@ -143,6 +209,7 @@ export function createDSLContext(options: DSLOptions) {
       cue,
       sync,
       control,
+      with_fx: with_fx as TaskDSL['with_fx'],
       use_synth,
       use_bpm,
       rrand: (min: number, max: number) => getRandom(taskId).rrand(min, max),

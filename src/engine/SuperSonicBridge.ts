@@ -130,6 +130,9 @@ export class SuperSonicBridge {
   private nextBufNum = 0
   private analyserNode: AnalyserNode | null = null
   private options: SuperSonicBridgeOptions
+  /** Audio bus allocator — buses 0-15 are hardware, 16+ are private */
+  private nextBusNum = 16
+  private freeBuses: number[] = []
 
   constructor(options: SuperSonicBridgeOptions = {}) {
     this.options = options
@@ -246,7 +249,8 @@ export class SuperSonicBridge {
   async applyFx(
     fxName: string,
     params: Record<string, number>,
-    bus: number
+    inBus: number,
+    outBus: number = 0
   ): Promise<number> {
     if (!this.sonic) throw new Error('SuperSonic not initialized')
 
@@ -254,13 +258,24 @@ export class SuperSonicBridge {
     await this.ensureSynthDefLoaded(fullName)
 
     const nodeId = this.sonic.nextNodeId()
-    const paramList: (string | number)[] = ['in_bus', bus, 'out_bus', 0]
+    const paramList: (string | number)[] = ['in_bus', inBus, 'out_bus', outBus]
     for (const [key, value] of Object.entries(params)) {
       paramList.push(key, value)
     }
 
     this.sonic.send('/s_new', fullName, nodeId, 0, 101, ...paramList)
     return nodeId
+  }
+
+  /** Allocate a private audio bus for FX routing. */
+  allocateBus(): number {
+    if (this.freeBuses.length > 0) return this.freeBuses.pop()!
+    return this.nextBusNum++
+  }
+
+  /** Release a private audio bus back to the pool. */
+  freeBus(busNum: number): void {
+    this.freeBuses.push(busNum)
   }
 
   /** Send raw OSC message to SuperSonic. */

@@ -119,8 +119,11 @@ export class SonicPiEngine implements LiveCodingEngine {
       // Wire event handler for audio and viz
       this.scheduler.onEvent((event) => this.handleEvent(event))
 
-      // Create DSL context
-      this.dsl = createDSLContext({ scheduler: this.scheduler })
+      // Create DSL context with FX bridge if audio is available
+      this.dsl = createDSLContext({
+        scheduler: this.scheduler,
+        fxBridge: this.bridge,
+      })
 
       // Transpile: Ruby DSL → JS → add missing awaits
       const jsCode = autoTranspile(code)

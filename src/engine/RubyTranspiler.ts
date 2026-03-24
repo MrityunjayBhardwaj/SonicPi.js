@@ -210,9 +210,14 @@ export function transpileRubyToJS(ruby: string): string {
       /^with_fx\s+:(\w+)\s*(?:,\s*(.+?))?\s*do\s*$/
     )
     if (withFxMatch) {
-      result.push(`${indent}// with_fx :${withFxMatch[1]} — FX not yet supported`)
-      result.push(`${indent}{`)
-      blockStack.push('block')
+      const fxName = withFxMatch[1]
+      const fxOpts = withFxMatch[2] ? transpileArgs(withFxMatch[2]) : ''
+      if (fxOpts) {
+        result.push(`${indent}await ctx.with_fx("${fxName}", ${fxOpts}, async (ctx) => {${inlineComment}`)
+      } else {
+        result.push(`${indent}await ctx.with_fx("${fxName}", async (ctx) => {${inlineComment}`)
+      }
+      blockStack.push('loop') // uses }) closing like live_loop
       i++
       continue
     }
