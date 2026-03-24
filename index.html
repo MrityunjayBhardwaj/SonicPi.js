@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sonic Pi Web</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: #e94560;
+    }
+    .subtitle {
+      font-size: 0.8rem;
+      color: #666;
+      margin-bottom: 1.5rem;
+    }
+    .editor-wrap {
+      width: 100%;
+      max-width: 700px;
+    }
+    textarea {
+      width: 100%;
+      height: 300px;
+      background: #16213e;
+      color: #a8e6cf;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: inherit;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+    }
+    textarea:focus { border-color: #e94560; }
+    .controls {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    button {
+      padding: 0.6rem 1.5rem;
+      border: none;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-play { background: #e94560; color: white; }
+    .btn-stop { background: #444; color: white; }
+    .btn-example { background: #16213e; color: #aaa; border: 1px solid #333; }
+    #status {
+      margin-top: 1rem;
+      font-size: 0.8rem;
+      color: #666;
+      min-height: 1.2em;
+    }
+    #status.error { color: #e94560; }
+    #status.ok { color: #a8e6cf; }
+    .examples {
+      margin-top: 1.5rem;
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .viz-bar {
+      width: 100%;
+      max-width: 700px;
+      height: 80px;
+      margin-top: 1rem;
+      background: #16213e;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sonic Pi Web</h1>
+  <p class="subtitle">Browser-native Sonic Pi scheduling engine</p>
+
+  <div class="editor-wrap">
+    <textarea id="code" spellcheck="false"># Paste any Sonic Pi code here!
+live_loop :drums do
+  sample :bd_haus
+  sleep 0.5
+  sample :sn_dub
+  sleep 0.5
+end</textarea>
+
+    <div class="controls">
+      <button class="btn-play" id="playBtn">Run</button>
+      <button class="btn-stop" id="stopBtn" disabled>Stop</button>
+    </div>
+
+    <div class="examples">
+      <button class="btn-example" data-example="drums">Drums</button>
+      <button class="btn-example" data-example="melody">Melody</button>
+      <button class="btn-example" data-example="ambient">Ambient</button>
+      <button class="btn-example" data-example="multi">Multi-loop</button>
+      <button class="btn-example" data-example="random">Random</button>
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <div class="viz-bar">
+    <canvas id="viz"></canvas>
+  </div>
+
+  <script type="module" src="/src/playground.ts"></script>
+</body>
+</html>
