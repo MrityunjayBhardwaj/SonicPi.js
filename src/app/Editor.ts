@@ -26,6 +26,7 @@ interface CMModule {
   }
   basicSetup: unknown
   keymap: { of(bindings: unknown[]): unknown }
+  rubyLang: unknown | null
 }
 
 export class Editor {
@@ -84,10 +85,21 @@ export class Editor {
     const stateMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/state@6')
     // @ts-ignore
     const cmMod = await import(/* @vite-ignore */ 'https://esm.sh/codemirror@6')
+
+    // Ruby syntax highlighting (best-effort — don't block editor if unavailable)
+    let rubyLang: unknown = null
+    try {
+      // @ts-ignore
+      const rubyMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/lang-ruby@6')
+      rubyLang = rubyMod.ruby?.() ?? null
+    } catch {
+      // Ruby highlighting unavailable — editor still works
+    }
+
     const { EditorView, keymap } = viewMod
     const { EditorState } = stateMod
     const { basicSetup } = cmMod
-    return { EditorView, EditorState, basicSetup, keymap } as unknown as CMModule
+    return { EditorView, EditorState, basicSetup, keymap, rubyLang } as unknown as CMModule
   }
 
   private createEditorView(cm: CMModule, initialCode: string): void {
@@ -152,9 +164,12 @@ export class Editor {
       },
     ])
 
+    const extensions: unknown[] = [cm.basicSetup, theme, runKeymap]
+    if (cm.rubyLang) extensions.push(cm.rubyLang)
+
     const state = cm.EditorState.create({
       doc: initialCode,
-      extensions: [cm.basicSetup, theme, runKeymap],
+      extensions,
     })
 
     this.view = new cm.EditorView({

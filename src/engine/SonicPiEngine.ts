@@ -1,7 +1,8 @@
 import { VirtualTimeScheduler, type SchedulerEvent } from './VirtualTimeScheduler'
 import { createDSLContext } from './DSLContext'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
-import { transpile, createExecutor } from './Transpiler'
+import { transpile } from './Transpiler'
+import { createSandboxedExecutor } from './Sandbox'
 import { autoTranspile } from './RubyTranspiler'
 import { friendlyError, formatFriendlyError, type FriendlyError } from './FriendlyErrors'
 import { CaptureScheduler, detectStratum, Stratum } from './CaptureScheduler'
@@ -177,7 +178,7 @@ export class SonicPiEngine implements LiveCodingEngine {
         dsl.noteToMidi, dsl.midiToFreq, dsl.noteToFreq,
       ]
 
-      const executor = createExecutor(transpiledCode, dslNames)
+      const executor = createSandboxedExecutor(transpiledCode, dslNames)
       await executor(...dslValues)
 
       if (isReEvaluate) {
@@ -294,7 +295,7 @@ export class SonicPiEngine implements LiveCodingEngine {
               const { code: tc } = transpile(currentCode)
               const names = ['live_loop', 'ring', 'spread', 'noteToMidi', 'midiToFreq', 'noteToFreq']
               const vals = [dsl.live_loop, dsl.ring, dsl.spread, dsl.noteToMidi, dsl.midiToFreq, dsl.noteToFreq]
-              const fn = createExecutor(tc, names)
+              const fn = createSandboxedExecutor(tc, names)
               fn(...vals)
             }, end)
 
