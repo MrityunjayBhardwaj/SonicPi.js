@@ -1,11 +1,11 @@
 import { VirtualTimeScheduler, type SchedulerEvent } from './VirtualTimeScheduler'
 import { SeededRandom } from './SeededRandom'
-import { Ring, ring } from './Ring'
+import { Ring, ring, knit, range, line } from './Ring'
 import { spread } from './EuclideanRhythm'
 import { noteToMidi, midiToFreq, noteToFreq } from './NoteToFreq'
 import { chord, scale, chord_invert, note, note_range } from './ChordScale'
 
-export { Ring, ring, spread, noteToMidi, midiToFreq, noteToFreq }
+export { Ring, ring, knit, range, line, spread, noteToMidi, midiToFreq, noteToFreq }
 export { chord, scale, chord_invert, note, note_range }
 
 export interface DSLOptions {
@@ -28,12 +28,18 @@ export interface TaskDSL {
   use_bpm(bpm: number): void
   rrand(min: number, max: number): number
   rrand_i(min: number, max: number): number
+  rand(max?: number): number
+  rand_i(max?: number): number
   choose<T>(arr: T[]): T
   dice(sides: number): number
+  one_in(n: number): boolean
   use_random_seed(seed: number): void
   tick(name?: string): number
   look(name?: string): number
   ring: typeof ring
+  knit: typeof knit
+  range: typeof range
+  line: typeof line
   spread: typeof spread
   chord: typeof chord
   scale: typeof scale
@@ -141,8 +147,11 @@ export function createDSLContext(options: DSLOptions) {
       use_bpm,
       rrand: (min: number, max: number) => getRandom(taskId).rrand(min, max),
       rrand_i: (min: number, max: number) => getRandom(taskId).rrand_i(min, max),
+      rand: (max: number = 1) => getRandom(taskId).rrand(0, max),
+      rand_i: (max: number = 2) => getRandom(taskId).rrand_i(0, max - 1),
       choose: <T>(arr: T[]) => getRandom(taskId).choose(arr),
       dice: (sides: number) => getRandom(taskId).dice(sides),
+      one_in: (n: number) => getRandom(taskId).rrand_i(1, n) === 1,
       use_random_seed: (seed: number) => getRandom(taskId).reset(seed),
       tick: (name: string = '__default') => {
         const m = getTickMap(taskId)
@@ -154,6 +163,9 @@ export function createDSLContext(options: DSLOptions) {
         return getTickMap(taskId).get(name) ?? 0
       },
       ring,
+      knit,
+      range,
+      line,
       spread,
       chord,
       scale,

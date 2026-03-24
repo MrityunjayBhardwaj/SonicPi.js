@@ -444,19 +444,23 @@ function transpileExpression(expr: string): string {
   // Ruby string interpolation #{expr} → ${expr}
   result = result.replace(/#\{/g, '${')
 
-  // ring, spread, chord, scale, note, note_range, chord_invert → ctx.*
-  result = result.replace(/\b(ring|spread|chord|scale|chord_invert|note_range|note)\s*\(/g, 'ctx.$1(')
+  // ring, knit, range, line, spread, chord, scale, note, note_range, chord_invert → ctx.*
+  result = result.replace(/\b(ring|knit|range|line|spread|chord|scale|chord_invert|note_range|note)\s*\(/g, 'ctx.$1(')
   // Without parens: ring 1, 2, 3
   result = result.replace(/^(ring|spread)\s+([^(].+)$/, 'ctx.$1($2)')
 
   // rrand, choose, dice, rrand_i, tick, look → ctx.*
-  result = result.replace(/\b(rrand_i|rrand|choose|dice)\s*\(/g, 'ctx.$1(')
+  result = result.replace(/\b(rrand_i|rrand|rand_i|rand|choose|dice|one_in)\s*\(/g, 'ctx.$1(')
   // Without parens: rrand 0, 1
-  result = result.replace(/\b(rrand_i|rrand)\s+([^(].+)$/, 'ctx.$1($2)')
+  result = result.replace(/\b(rrand_i|rrand|rand_i|rand)\s+([^(].+)$/, 'ctx.$1($2)')
 
-  // Standalone tick/look (as function call, not method)
-  result = result.replace(/\btick\s*\(/g, 'ctx.tick(')
-  result = result.replace(/\blook\s*\(/g, 'ctx.look(')
+  // Standalone tick/look (as function call, not method .tick())
+  result = result.replace(/(?<!\.)(?<!\w)\btick\s*\(/g, 'ctx.tick(')
+  result = result.replace(/(?<!\.)(?<!\w)\blook\s*\(/g, 'ctx.look(')
+
+  // Standalone tick/look without parens (bare tick, not as method .tick)
+  result = result.replace(/(?<!\.)(?<!\w)\btick\b(?!\s*[.(])/g, 'ctx.tick()')
+  result = result.replace(/(?<!\.)(?<!\w)\blook\b(?!\s*[.(])/g, 'ctx.look()')
 
   // .tick → .tick()
   result = result.replace(/\.tick(?!\()/g, '.tick()')

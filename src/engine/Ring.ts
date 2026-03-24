@@ -110,3 +110,44 @@ export class Ring<T> {
 export function ring<T>(...values: T[]): Ring<T> {
   return new Ring(values)
 }
+
+/**
+ * Knit: repeat each value N times.
+ * knit(:c4, 2, :e4, 1) → Ring([:c4, :c4, :e4])
+ */
+export function knit<T>(...args: (T | number)[]): Ring<T> {
+  const result: T[] = []
+  for (let i = 0; i < args.length - 1; i += 2) {
+    const value = args[i] as T
+    const count = args[i + 1] as number
+    for (let j = 0; j < count; j++) result.push(value)
+  }
+  return new Ring(result)
+}
+
+/**
+ * Range: generate a sequence of numbers.
+ * range(1, 5) → Ring([1, 2, 3, 4])
+ * range(1, 10, 2) → Ring([1, 3, 5, 7, 9])
+ */
+export function range(start: number, end: number, step: number = 1): Ring<number> {
+  const result: number[] = []
+  if (step > 0) {
+    for (let i = start; i < end; i += step) result.push(i)
+  } else if (step < 0) {
+    for (let i = start; i > end; i += step) result.push(i)
+  }
+  return new Ring(result)
+}
+
+/**
+ * Line: generate a line of N values between start and end.
+ * line(60, 72, 5) → Ring([60, 63, 66, 69, 72])
+ */
+export function line(start: number, finish: number, steps: number = 4): Ring<number> {
+  const result: number[] = []
+  for (let i = 0; i < steps; i++) {
+    result.push(start + (finish - start) * (i / (steps - 1)))
+  }
+  return new Ring(result)
+}
