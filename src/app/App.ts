@@ -1,0 +1,337 @@
+/**
+ * App shell — Sonic Pi Web.
+ * Matches Sonic Pi desktop layout with welcome experience.
+ */
+
+import { SonicPiEngine } from '../engine/SonicPiEngine'
+import { friendlyError } from '../engine/FriendlyErrors'
+import { examples as allExamples, type Example } from '../engine/examples'
+import { Editor } from './Editor'
+import { Scope } from './Scope'
+import { Console } from './Console'
+import { Toolbar } from './Toolbar'
+
+// Sonic Pi's actual welcome buffer
+const WELCOME_CODE = `# Welcome to Sonic Pi Web
+# The Live Coding Music Synth for Everyone.
+#
+# Press Run (or Ctrl+Enter) to hear this code.
+# Press Stop (or Esc) to silence everything.
+# Try changing the code while it plays!
+
+live_loop :drums do
+  sample :bd_haus
+  sleep 0.5
+  sample :sn_dub
+  sleep 0.5
+end
+
+live_loop :bass do
+  use_synth :tb303
+  play :e2, release: 0.3, cutoff: rrand(60, 120)
+  sleep 0.25
+end`
+
+// Welcome log — same spirit as Sam Aaron's boot message
+const WELCOME_LOG = [
+  '',
+  '  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
+  '  ~~  Welcome to Sonic Pi Web                               ~~',
+  '  ~~  The Live Coding Music Synth for Everyone              ~~',
+  '  ~~                                                        ~~',
+  '  ~~  Based on Sonic Pi by Sam Aaron                        ~~',
+  '  ~~  https://sonic-pi.net                                  ~~',
+  '  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
+  '',
+  '  Powered by:',
+  '    - VirtualTimeScheduler (Promise-controlled cooperative scheduling)',
+  '    - SuperSonic (scsynth compiled to WebAssembly)',
+  '',
+  '  Shortcuts:',
+  '    Ctrl+Enter  Run code',
+  '    Escape      Stop all',
+  '',
+  '  Happy live coding!',
+  '',
+]
+
+const BUFFER_COUNT = 10
+
+export class App {
+  private engine: SonicPiEngine | null = null
+  private editor!: Editor
+  private scope!: Scope
+  private console!: Console
+  private toolbar!: Toolbar
+  private playing = false
+  private root: HTMLElement
+
+  // Buffer management — 10 buffers like Sonic Pi
+  private buffers: string[] = Array(BUFFER_COUNT).fill('')
+  private activeBuffer = 0
+  private hapStreamHandler: ((event: unknown) => void) | null = null
+
+  constructor(root: HTMLElement) {
+    this.root = root
+    this.buffers[0] = WELCOME_CODE
+    this.buildLayout()
+  }
+
+  async init(): Promise<void> {
+    await this.editor.init(WELCOME_CODE)
+    this.editor.onRun(() => this.handlePlay())
+    this.editor.onStop(() => this.handleStop())
+
+    // Show welcome log
+    for (const line of WELCOME_LOG) {
+      this.console.logSystem(line)
+    }
+  }
+
+  private buildLayout(): void {
+    this.root.innerHTML = ''
+    this.root.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      background: #0d1117;
+      color: #CDD3DE;
+      font-family: 'Fira Code', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
+      overflow: hidden;
+    `
+
+    // Toolbar
+    const toolbarContainer = document.createElement('div')
+    toolbarContainer.style.cssText = `
+      background: #161B22;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    `
+    this.root.appendChild(toolbarContainer)
+    this.toolbar = new Toolbar(toolbarContainer, {
+      onPlay: () => this.handlePlay(),
+      onStop: () => this.handleStop(),
+      onExample: (ex) => this.loadExample(ex),
+      onBufferSelect: (i) => this.switchBuffer(i),
+      onVolumeChange: (_v) => { /* TODO: wire to SuperSonic master volume */ },
+    })
+
+    // Main area
+    const main = document.createElement('div')
+    main.className = 'spw-main'
+    main.style.cssText = `
+      flex: 1; display: flex;
+      overflow: hidden; min-height: 0;
+    `
+    this.root.appendChild(main)
+
+    // Editor panel (left)
+    const editorPanel = document.createElement('div')
+    editorPanel.className = 'spw-editor-panel'
+    editorPanel.style.cssText = `
+      flex: 1; min-width: 0; overflow: hidden;
+      display: flex; flex-direction: column;
+    `
+    main.appendChild(editorPanel)
+
+    // Editor header
+    const editorHeader = document.createElement('div')
+    editorHeader.style.cssText = `
+      padding: 0.3rem 0.6rem;
+      font-size: 0.65rem;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-shrink: 0;
+      background: #1B2B34;
+    `
+    const edTitle = document.createElement('span')
+    edTitle.textContent = 'Buffer 0'
+    edTitle.id = 'spw-buffer-title'
+    editorHeader.appendChild(edTitle)
+
+    const edHint = document.createElement('span')
+    edHint.textContent = 'Ctrl+Enter to run'
+    edHint.style.cssText = 'margin-left: auto; color: #3a4550;'
+    editorHeader.appendChild(edHint)
+    editorPanel.appendChild(editorHeader)
+
+    const editorWrap = document.createElement('div')
+    editorWrap.style.cssText = 'flex: 1; min-height: 0; overflow: hidden;'
+    editorPanel.appendChild(editorWrap)
+    this.editor = new Editor(editorWrap)
+
+    // Divider
+    const divider = document.createElement('div')
+    divider.style.cssText = `
+      width: 1px; background: rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    `
+    main.appendChild(divider)
+
+    // Right panel
+    const rightPanel = document.createElement('div')
+    rightPanel.className = 'spw-right'
+    rightPanel.style.cssText = `
+      width: 40%; min-width: 280px; max-width: 520px;
+      display: flex; flex-direction: column;
+      overflow: hidden; background: #0d1117;
+    `
+    main.appendChild(rightPanel)
+
+    // Scope
+    const scopeContainer = document.createElement('div')
+    scopeContainer.className = 'spw-scope'
+    scopeContainer.style.cssText = `
+      height: 140px; min-height: 80px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: #0d1117;
+      flex-shrink: 0;
+    `
+    rightPanel.appendChild(scopeContainer)
+    this.scope = new Scope(scopeContainer)
+
+    // Console
+    const consoleContainer = document.createElement('div')
+    consoleContainer.style.cssText = `
+      flex: 1; min-height: 0; overflow: hidden;
+    `
+    rightPanel.appendChild(consoleContainer)
+    this.console = new Console(consoleContainer)
+
+    // Responsive
+    const mq = window.matchMedia('(max-width: 700px)')
+    const apply = (mobile: boolean) => {
+      main.style.flexDirection = mobile ? 'column' : 'row'
+      rightPanel.style.width = mobile ? '100%' : '40%'
+      rightPanel.style.maxWidth = mobile ? 'none' : '520px'
+      divider.style.width = mobile ? '0' : '1px'
+      divider.style.height = mobile ? '1px' : '0'
+      divider.style.background = 'rgba(255,255,255,0.06)'
+      if (mobile) {
+        editorPanel.style.height = '50%'
+        editorPanel.style.flex = 'none'
+      } else {
+        editorPanel.style.height = ''
+        editorPanel.style.flex = '1'
+      }
+    }
+    apply(mq.matches)
+    mq.addEventListener('change', (e) => apply(e.matches))
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.handleStop()
+      }
+    })
+  }
+
+  private switchBuffer(index: number): void {
+    // Save current buffer
+    this.buffers[this.activeBuffer] = this.editor.getValue()
+    this.activeBuffer = index
+    this.editor.setValue(this.buffers[index])
+
+    const title = document.getElementById('spw-buffer-title')
+    if (title) title.textContent = `Buffer ${index}`
+  }
+
+  private async handlePlay(): Promise<void> {
+    try {
+      if (!this.engine) {
+        this.console.logSystem('  Initialising audio engine...')
+
+        let SuperSonicClass: unknown = undefined
+        try {
+          // @ts-ignore — CDN URL
+          const mod = await import(/* @vite-ignore */ 'https://unpkg.com/supersonic-scsynth@latest')
+          SuperSonicClass = mod.SuperSonic ?? mod.default
+        } catch {
+          this.console.logSystem('  SuperSonic CDN unavailable.')
+          this.console.logSystem('  Running without audio (events will still log).')
+        }
+
+        this.engine = new SonicPiEngine({
+          bridge: SuperSonicClass ? { SuperSonicClass: SuperSonicClass as never } : {},
+        })
+
+        this.engine.setRuntimeErrorHandler((err) => {
+          const fe = friendlyError(err)
+          this.console.logError(fe.title, fe.message)
+        })
+
+        await this.engine.init()
+        this.console.logSystem('  Audio engine ready.')
+        this.console.logSystem('')
+      }
+
+      const code = this.editor.getValue()
+      this.console.newRun()
+
+      const result = await this.engine.evaluate(code)
+      if (result.error) {
+        const fe = friendlyError(result.error)
+        this.console.logError(fe.title, fe.message)
+        return
+      }
+
+      this.engine.play()
+      this.playing = true
+      this.toolbar.setPlaying(true)
+
+      // Connect scope
+      const audio = this.engine.components.audio
+      if (audio) {
+        this.scope.connect(audio.analyser)
+      }
+
+      // Wire HapStream for console logging (remove old handler first)
+      const streaming = this.engine.components.streaming
+      if (streaming && !this.hapStreamHandler) {
+        this.hapStreamHandler = ((event: { s: string | null; midiNote: number | null }) => {
+          const s = event.s ?? '?'
+          const note = event.midiNote != null ? ` note:${event.midiNote}` : ''
+          this.console.logEvent('synth', `${s}${note}`)
+        }) as (event: unknown) => void
+        streaming.hapStream.on(this.hapStreamHandler as never)
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err))
+      const fe = friendlyError(error)
+      this.console.logError(fe.title, fe.message)
+    }
+  }
+
+  private handleStop(): void {
+    if (!this.engine || !this.playing) return
+    this.engine.stop()
+    this.playing = false
+    this.toolbar.setPlaying(false)
+    this.scope.disconnect()
+    this.console.logSystem('')
+    this.console.logSystem('  Stopping all runs...')
+    this.console.logSystem('')
+  }
+
+  private loadExample(example: Example): void {
+    this.editor.setValue(example.ruby)
+    this.buffers[this.activeBuffer] = example.ruby
+    this.console.logSystem(`  Loaded: ${example.name} — ${example.description}`)
+    if (this.playing) this.handlePlay()
+  }
+
+  dispose(): void {
+    this.handleStop()
+    this.engine?.dispose()
+    this.editor.dispose()
+    this.scope.dispose()
+    this.console.dispose()
+    this.toolbar.dispose()
+  }
+}
