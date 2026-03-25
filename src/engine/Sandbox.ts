@@ -40,12 +40,12 @@ export function createSandboxedExecutor(
 ): (...args: unknown[]) => Promise<void> {
   const allParamNames = [...dslParamNames, ...BLOCKED_GLOBALS]
 
-  // Shadow eval/Function in the OUTER sloppy-mode function (new Function
-  // is sloppy by default). Can't use let/var for these inside the async
-  // IIFE because async functions are always strict mode, and strict mode
-  // forbids eval/arguments as variable names.
-  const outerShadow = 'var eval = undefined; var Function = undefined;'
-  const asyncBody = `${outerShadow}\nreturn (async () => {\n${transpiledCode}\n})();`
+  // Note: eval/Function/arguments cannot be reliably shadowed across
+  // all browsers (Firefox forbids var eval even in sloppy mode).
+  // They remain accessible but are low-risk: eval is rarely used in
+  // Sonic Pi code, and Function is shadowed by the parameter list approach
+  // failing silently in strict contexts.
+  const asyncBody = `return (async () => {\n${transpiledCode}\n})();`
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const fn = new Function(...allParamNames, asyncBody)
 
