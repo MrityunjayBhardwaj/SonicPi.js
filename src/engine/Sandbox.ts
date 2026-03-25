@@ -1,62 +1,94 @@
 /**
  * Sandbox — blocks dangerous browser globals in user code.
  *
- * User code runs inside `new Function(...)` which has access to
- * global scope. We shadow dangerous globals by passing them as
- * function parameters set to undefined, making them inaccessible.
+ * Strategy: create a frozen scope object with only DSL functions,
+ * then execute user code via `new Function()` with a `with()` proxy
+ * that intercepts all global lookups.
  *
- * This is not a security boundary against a determined attacker
- * (they could use `this.constructor` tricks), but it prevents
- * accidental or casual access to fetch, DOM, eval, etc.
+ * Why not iframe/Worker: user code needs synchronous access to
+ * the scheduler and AudioContext — can't serialize across boundaries.
+ *
+ * Why not parameter shadowing: Firefox + SES extensions reject
+ * certain parameter names in strict mode.
+ *
+ * This approach: wraps user code in a `with(scope)` block where
+ * `scope` is a Proxy that returns undefined for blocked globals.
+ * Works in all browsers, no strict mode issues.
  */
 
-/**
- * Globals blocked via function parameter shadowing.
- * Note: `eval` and `arguments` cannot be parameter names in strict mode,
- * so we block them via code injection instead.
- */
+/** Globals that are blocked in user code. */
 export const BLOCKED_GLOBALS = [
-  // Network
   'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource',
-  // Storage
   'localStorage', 'sessionStorage', 'indexedDB',
-  // DOM
   'document', 'window', 'navigator', 'location', 'history',
-  // Timers (user should use sleep, not setTimeout)
   'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
-  // Workers
   'Worker', 'SharedWorker', 'ServiceWorker',
-  // Other
   'importScripts', 'postMessage', 'globalThis',
+  'eval', 'Function',
 ]
 
+const BLOCKED_SET = new Set(BLOCKED_GLOBALS)
+
 /**
- * Create a sandboxed executor. Same API as createExecutor but with
- * dangerous globals blocked via parameter shadowing.
+ * Create a sandboxed executor using a Proxy-based scope.
  *
- * Falls back to unsandboxed execution if the browser rejects the
- * parameter names (Firefox + SES/Lockdown extensions can cause this).
+ * The generated function uses `with(scope)` so all variable lookups
+ * go through our proxy. The proxy returns undefined for blocked globals
+ * and the real value for DSL functions.
  */
 export function createSandboxedExecutor(
   transpiledCode: string,
-  dslParamNames: string[]
+  dslParamNames: string[],
+  dslValues?: unknown[]
 ): (...args: unknown[]) => Promise<void> {
-  const asyncBody = `return (async () => {\n${transpiledCode}\n})();`
+  // Build the scope object with DSL functions
+  const scopeBase: Record<string, unknown> = {}
 
-  // Try sandboxed: shadow dangerous globals via function parameters
+  // Pre-populate blocked globals as undefined
+  for (const name of BLOCKED_GLOBALS) {
+    scopeBase[name] = undefined
+  }
+
+  // Create a proxy that intercepts all property access
+  const scope = new Proxy(scopeBase, {
+    has() {
+      // Tell `with()` that we handle ALL variables
+      return true
+    },
+    get(target, prop) {
+      if (typeof prop === 'string') {
+        // Blocked global
+        if (BLOCKED_SET.has(prop)) return undefined
+        // DSL function
+        if (prop in target) return target[prop]
+      }
+      // Fall through to real global for everything else (Math, Array, etc.)
+      return (globalThis as Record<string | symbol, unknown>)[prop]
+    },
+    set(target, prop, value) {
+      // Allow user variable assignments within the scope
+      target[prop as string] = value
+      return true
+    },
+  })
+
+  // Wrap code in with(scope) block — this routes all lookups through the proxy
+  // Note: `with` is forbidden in strict mode, so we do NOT use "use strict"
+  const wrappedCode = `with(__scope__) { return (async () => {\n${transpiledCode}\n})(); }`
+
   try {
-    const allParamNames = [...dslParamNames, ...BLOCKED_GLOBALS]
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const fn = new Function(...allParamNames, asyncBody)
+    const fn = new Function('__scope__', wrappedCode)
     return (...dslArgs: unknown[]) => {
-      const blockedValues = BLOCKED_GLOBALS.map(() => undefined)
-      return fn(...dslArgs, ...blockedValues)
+      // Populate scope with DSL values
+      for (let i = 0; i < dslParamNames.length; i++) {
+        scope[dslParamNames[i]] = dslArgs[i]
+      }
+      return fn(scope)
     }
   } catch {
-    // Fallback: unsandboxed execution (browser rejected parameter names,
-    // likely due to SES lockdown or Firefox strict mode quirks)
+    // Fallback: plain executor without sandbox
     console.warn('[SonicPi] Sandbox unavailable — running without global blocking')
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const asyncBody = `return (async () => {\n${transpiledCode}\n})();`
     const fn = new Function(...dslParamNames, asyncBody)
     return fn as (...args: unknown[]) => Promise<void>
   }
@@ -64,25 +96,14 @@ export function createSandboxedExecutor(
 
 /**
  * Validate user code doesn't use obvious escape hatches.
- * Returns an array of warnings (non-blocking).
  */
 export function validateCode(code: string): string[] {
   const warnings: string[] = []
-
-  // Check for constructor access (common sandbox escape)
   if (/\bconstructor\b/.test(code)) {
     warnings.push('Code accesses "constructor" — this may not work in sandbox mode.')
   }
-
-  // Check for __proto__ access
   if (/__proto__/.test(code)) {
     warnings.push('Code accesses "__proto__" — this may not work in sandbox mode.')
   }
-
-  // Check for globalThis
-  if (/\bglobalThis\b/.test(code)) {
-    warnings.push('Code accesses "globalThis" — this is blocked in sandbox mode.')
-  }
-
   return warnings
 }
