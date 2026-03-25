@@ -28,6 +28,48 @@ interface CMModule {
   basicSetup: unknown
   keymap: { of(bindings: unknown[]): unknown }
   rubyLang: unknown | null
+  highlightStyle: unknown | null
+}
+
+// Sonic Pi stream parser for CodeMirror — inline, no CDN dependency
+const SP_KEYWORDS = new Set([
+  'live_loop', 'do', 'end', 'with_fx', 'in_thread', 'define',
+  'if', 'elsif', 'else', 'unless', 'loop', 'while', 'until',
+  'begin', 'rescue', 'ensure', 'for', 'case', 'when', 'then',
+  'and', 'or', 'not', 'true', 'false', 'nil', 'return',
+])
+const SP_BUILTINS = new Set([
+  'play', 'sleep', 'sample', 'use_synth', 'use_bpm', 'use_random_seed',
+  'sync', 'cue', 'control', 'stop', 'density', 'puts', 'print',
+  'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in',
+  'ring', 'knit', 'range', 'line', 'spread', 'chord', 'scale',
+  'chord_invert', 'note', 'note_range', 'tick', 'look',
+])
+const sonicPiStreamParser = {
+  token(stream: { match(re: RegExp): string[] | null; next(): string; eol(): boolean; skipToEnd(): void; peek(): string }) {
+    // Comment
+    if (stream.match(/^#.*/)) return 'comment'
+    // String
+    if (stream.match(/^"(?:[^"\\]|\\.)*"/)) return 'string'
+    if (stream.match(/^'(?:[^'\\]|\\.)*'/)) return 'string'
+    // Symbol :name
+    if (stream.match(/^:\w+/)) return 'atom'
+    // Number
+    if (stream.match(/^-?\d+\.?\d*/)) return 'number'
+    // Word
+    const wordMatch = stream.match(/^\w+[!?]?/)
+    if (wordMatch) {
+      const w = wordMatch[0]
+      if (SP_KEYWORDS.has(w)) return 'keyword'
+      if (SP_BUILTINS.has(w)) return 'builtin'
+      return 'variable'
+    }
+    // Operator
+    if (stream.match(/^[+\-*/%=<>!&|^~]+/)) return 'operator'
+    // Skip unknown
+    stream.next()
+    return null
+  },
 }
 
 export class Editor {
@@ -117,24 +159,40 @@ export class Editor {
     // @ts-ignore
     const cmMod = await import(/* @vite-ignore */ 'https://esm.sh/codemirror@6')
 
-    // Ruby syntax highlighting via legacy mode (best-effort)
+    // Sonic Pi syntax highlighting — inline tokenizer, no CDN dependency
     let rubyLang: unknown = null
+    let highlightStyle: unknown = null
     try {
       // @ts-ignore
       const langMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/language@6')
       // @ts-ignore
-      const rubyMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/legacy-modes@6/mode/ruby')
-      if (langMod.StreamLanguage && rubyMod.ruby) {
-        rubyLang = langMod.StreamLanguage.define(rubyMod.ruby)
+      const highlightMod = await import(/* @vite-ignore */ 'https://esm.sh/@lezer/highlight@1')
+      if (langMod.StreamLanguage) {
+        rubyLang = langMod.StreamLanguage.define(sonicPiStreamParser)
+      }
+      if (langMod.syntaxHighlighting && highlightMod.HighlightStyle && highlightMod.tags) {
+        const t = highlightMod.tags
+        highlightStyle = langMod.syntaxHighlighting(
+          highlightMod.HighlightStyle.define([
+            { tag: t.keyword, color: '#C792EA' },
+            { tag: t.atom, color: '#F78C6C' },
+            { tag: t.number, color: '#F78C6C' },
+            { tag: t.string, color: '#99C794' },
+            { tag: t.comment, color: '#65737E', fontStyle: 'italic' },
+            { tag: t.variableName, color: '#CDD3DE' },
+            { tag: t.function(t.variableName), color: '#82AAFF' },
+            { tag: t.operator, color: '#89DDFF' },
+          ])
+        )
       }
     } catch {
-      // Ruby highlighting unavailable — editor still works
+      // Language module unavailable — editor still works, just no colors
     }
 
     const { EditorView, keymap } = viewMod
     const { EditorState } = stateMod
     const { basicSetup } = cmMod
-    return { EditorView, EditorState, basicSetup, keymap, rubyLang } as unknown as CMModule
+    return { EditorView, EditorState, basicSetup, keymap, rubyLang, highlightStyle } as unknown as CMModule
   }
 
   private createEditorView(cm: CMModule, initialCode: string): void {
@@ -208,8 +266,9 @@ export class Editor {
       if (runKeymap) extensions.push(runKeymap)
     } catch { /* keybindings failed */ }
 
-    // Ruby language support
+    // Sonic Pi language support + syntax colors
     if (cm.rubyLang) extensions.push(cm.rubyLang)
+    if (cm.highlightStyle) extensions.push(cm.highlightStyle)
 
     const state = cm.EditorState.create({
       doc: initialCode,

@@ -586,8 +586,20 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
       return
     }
 
-    // Reconstruct line and transpile
-    const rawLine = lineTokens.map(t => transpileToken(t)).join(' ').trim()
+    // Reconstruct line — no spaces around dots (for method chains)
+    const rawLine = lineTokens.map((t, idx) => {
+      const val = transpileToken(t)
+      const next = lineTokens[idx + 1]
+      const prev = lineTokens[idx - 1]
+      // No space before/after dot
+      if (t.type === 'dot' || next?.type === 'dot') return val
+      if (prev?.type === 'dot') return val
+      // No space before comma, rparen, rbracket
+      if (next && ['comma', 'rparen', 'rbracket'].includes(next.type)) return val
+      // No space after lparen, lbracket
+      if (t.type === 'lparen' || t.type === 'lbracket') return val
+      return val + ' '
+    }).join('').trim()
     const indent = getIndent()
     const transpiled = transpileSonicPiLine(rawLine, insideLoop)
     output.push(`${indent}${transpiled}`)
@@ -633,16 +645,48 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
 
 function transpileExpr(expr: string): string {
   let result = expr.trim()
-  // Symbols already converted by token transpiler
-  // Ruby string interpolation
   result = result.replace(/#\{/g, '${')
-  // nil already converted
+  return result
+}
+
+/** Add ctx. prefix to all DSL function calls in a string. */
+function addCtxPrefixes(line: string, insideLoop: boolean): string {
+  if (!insideLoop) return line
+
+  let result = line
+
+  // Expression-level DSL functions (NOT statement-level play/sleep/sample/etc — those
+  // are handled by the match arms in transpileSonicPiLine and add their own ctx. prefix)
+  // Use negative lookbehind to avoid prefixing method calls like notes.tick(
+  result = result.replace(
+    /(?<!\.)(?<!ctx\.)\b(rrand_i|rrand|rand_i|rand|choose|dice|one_in|ring|knit|range|line|spread|chord|scale|chord_invert|note_range|note|tick|look)\s*\(/g,
+    'ctx.$1('
+  )
+
+  // Standalone tick/look without parens (not as method: notes.tick)
+  result = result.replace(/(?<!\.)(?<!ctx\.)\btick\b(?!\s*[.(])/g, 'ctx.tick()')
+  result = result.replace(/(?<!\.)(?<!ctx\.)\blook\b(?!\s*[.(])/g, 'ctx.look()')
+
+  // .tick → .tick() (method on ring)
+  result = result.replace(/\.tick(?!\()/g, '.tick()')
+  result = result.replace(/\.look(?!\()/g, '.look()')
+
+  // .reverse, .shuffle, .choose → .reverse(), .shuffle(), .choose()
+  result = result.replace(/\.reverse(?!\()/g, '.reverse()')
+  result = result.replace(/\.shuffle(?!\()/g, '.shuffle()')
+  result = result.replace(/\.choose(?!\()/g, '.choose()')
+
+  // ring without parens: (ring 1, 2, 3) → (ctx.ring(1, 2, 3))
+  result = result.replace(/(?<=\(|^)(ring|spread)\s+([^(].+?)(?=\)|$)/g, 'ctx.$1($2)')
+
   return result
 }
 
 /** Transpile DSL calls with ctx. prefix and await. */
 function transpileSonicPiLine(line: string, insideLoop: boolean): string {
   const prefix = insideLoop ? 'ctx.' : ''
+  // Apply ctx. prefix to all DSL calls in the line first
+  line = addCtxPrefixes(line, insideLoop)
 
   // Trailing if: `statement if condition`
   const trailingIf = line.match(/^(.+?)\s+if\s+(.+)$/)
@@ -699,13 +743,6 @@ function transpileSonicPiLine(line: string, insideLoop: boolean): string {
   if (putsMatch) return `console.log(${putsMatch[1]})`
   const printMatch = line.match(/^print\s+(.+)$/)
   if (printMatch) return `console.log(${printMatch[1]})`
-
-  // DSL function calls that need ctx prefix
-  const ctxFns = /^(rrand_i|rrand|rand_i|rand|choose|dice|one_in|tick|look|ring|knit|range|line|spread|chord|scale|chord_invert|note_range|note)\s*\(/
-  const ctxMatch = line.match(ctxFns)
-  if (ctxMatch && insideLoop) {
-    return line.replace(ctxMatch[1], `ctx.${ctxMatch[1]}`)
-  }
 
   // Variable assignment
   const assignMatch = line.match(/^(\w+)\s*=\s*(.+)$/)

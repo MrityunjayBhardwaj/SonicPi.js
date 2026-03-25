@@ -1,3 +1,5 @@
+import { parseAndTranspile as _parseAndTranspile } from './Parser'
+
 /**
  * Transpiles Sonic Pi's Ruby DSL into JavaScript that runs on our engine.
  *
@@ -599,15 +601,25 @@ export function detectLanguage(code: string): 'ruby' | 'js' {
 
 /**
  * Auto-detect language and transpile if needed.
- * Uses the regex transpiler (battle-tested, 200+ test coverage) as primary.
- * The recursive descent parser (Parser.ts) is available via parseAndTranspile()
- * for callers who want structured errors — it will become the default once
- * its expression-level ctx. prefix handling matches the regex transpiler.
+ * Uses the recursive descent parser as primary (handles nesting, ctx. prefix,
+ * structured errors). Falls back to regex transpiler if parser reports errors.
  * Returns JS code ready for the engine.
  */
 export function autoTranspile(code: string): string {
-  if (detectLanguage(code) === 'ruby') {
-    return transpileRubyToJS(code)
+  if (detectLanguage(code) === 'js') return code
+
+  // Primary: recursive descent parser
+  const { code: parsed, errors } = _parseAndTranspile(code)
+  if (errors.length === 0) {
+    // Validate the output creates a valid Function (catches bad JS generation)
+    try {
+      new Function(parsed)
+      return parsed
+    } catch {
+      // Parser output is invalid JS — fall back
+    }
   }
-  return code
+
+  // Fallback: regex transpiler
+  return transpileRubyToJS(code)
 }
