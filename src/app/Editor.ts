@@ -230,34 +230,34 @@ export class Editor {
         {
           key: 'Mod-/',
           run: (view: EditorView) => {
-            // Toggle Ruby # comments on selected lines
-            const state = view.state
-            const doc = state.doc.toString()
-            const sel = state.selection?.main ?? { from: 0, to: 0 }
+            // Toggle Ruby # comments — only change affected lines
+            const doc = view.state.doc.toString()
+            const sel = view.state.selection?.main ?? { from: 0, to: 0 }
+            const lines = doc.split('\n')
             const fromLine = doc.substring(0, sel.from).split('\n').length
             const toLine = doc.substring(0, sel.to).split('\n').length
-            const lines = doc.split('\n')
 
-            // Check if all selected lines are already commented
             const selectedLines = lines.slice(fromLine - 1, toLine)
             const allCommented = selectedLines.every(l => l.trimStart().startsWith('#') || l.trim() === '')
 
-            const newLines = [...lines]
+            // Compute char offset of the affected line range
+            let rangeStart = 0
+            for (let i = 0; i < fromLine - 1; i++) rangeStart += lines[i].length + 1
+            let rangeEnd = rangeStart
+            for (let i = fromLine - 1; i < toLine; i++) rangeEnd += lines[i].length + (i < toLine - 1 ? 1 : 0)
+
+            // Build replacement for only the affected lines
+            const newLines: string[] = []
             for (let i = fromLine - 1; i < toLine; i++) {
               if (allCommented) {
-                // Uncomment: remove first # (and optional space after)
-                newLines[i] = lines[i].replace(/^(\s*)#\s?/, '$1')
+                newLines.push(lines[i].replace(/^(\s*)#\s?/, '$1'))
               } else {
-                // Comment: add # at current indent
-                if (lines[i].trim() !== '') {
-                  newLines[i] = lines[i].replace(/^(\s*)/, '$1# ')
-                }
+                newLines.push(lines[i].trim() !== '' ? lines[i].replace(/^(\s*)/, '$1# ') : lines[i])
               }
             }
 
-            const newDoc = newLines.join('\n')
             view.dispatch({
-              changes: { from: 0, to: doc.length, insert: newDoc },
+              changes: { from: rangeStart, to: rangeEnd, insert: newLines.join('\n') },
             })
             return true
           },
