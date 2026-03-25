@@ -107,73 +107,47 @@ export class Editor {
   }
 
   private createEditorView(cm: CMModule, initialCode: string): void {
-    // Sonic Pi dark theme — based on Oceanic Next
-    const theme = cm.EditorView.theme({
-      '&': {
-        height: '100%',
-        fontSize: '14px',
-        background: '#1B2B34',
-      },
-      '.cm-scroller': {
-        fontFamily: "'Fira Code', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace",
-        lineHeight: '1.65',
-      },
-      '.cm-content': {
-        color: '#CDD3DE',
-        caretColor: '#E8527C',
-        padding: '0.5rem 0',
-      },
-      '.cm-gutters': {
-        background: '#15232D',
-        color: '#4F5B66',
-        border: 'none',
-        paddingRight: '0.5rem',
-      },
-      '.cm-activeLineGutter': {
-        background: 'rgba(232,82,124,0.08)',
-        color: '#8892B0',
-      },
-      '.cm-activeLine': {
-        background: 'rgba(255,255,255,0.02)',
-      },
-      '&.cm-focused .cm-cursor': {
-        borderLeftColor: '#E8527C',
-        borderLeftWidth: '2px',
-      },
-      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-        background: 'rgba(232,82,124,0.15) !important',
-      },
-      '.cm-matchingBracket': {
-        background: 'rgba(94,189,171,0.2)',
-        outline: '1px solid rgba(94,189,171,0.4)',
-      },
-      '.cm-searchMatch': {
-        background: 'rgba(232,82,124,0.2)',
-      },
-      '.cm-tooltip': {
-        background: '#1B2B34',
-        border: '1px solid rgba(255,255,255,0.1)',
-      },
-    } as Record<string, unknown>)
+    // Build extensions array — each one is optional, skip if it fails
+    const extensions: unknown[] = []
+
+    // Basic setup (line numbers, bracket matching, etc.)
+    if (cm.basicSetup) extensions.push(cm.basicSetup)
+
+    // Dark theme
+    try {
+      const theme = cm.EditorView.theme({
+        '&': { height: '100%', fontSize: '14px', background: '#1B2B34' },
+        '.cm-scroller': {
+          fontFamily: "'Fira Code', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace",
+          lineHeight: '1.65',
+        },
+        '.cm-content': { color: '#CDD3DE', caretColor: '#E8527C', padding: '0.5rem 0' },
+        '.cm-gutters': { background: '#15232D', color: '#4F5B66', border: 'none' },
+        '.cm-activeLineGutter': { background: 'rgba(232,82,124,0.08)', color: '#8892B0' },
+        '.cm-activeLine': { background: 'rgba(255,255,255,0.02)' },
+        '&.cm-focused .cm-cursor': { borderLeftColor: '#E8527C', borderLeftWidth: '2px' },
+        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+          background: 'rgba(232,82,124,0.15) !important',
+        },
+      } as Record<string, unknown>)
+      if (theme) extensions.push(theme)
+    } catch { /* theme failed — use default */ }
 
     // Keybindings
-    const runKeymap = cm.keymap.of([
-      {
-        key: 'Mod-Enter',
-        run: () => { this.onRunCallback?.(); return true },
-      },
-      {
-        key: 'Escape',
-        run: () => { this.onStopCallback?.(); return true },
-      },
-    ])
+    try {
+      const runKeymap = cm.keymap.of([
+        { key: 'Mod-Enter', run: () => { this.onRunCallback?.(); return true } },
+        { key: 'Escape', run: () => { this.onStopCallback?.(); return true } },
+      ])
+      if (runKeymap) extensions.push(runKeymap)
+    } catch { /* keybindings failed */ }
 
-    const extensions: unknown[] = [cm.basicSetup, theme, runKeymap]
+    // Ruby language support
     if (cm.rubyLang) extensions.push(cm.rubyLang)
 
     const state = cm.EditorState.create({
       doc: initialCode,
-      extensions,
+      extensions: extensions.filter(Boolean),
     })
 
     this.view = new cm.EditorView({
