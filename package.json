@@ -10,6 +10,8 @@
   "scripts": {
     "start": "node bin/cli.js",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "dev": "vite"
@@ -23,6 +25,7 @@
     "scheduler"
   ],
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "typescript": "^5.7.0",
     "vite": "^7.3.1",
     "vitest": "^3.0.0"
