@@ -8,6 +8,11 @@ import { CaptureScheduler, detectStratum, Stratum } from './CaptureScheduler'
 import { SoundEventStream } from './SoundEventStream'
 import { noteToMidi, midiToFreq } from './NoteToFreq'
 
+/** Sentinel thrown by the `stop` DSL command to halt the current thread. */
+class StopSignal extends Error {
+  constructor() { super('stop'); this.name = 'StopSignal' }
+}
+
 // ---------------------------------------------------------------------------
 // Engine interfaces
 // ---------------------------------------------------------------------------
@@ -33,6 +38,7 @@ export class SonicPiEngine {
   private initialized = false
   private playing = false
   private runtimeErrorHandler: ((err: Error) => void) | null = null
+  private printHandler: ((msg: string) => void) | null = null
   private currentCode = ''
   private currentStratum: Stratum = Stratum.S1
   private captureScheduler = new CaptureScheduler()
@@ -130,11 +136,22 @@ export class SonicPiEngine {
         }
       }
 
+      // Print handler — routes puts/print to the app console
+      const __print = (...args: unknown[]) => {
+        const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
+        if (this.printHandler) this.printHandler(msg)
+        else console.log('[SonicPi]', msg)
+      }
+
+      // Stop sentinel — thrown by stop command, caught by runLoop
+      const __stop = () => { throw new StopSignal() }
+
       // Build DSL parameter names and values for the executor
       const dslNames = [
         'live_loop', 'use_bpm', 'use_synth',
         'ring', 'knit', 'range', 'line', 'spread', 'chord', 'scale', 'chord_invert', 'note', 'note_range',
         'noteToMidi', 'midiToFreq', 'noteToFreq',
+        'console', 'stop',
       ]
       const topDSL = dsl._makeTaskDSL('__top__')
       const dslValues = [
@@ -145,6 +162,7 @@ export class SonicPiEngine {
         topDSL.chord, topDSL.scale, topDSL.chord_invert,
         topDSL.note, topDSL.note_range,
         dsl.noteToMidi, dsl.midiToFreq, dsl.noteToFreq,
+        { log: __print }, __stop,
       ]
 
       const executor = createExecutor(transpiledCode, dslNames)
@@ -230,6 +248,11 @@ export class SonicPiEngine {
 
   setRuntimeErrorHandler(handler: (err: Error) => void): void {
     this.runtimeErrorHandler = handler
+  }
+
+  /** Set handler for puts/print output from user code. */
+  setPrintHandler(handler: (msg: string) => void): void {
+    this.printHandler = handler
   }
 
   /** Get a friendly version of the last error (for display in a log pane). */

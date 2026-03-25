@@ -359,6 +359,11 @@ export class VirtualTimeScheduler {
       try {
         await task.asyncFn()
       } catch (err) {
+        // StopSignal is expected — it means `stop` was called in user code
+        if (err instanceof Error && err.name === 'StopSignal') {
+          task.running = false
+          break
+        }
         console.error(`[SonicPi] Error in loop "${task.id}":`, err)
         task.running = false
         break

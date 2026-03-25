@@ -307,6 +307,10 @@ export class App {
           this.console.logError(fe.title, fe.message)
         })
 
+        this.engine.setPrintHandler((msg) => {
+          this.console.log(msg, 'info')
+        })
+
         await this.engine.init()
         this.console.logSystem('  Audio engine ready.')
         this.console.logSystem('')
