@@ -64,8 +64,8 @@ export function createExecutor(
   transpiledCode: string,
   dslParamNames: string[]
 ): (...args: unknown[]) => Promise<void> {
-  // Wrap in async function
-  const asyncBody = `"use strict";\nreturn (async () => {\n${transpiledCode}\n})();`
+  // Wrap in async IIFE (async functions are always strict mode — no explicit directive needed)
+  const asyncBody = `return (async () => {\n${transpiledCode}\n})();`
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const fn = new Function(...dslParamNames, asyncBody)
   return fn as (...args: unknown[]) => Promise<void>
