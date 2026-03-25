@@ -121,6 +121,8 @@ export class SonicPiEngine {
       const pendingDefaults = new Map<string, { bpm: number; synth: string }>()
 
       const wrappedLiveLoop = (name: string, asyncFn: (ctx: unknown) => Promise<void>) => {
+        const trackBus = this.bridge?.allocateTrackBus(name) ?? 0
+
         if (isReEvaluate) {
           // Collect: build the wrapped function but don't register yet
           const wrappedFn = dsl._buildLoopFn(name, asyncFn as (ctx: unknown) => Promise<void>)
@@ -133,6 +135,7 @@ export class SonicPiEngine {
           if (task) {
             task.bpm = defaultBpm
             task.currentSynth = defaultSynth
+            task.outBus = trackBus
           }
         }
       }
@@ -190,12 +193,13 @@ export class SonicPiEngine {
         // Commit: hot-swap same-named, stop removed, start new
         scheduler.reEvaluate(pendingLoops, { bpm: defaultBpm, synth: defaultSynth })
 
-        // Apply per-loop defaults
+        // Apply per-loop defaults + track bus
         for (const [name, defaults] of pendingDefaults) {
           const task = scheduler.getTask(name)
           if (task) {
             task.bpm = defaults.bpm
             task.currentSynth = defaults.synth
+            task.outBus = this.bridge?.allocateTrackBus(name) ?? 0
           }
         }
 

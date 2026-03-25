@@ -702,6 +702,30 @@ function transpileSonicPiLine(line: string, insideLoop: boolean): string {
     return `if (!(${trailingUnless[2]})) { ${stmt} }`
   }
 
+  // synth :name, opts
+  const synthCmdMatch = line.match(/^synth\s+"?(\w+)"?\s*,?\s*(.*)$/)
+  if (synthCmdMatch) {
+    const sName = synthCmdMatch[1]
+    const rest = synthCmdMatch[2].trim()
+    const args = rest ? transpileArgs(rest) : ''
+    if (args && args.includes('{')) {
+      return `await ${prefix}play(${args.replace('{', `{ synth: "${sName}", `)})`
+    }
+    return `await ${prefix}play(${args ? args + ', ' : ''}{ synth: "${sName}" })`
+  }
+
+  // bare synth name as command: beep note:67
+  const SYNTH_NAMES_SET = new Set(['beep','saw','prophet','tb303','supersaw','pluck','pretty_bell','piano','dsaw','dpulse','dtri','fm','mod_fm','mod_saw','mod_pulse','mod_tri','sine','square','tri','pulse','noise','pnoise','bnoise','gnoise','cnoise','chipbass','chiplead','chipnoise','dark_ambience','hollow','growl','zawa','blade','tech_saws'])
+  const bareSynth = line.match(/^(\w+)\s+(.+)$/)
+  if (bareSynth && SYNTH_NAMES_SET.has(bareSynth[1])) {
+    const sName = bareSynth[1]
+    const args = transpileArgs(bareSynth[2])
+    if (args.includes('{')) {
+      return `await ${prefix}play(${args.replace('{', `{ synth: "${sName}", `)})`
+    }
+    return `await ${prefix}play(${args}, { synth: "${sName}" })`
+  }
+
   // play
   const playMatch = line.match(/^play\s+(.+)$/)
   if (playMatch) return `await ${prefix}play(${transpileArgs(playMatch[1])})`

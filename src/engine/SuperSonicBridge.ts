@@ -143,6 +143,8 @@ export class SuperSonicBridge {
   private trackBuses = new Map<string, number>()
   /** Next available track bus pair */
   private nextTrackBus = 2
+  private splitter: ChannelSplitterNode | null = null
+  private masterMerger: ChannelMergerNode | null = null
 
   constructor(options: SuperSonicBridgeOptions = {}) {
     this.options = options
@@ -163,7 +165,9 @@ export class SuperSonicBridge {
       coreBaseURL: this.options.coreBaseURL ?? 'https://unpkg.com/supersonic-scsynth-core@latest/',
       synthdefBaseURL: this.options.synthdefBaseURL ?? 'https://unpkg.com/supersonic-scsynth-synthdefs@latest/synthdefs/',
       sampleBaseURL: this.options.sampleBaseURL ?? 'https://unpkg.com/supersonic-scsynth-samples@latest/samples/',
-    })
+      autoConnect: false,
+      scsynthOptions: { numOutputBusChannels: NUM_OUTPUT_CHANNELS },
+    } as never)
 
     await this.sonic.init()
 
@@ -178,12 +182,30 @@ export class SuperSonicBridge {
     this.sonic.send('/g_new', 101, 1, 0) // FX group at tail
     await this.sonic.sync()
 
-    // Master analyser — side-tap on the SuperSonic output
-    // SuperSonic auto-connects to destination (sound), we add analyser as passive tap
-    this.analyserNode = this.sonic.audioContext.createAnalyser()
+    // Multi-channel audio routing:
+    // Worklet outputs NUM_OUTPUT_CHANNELS channels (autoConnect=false, we route manually).
+    // Channels 0-1 = master bus, 2-3 = track 0, 4-5 = track 1, etc.
+    // All channels mix to stereo for speakers; each pair also gets its own AnalyserNode.
+    const audioCtx = this.sonic.audioContext
+    const workletNode = (this.sonic.node as unknown as Record<string, AudioNode>).input ?? this.sonic.node
+
+    // Split worklet output into individual channels
+    this.splitter = audioCtx.createChannelSplitter(NUM_OUTPUT_CHANNELS)
+    workletNode.connect(this.splitter)
+
+    // Mix all channel pairs to stereo for speakers
+    this.masterMerger = audioCtx.createChannelMerger(2)
+    for (let ch = 0; ch < NUM_OUTPUT_CHANNELS; ch += 2) {
+      this.splitter.connect(this.masterMerger, ch, 0)     // left
+      this.splitter.connect(this.masterMerger, ch + 1, 1) // right
+    }
+
+    // Master analyser taps the mixed stereo → then to speakers
+    this.analyserNode = audioCtx.createAnalyser()
     this.analyserNode.fftSize = 2048
     this.analyserNode.smoothingTimeConstant = 0.8
-    this.sonic.node.connect(this.analyserNode)
+    this.masterMerger.connect(this.analyserNode)
+    this.analyserNode.connect(audioCtx.destination)
   }
 
   get audioContext(): AudioContext | null {
@@ -298,10 +320,20 @@ export class SuperSonicBridge {
 
     this.trackBuses.set(trackId, busNum)
 
-    // Per-track AnalyserNode — placeholder for when multi-channel output is available.
-    // Currently scsynth buses are internal; audio exits as stereo mix from the worklet.
-    // Per-track audio analysis requires SuperSonic multi-channel output support.
-    // For now, trackAnalysers stays empty — inline viz uses BufferedScheduler (Path 2).
+    // Create per-track AnalyserNode using the shared splitter
+    if (this.sonic && this.splitter) {
+      const audioCtx = this.sonic.audioContext
+      const analyser = audioCtx.createAnalyser()
+      analyser.fftSize = 2048
+      analyser.smoothingTimeConstant = 0.8
+
+      const merger = audioCtx.createChannelMerger(2)
+      this.splitter.connect(merger, busNum, 0)
+      this.splitter.connect(merger, busNum + 1, 1)
+      merger.connect(analyser)
+
+      this.trackAnalysers.set(trackId, analyser)
+    }
 
     return busNum
   }

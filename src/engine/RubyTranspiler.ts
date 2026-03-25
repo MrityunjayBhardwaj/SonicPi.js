@@ -374,6 +374,28 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
     return `await ctx.sleep(${transpileExpression(sleepMatch[1])})`
   }
 
+  // --- synth :name, opts --- (explicit synth command)
+  const synthMatch = line.match(/^synth\s+"?(\w+)"?\s*,?\s*(.*)$/)
+  if (synthMatch) {
+    const synthName = synthMatch[1]
+    const rest = synthMatch[2].trim()
+    const args = rest ? transpileArgs(rest, srcLine) : (srcLine !== undefined ? `{ _srcLine: ${srcLine} }` : '')
+    return `await ctx.play(${args ? args : ''}, { synth: "${synthName}"${srcLine !== undefined ? `, _srcLine: ${srcLine}` : ''} })`.replace(', {})', ')').replace('(, ', '(')
+  }
+
+  // --- bare synth name as command: beep note:67, tb303 60, etc ---
+  const SYNTH_NAMES = ['beep','saw','prophet','tb303','supersaw','pluck','pretty_bell','piano','dsaw','dpulse','dtri','fm','mod_fm','mod_saw','mod_pulse','mod_tri','sine','square','tri','pulse','noise','pnoise','bnoise','gnoise','cnoise','chipbass','chiplead','chipnoise','dark_ambience','hollow','growl','zawa','blade','tech_saws']
+  const bareSynthMatch = line.match(/^(\w+)\s+(.+)$/)
+  if (bareSynthMatch && SYNTH_NAMES.includes(bareSynthMatch[1])) {
+    const synthName = bareSynthMatch[1]
+    const args = transpileArgs(bareSynthMatch[2], srcLine)
+    // Inject synth name into the opts
+    if (args.includes('{')) {
+      return `await ctx.play(${args.replace('{', `{ synth: "${synthName}", `)})`
+    }
+    return `await ctx.play(${args}, { synth: "${synthName}"${srcLine !== undefined ? `, _srcLine: ${srcLine}` : ''} })`
+  }
+
   // --- sample :name, opts ---
   const sampleMatch = line.match(/^sample\s+(.+)$/)
   if (sampleMatch) {
