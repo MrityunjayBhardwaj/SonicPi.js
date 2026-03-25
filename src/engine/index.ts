@@ -35,4 +35,6 @@ export { getAllSamples, getCategories, getSamplesByCategory, searchSamples, getS
 export type { SampleInfo } from './SampleCatalog'
 export { MidiBridge } from './MidiBridge'
 export type { MidiDevice, MidiEventHandler } from './MidiBridge'
+export { SessionLog } from './SessionLog'
+export type { SessionEntry, SignedSession } from './SessionLog'
 export type { ParseError } from './Parser'
