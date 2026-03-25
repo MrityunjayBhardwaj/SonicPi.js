@@ -31,15 +31,6 @@ export const BLOCKED_GLOBALS = [
 ]
 
 /**
- * These can't be parameter names or let-bound in strict mode.
- * `eval` and `Function` are shadowed via let inside the async IIFE.
- * `arguments` cannot be shadowed at all in strict mode (and async
- * functions are always strict), so we skip it — it's harmless anyway
- * since arrow functions don't have their own `arguments`.
- */
-const STRICT_MODE_RESERVED = ['eval', 'Function']
-
-/**
  * Create a sandboxed executor. Same API as createExecutor but with
  * dangerous globals blocked.
  */
@@ -49,12 +40,12 @@ export function createSandboxedExecutor(
 ): (...args: unknown[]) => Promise<void> {
   const allParamNames = [...dslParamNames, ...BLOCKED_GLOBALS]
 
-  // Shadow strict-mode reserved words via let declarations
-  const shadowDecls = STRICT_MODE_RESERVED
-    .map(name => `let ${name} = undefined;`)
-    .join(' ')
-
-  const asyncBody = `return (async () => {\n${shadowDecls}\n${transpiledCode}\n})();`
+  // Shadow eval/Function in the OUTER sloppy-mode function (new Function
+  // is sloppy by default). Can't use let/var for these inside the async
+  // IIFE because async functions are always strict mode, and strict mode
+  // forbids eval/arguments as variable names.
+  const outerShadow = 'var eval = undefined; var Function = undefined;'
+  const asyncBody = `${outerShadow}\nreturn (async () => {\n${transpiledCode}\n})();`
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const fn = new Function(...allParamNames, asyncBody)
 
