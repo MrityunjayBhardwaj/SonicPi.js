@@ -119,6 +119,9 @@ export class App {
     this.editor.onRun(() => this.handlePlay())
     this.editor.onStop(() => this.handleStop())
 
+    // Show buffer content indicators
+    this.updateBufferIndicators()
+
     // Save buffers on page unload
     window.addEventListener('beforeunload', () => this.saveBuffers())
 
@@ -273,11 +276,18 @@ export class App {
     })
   }
 
+  private updateBufferIndicators(): void {
+    for (let i = 0; i < BUFFER_COUNT; i++) {
+      this.toolbar.setBufferHasContent(i, this.buffers[i]?.trim().length > 0)
+    }
+  }
+
   private switchBuffer(index: number): void {
     this.buffers[this.activeBuffer] = this.editor.getValue()
     this.activeBuffer = index
     this.editor.setValue(this.buffers[index])
     this.saveBuffers()
+    this.updateBufferIndicators()
 
     const title = document.getElementById('spw-buffer-title')
     if (title) title.textContent = `Buffer ${index}`
@@ -286,6 +296,7 @@ export class App {
   private async handlePlay(): Promise<void> {
     try {
       if (!this.engine) {
+        this.toolbar.setLoading(true)
         this.console.logSystem('  Initialising audio engine...')
 
         let SuperSonicClass: unknown = undefined
@@ -312,17 +323,20 @@ export class App {
         })
 
         await this.engine.init()
+        this.toolbar.setLoading(false)
         this.console.logSystem('  Audio engine ready.')
         this.console.logSystem('')
       }
 
       const code = this.editor.getValue()
       this.console.newRun()
+      this.editor.highlightErrorLine(null) // clear previous errors
 
       const result = await this.engine.evaluate(code)
       if (result.error) {
         const fe = friendlyError(result.error)
         this.console.logError(fe.title, fe.message)
+        if (fe.line) this.editor.highlightErrorLine(fe.line)
         return
       }
 

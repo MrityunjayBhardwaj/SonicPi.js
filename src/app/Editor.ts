@@ -74,6 +74,36 @@ export class Editor {
   onRun(callback: () => void): void { this.onRunCallback = callback }
   onStop(callback: () => void): void { this.onStopCallback = callback }
 
+  /** Highlight an error line (1-based). Call with null to clear. */
+  highlightErrorLine(line: number | null): void {
+    // Remove previous error highlight
+    if (this.errorLineEl) {
+      this.errorLineEl.remove()
+      this.errorLineEl = null
+    }
+
+    if (line === null) return
+
+    if (this.view) {
+      // CodeMirror: inject a style for the error line
+      const doc = this.view.state.doc.toString()
+      const lines = doc.split('\n')
+      if (line > 0 && line <= lines.length) {
+        let charOffset = 0
+        for (let i = 0; i < line - 1; i++) charOffset += lines[i].length + 1
+        // Add a CSS rule targeting the line
+        const style = document.createElement('style')
+        style.textContent = `.cm-line:nth-child(${line}) { background: rgba(232,82,124,0.15) !important; border-left: 3px solid #E8527C !important; }`
+        this.container.appendChild(style)
+        this.errorLineEl = style
+      }
+    } else if (this.fallbackTextarea) {
+      // Textarea: can't highlight lines, but we can show in console
+    }
+  }
+
+  private errorLineEl: HTMLElement | null = null
+
   dispose(): void {
     this.view?.destroy()
     this.fallbackTextarea?.remove()

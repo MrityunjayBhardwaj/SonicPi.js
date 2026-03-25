@@ -192,6 +192,15 @@ export class Toolbar {
       bufRow.appendChild(btn)
       this.bufferBtns.push(btn)
     }
+
+    // Shortcut hints (right side of buffer row)
+    const hintSpacer = document.createElement('span')
+    hintSpacer.style.flex = '1'
+    bufRow.appendChild(hintSpacer)
+    const hints = document.createElement('span')
+    hints.style.cssText = 'color: #333; font-size: 0.6rem; white-space: nowrap;'
+    hints.textContent = 'Ctrl+Enter Run  |  Esc Stop  |  Ctrl+/ Comment'
+    bufRow.appendChild(hints)
   }
 
   setPlaying(playing: boolean): void {
@@ -201,6 +210,21 @@ export class Toolbar {
     if (label) label.textContent = playing ? 'Update' : 'Run'
     this.stopBtn.style.opacity = playing ? '1' : '0.4'
     if (!playing) this.setRecording(false)
+  }
+
+  setLoading(loading: boolean): void {
+    const label = this.playBtn.querySelector('.spw-btn-label') as HTMLElement
+    if (label) label.textContent = loading ? 'Loading...' : (this.playing ? 'Update' : 'Run')
+    this.playBtn.style.opacity = loading ? '0.6' : '1'
+  }
+
+  /** Show a dot indicator on buffers that have content. */
+  setBufferHasContent(index: number, hasContent: boolean): void {
+    const btn = this.bufferBtns[index]
+    if (!btn) return
+    const dot = hasContent ? '\u00B7' : ''  // middle dot
+    const num = `${index}`
+    btn.textContent = hasContent ? `${num}${dot}` : num
   }
 
   setRecording(recording: boolean): void {
