@@ -1,0 +1,149 @@
+/**
+ * AudioInterpreter — runs a Program against real audio.
+ *
+ * The only interpreter that touches SuperSonic and the scheduler.
+ * Walks the step array, triggers synths/samples, awaits sleep via
+ * the VirtualTimeScheduler.
+ */
+
+import type { Program } from '../Program'
+import type { VirtualTimeScheduler } from '../VirtualTimeScheduler'
+import type { SuperSonicBridge } from '../SuperSonicBridge'
+import type { SoundEventStream, SoundEvent } from '../SoundEventStream'
+
+export interface AudioContext {
+  bridge: SuperSonicBridge | null
+  scheduler: VirtualTimeScheduler
+  taskId: string
+  eventStream: SoundEventStream
+  schedAheadTime: number
+  printHandler?: (msg: string) => void
+  nodeRefMap: Map<number, number>
+}
+
+/**
+ * Run a Program's steps for one loop iteration.
+ * Called by the scheduler's loop runner.
+ */
+export async function runProgram(
+  program: Program,
+  ctx: AudioContext
+): Promise<void> {
+  let currentSynth = 'beep'
+  let currentBpm = ctx.scheduler.getTask(ctx.taskId)?.bpm ?? 60
+  let nextNodeRef = 1
+
+  for (const step of program) {
+    const task = ctx.scheduler.getTask(ctx.taskId)
+    if (!task?.running) break
+
+    switch (step.tag) {
+      case 'play': {
+        const audioTime = task.virtualTime + ctx.schedAheadTime
+        const synth = step.synth ?? currentSynth
+        const nodeRef = nextNodeRef++
+
+        if (ctx.bridge) {
+          const params: Record<string, number> = { ...step.opts }
+          ctx.bridge.triggerSynth(synth, audioTime, { ...params, out_bus: task.outBus })
+            .then(realNodeId => ctx.nodeRefMap.set(nodeRef, realNodeId))
+            .catch(() => {})
+        }
+
+        // Emit sound event
+        const audioCtxTime = ctx.bridge?.audioContext?.currentTime ?? 0
+        ctx.eventStream.emitEvent({
+          audioTime,
+          audioDuration: 0.25,
+          scheduledAheadMs: (audioTime - audioCtxTime) * 1000,
+          midiNote: step.note,
+          s: synth,
+          srcLine: step.srcLine ?? null,
+          trackId: ctx.taskId,
+        })
+        break
+      }
+
+      case 'sample': {
+        const audioTime = task.virtualTime + ctx.schedAheadTime
+        if (ctx.bridge) {
+          ctx.bridge.playSample(step.name, audioTime, step.opts, currentBpm)
+            .catch(() => {})
+        }
+
+        const audioCtxTime = ctx.bridge?.audioContext?.currentTime ?? 0
+        ctx.eventStream.emitEvent({
+          audioTime,
+          audioDuration: 0.5,
+          scheduledAheadMs: (audioTime - audioCtxTime) * 1000,
+          midiNote: null,
+          s: step.name,
+          srcLine: step.srcLine ?? null,
+          trackId: ctx.taskId,
+        })
+        break
+      }
+
+      case 'sleep':
+        await ctx.scheduler.scheduleSleep(ctx.taskId, step.beats)
+        break
+
+      case 'useSynth':
+        currentSynth = step.name
+        if (task) task.currentSynth = step.name
+        break
+
+      case 'useBpm':
+        currentBpm = step.bpm
+        if (task) task.bpm = step.bpm
+        break
+
+      case 'control': {
+        const realNodeId = ctx.nodeRefMap.get(step.nodeRef)
+        if (realNodeId && ctx.bridge) {
+          const paramList: (string | number)[] = []
+          for (const [k, v] of Object.entries(step.params)) {
+            paramList.push(k, v)
+          }
+          ctx.bridge.send?.('/n_set', realNodeId, ...paramList)
+        }
+        break
+      }
+
+      case 'cue':
+        ctx.scheduler.fireCue(step.name, ctx.taskId, step.args ?? [])
+        break
+
+      case 'sync':
+        await ctx.scheduler.waitForSync(step.name, ctx.taskId)
+        break
+
+      case 'fx': {
+        if (!ctx.bridge) {
+          // No audio — just run inner program
+          await runProgram(step.body, ctx)
+          break
+        }
+        const prevOutBus = task.outBus
+        const newBus = ctx.bridge.allocateBus()
+        try {
+          await ctx.bridge.applyFx(step.name, step.opts, newBus, prevOutBus)
+          task.outBus = newBus
+          await runProgram(step.body, ctx)
+        } finally {
+          task.outBus = prevOutBus
+          ctx.bridge.freeBus(newBus)
+        }
+        break
+      }
+
+      case 'print':
+        ctx.printHandler?.(step.message)
+        break
+
+      case 'stop':
+        if (task) task.running = false
+        return
+    }
+  }
+}
