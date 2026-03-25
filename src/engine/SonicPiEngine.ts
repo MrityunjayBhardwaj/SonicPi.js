@@ -343,6 +343,20 @@ export class SonicPiEngine {
 
       // Emit sound event for visualization and logging
       const audioCtxTime = this.bridge?.audioContext?.currentTime ?? 0
+
+      // Compute source location from _srcLine (injected by transpiler)
+      const srcLine = event.params._srcLine as number | undefined
+      let loc: Array<{ start: number; end: number }> | null = null
+      if (srcLine && this.currentCode) {
+        const lines = this.currentCode.split('\n')
+        let charOffset = 0
+        for (let j = 0; j < srcLine - 1 && j < lines.length; j++) {
+          charOffset += lines[j].length + 1 // +1 for \n
+        }
+        const lineLength = lines[srcLine - 1]?.length ?? 0
+        loc = [{ start: charOffset, end: charOffset + lineLength }]
+      }
+
       this.eventStream.emitEvent({
         audioTime,
         audioDuration: 0.25,
@@ -350,7 +364,7 @@ export class SonicPiEngine {
         midiNote: (event.params.note as number) ?? null,
         s: (event.params.synth as string) ?? (event.params.name as string) ?? null,
         color: null,
-        loc: null,  // TODO: wire transpiler source positions for highlighting
+        loc,
       })
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))

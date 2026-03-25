@@ -323,7 +323,7 @@ export function transpileRubyToJS(ruby: string): string {
 
     // --- General line transformation ---
     const insideLoop = blockStack.includes('loop')
-    let transformed = transpileLine(code, insideLoop)
+    let transformed = transpileLine(code, insideLoop, i + 1)
     result.push(`${indent}${transformed}${inlineComment}`)
     i++
   }
@@ -334,7 +334,7 @@ export function transpileRubyToJS(ruby: string): string {
 /**
  * Transpile a single line of Sonic Pi Ruby to JS.
  */
-function transpileLine(line: string, insideLoop: boolean = true): string {
+function transpileLine(line: string, insideLoop: boolean = true, srcLine?: number): string {
   // Already a JS comment
   if (line.startsWith('//')) return line
 
@@ -346,7 +346,7 @@ function transpileLine(line: string, insideLoop: boolean = true): string {
   // --- Ruby trailing conditional: `statement if condition` ---
   const trailingIfMatch = line.match(/^(.+?)\s+if\s+(.+)$/)
   if (trailingIfMatch) {
-    const statement = transpileLine(trailingIfMatch[1], insideLoop)
+    const statement = transpileLine(trailingIfMatch[1], insideLoop, srcLine)
     const condition = transpileExpression(trailingIfMatch[2])
     return `if (${condition}) { ${statement} }`
   }
@@ -354,7 +354,7 @@ function transpileLine(line: string, insideLoop: boolean = true): string {
   // --- Ruby trailing unless: `statement unless condition` ---
   const trailingUnlessMatch = line.match(/^(.+?)\s+unless\s+(.+)$/)
   if (trailingUnlessMatch) {
-    const statement = transpileLine(trailingUnlessMatch[1], insideLoop)
+    const statement = transpileLine(trailingUnlessMatch[1], insideLoop, srcLine)
     const condition = transpileExpression(trailingUnlessMatch[2])
     return `if (!(${condition})) { ${statement} }`
   }
@@ -362,7 +362,7 @@ function transpileLine(line: string, insideLoop: boolean = true): string {
   // --- play note, opts ---
   const playMatch = line.match(/^play\s+(.+)$/)
   if (playMatch) {
-    const args = transpileArgs(playMatch[1])
+    const args = transpileArgs(playMatch[1], srcLine)
     return `await ctx.play(${args})`
   }
 
@@ -375,7 +375,7 @@ function transpileLine(line: string, insideLoop: boolean = true): string {
   // --- sample :name, opts ---
   const sampleMatch = line.match(/^sample\s+(.+)$/)
   if (sampleMatch) {
-    const args = transpileArgs(sampleMatch[1])
+    const args = transpileArgs(sampleMatch[1], srcLine)
     return `await ctx.sample(${args})`
   }
 
@@ -510,17 +510,12 @@ function transpileExpression(expr: string): string {
  * Transpile function arguments, handling Ruby symbol → string conversion
  * and Ruby hash-style opts (key: value) → JS object.
  */
-function transpileArgs(argsStr: string): string {
+function transpileArgs(argsStr: string, srcLine?: number): string {
   let result = argsStr.trim()
-
-  // Split into positional arg and keyword args
-  // e.g., ":bd_haus, rate: 0.5, amp: 2" → "bd_haus", { rate: 0.5, amp: 2 }
-  // e.g., "60, release: 0.5" → 60, { release: 0.5 }
 
   // First, convert symbols
   result = transpileExpression(result)
 
-  // Check for keyword arguments (key: value)
   // Split by comma, detect which parts are keyword args
   const parts = splitArgs(result)
   const positional: string[] = []
@@ -533,6 +528,11 @@ function transpileArgs(argsStr: string): string {
     } else {
       positional.push(part.trim())
     }
+  }
+
+  // Inject _srcLine for source mapping
+  if (srcLine !== undefined) {
+    kwargs.push(`_srcLine: ${srcLine}`)
   }
 
   if (kwargs.length > 0) {

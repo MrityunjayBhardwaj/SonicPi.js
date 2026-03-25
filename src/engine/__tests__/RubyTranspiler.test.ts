@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { transpileRubyToJS, detectLanguage, autoTranspile } from '../RubyTranspiler'
 
+/** Strip _srcLine from transpiler output for test comparison. */
+const strip = (s: string) => s
+  .replace(/,?\s*_srcLine:\s*\d+/g, '')
+  .replace(/,\s*\{\s*\}/g, '')          // remove trailing empty opts: , { }
+  .replace(/\(\s*\{\s*\}\s*\)/g, '()')  // remove (  { } ) → ()
+
 describe('RubyTranspiler', () => {
   describe('live_loop', () => {
     it('transpiles basic live_loop', () => {
@@ -9,10 +15,10 @@ describe('RubyTranspiler', () => {
   sleep 0.5
 end`
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('live_loop("drums", async (ctx) => {')
-      expect(js).toContain('await ctx.sample("bd_haus")')
-      expect(js).toContain('await ctx.sleep(0.5)')
-      expect(js).toContain('})')
+      expect(strip(js)).toContain('live_loop("drums", async (ctx) => {')
+      expect(strip(js)).toContain('await ctx.sample("bd_haus")')
+      expect(strip(js)).toContain('await ctx.sleep(0.5)')
+      expect(strip(js)).toContain('})')
     })
 
     it('transpiles live_loop with sync option', () => {
@@ -21,97 +27,97 @@ end`
   sleep 1
 end`
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('live_loop("melody", async (ctx) => {')
-      expect(js).toContain('await ctx.sync("metro")')
+      expect(strip(js)).toContain('live_loop("melody", async (ctx) => {')
+      expect(strip(js)).toContain('await ctx.sync("metro")')
     })
   })
 
   describe('play', () => {
     it('transpiles play with number', () => {
-      expect(transpileRubyToJS('play 60')).toContain('await ctx.play(60)')
+      expect(strip(transpileRubyToJS('play 60'))).toContain('await ctx.play(60)')
     })
 
     it('transpiles play with symbol note', () => {
-      expect(transpileRubyToJS('play :c4')).toContain('await ctx.play("c4")')
+      expect(strip(transpileRubyToJS('play :c4'))).toContain('await ctx.play("c4")')
     })
 
     it('transpiles play with opts', () => {
       const js = transpileRubyToJS('play 60, release: 0.5, amp: 2')
-      expect(js).toContain('await ctx.play(60, { release: 0.5, amp: 2 })')
+      expect(strip(js)).toContain('await ctx.play(60, { release: 0.5, amp: 2 })')
     })
   })
 
   describe('sample', () => {
     it('transpiles sample with symbol', () => {
-      expect(transpileRubyToJS('sample :bd_haus')).toContain('await ctx.sample("bd_haus")')
+      expect(strip(transpileRubyToJS('sample :bd_haus'))).toContain('await ctx.sample("bd_haus")')
     })
 
     it('transpiles sample with opts', () => {
       const js = transpileRubyToJS('sample :bd_haus, rate: 0.5, amp: 2')
-      expect(js).toContain('await ctx.sample("bd_haus", { rate: 0.5, amp: 2 })')
+      expect(strip(js)).toContain('await ctx.sample("bd_haus", { rate: 0.5, amp: 2 })')
     })
   })
 
   describe('sleep', () => {
     it('transpiles sleep with number', () => {
-      expect(transpileRubyToJS('sleep 0.5')).toContain('await ctx.sleep(0.5)')
+      expect(strip(transpileRubyToJS('sleep 0.5'))).toContain('await ctx.sleep(0.5)')
     })
 
     it('transpiles sleep with expression', () => {
-      expect(transpileRubyToJS('sleep 1.0/3')).toContain('await ctx.sleep(1.0/3)')
+      expect(strip(transpileRubyToJS('sleep 1.0/3'))).toContain('await ctx.sleep(1.0/3)')
     })
   })
 
   describe('use_synth / use_bpm', () => {
     it('transpiles use_synth (top-level, no ctx)', () => {
-      expect(transpileRubyToJS('use_synth :prophet')).toContain('use_synth("prophet")')
+      expect(strip(transpileRubyToJS('use_synth :prophet'))).toContain('use_synth("prophet")')
     })
 
     it('transpiles use_bpm (top-level, no ctx)', () => {
-      expect(transpileRubyToJS('use_bpm 120')).toContain('use_bpm(120)')
+      expect(strip(transpileRubyToJS('use_bpm 120'))).toContain('use_bpm(120)')
     })
   })
 
   describe('sync/cue', () => {
     it('transpiles sync', () => {
-      expect(transpileRubyToJS('sync :metro')).toContain('await ctx.sync("metro")')
+      expect(strip(transpileRubyToJS('sync :metro'))).toContain('await ctx.sync("metro")')
     })
 
     it('transpiles cue', () => {
-      expect(transpileRubyToJS('cue :metro')).toContain('ctx.cue("metro")')
+      expect(strip(transpileRubyToJS('cue :metro'))).toContain('ctx.cue("metro")')
     })
   })
 
   describe('random', () => {
     it('transpiles rrand', () => {
-      expect(transpileRubyToJS('play rrand(60, 72)'))
+      expect(strip(transpileRubyToJS('play rrand(60, 72)')))
         .toContain('ctx.rrand(60, 72)')
     })
 
     it('transpiles choose', () => {
-      expect(transpileRubyToJS('play choose([60, 64, 67])'))
+      expect(strip(transpileRubyToJS('play choose([60, 64, 67])')))
         .toContain('ctx.choose([60, 64, 67])')
     })
 
     it('transpiles use_random_seed (top-level, no ctx)', () => {
-      expect(transpileRubyToJS('use_random_seed 42'))
+      expect(strip(transpileRubyToJS('use_random_seed 42')))
         .toContain('use_random_seed(42)')
     })
 
     it('transpiles dice', () => {
-      expect(transpileRubyToJS('play 60 if dice(6) > 3'))
+      expect(strip(transpileRubyToJS('play 60 if dice(6) > 3')))
         .toContain('ctx.dice(6)')
     })
   })
 
   describe('ring and spread', () => {
     it('transpiles ring()', () => {
-      expect(transpileRubyToJS('play ring(60, 64, 67).tick'))
+      expect(strip(transpileRubyToJS('play ring(60, 64, 67).tick')))
         .toContain('ctx.ring(60, 64, 67).tick()')
     })
 
     it('transpiles spread()', () => {
-      expect(transpileRubyToJS('spread(3, 8)')).toContain('ctx.spread(3, 8)')
+      expect(strip(transpileRubyToJS('spread(3, 8)'))).toContain('ctx.spread(3, 8)')
     })
   })
 
@@ -122,8 +128,8 @@ end`
   sleep 0.25
 end`
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('for (let _i = 0; _i < 4; _i++) {')
-      expect(js).toContain('await ctx.play(60)')
+      expect(strip(js)).toContain('for (let _i = 0; _i < 4; _i++) {')
+      expect(strip(js)).toContain('await ctx.play(60)')
     })
 
     it('transpiles N.times do |i|', () => {
@@ -132,13 +138,13 @@ end`
   sleep 0.125
 end`
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('for (let i = 0; i < 8; i++) {')
+      expect(strip(js)).toContain('for (let i = 0; i < 8; i++) {')
     })
   })
 
   describe('symbols', () => {
     it('converts Ruby symbols to strings', () => {
-      expect(transpileRubyToJS('use_synth :tb303')).toContain('"tb303"')
+      expect(strip(transpileRubyToJS('use_synth :tb303'))).toContain('"tb303"')
     })
 
     it('does not convert symbols inside strings', () => {
@@ -149,18 +155,18 @@ end`
 
   describe('comments', () => {
     it('converts # comments to //', () => {
-      expect(transpileRubyToJS('# this is a comment')).toContain('// this is a comment')
+      expect(strip(transpileRubyToJS('# this is a comment'))).toContain('// this is a comment')
     })
 
     it('handles inline comments', () => {
       const js = transpileRubyToJS('play 60 # C4')
-      expect(js).toContain('await ctx.play(60')
+      expect(strip(js)).toContain('await ctx.play(60')
     })
   })
 
   describe('nil → null', () => {
     it('converts nil to null', () => {
-      expect(transpileRubyToJS('x = nil')).toContain('null')
+      expect(strip(transpileRubyToJS('x = nil'))).toContain('null')
     })
   })
 
@@ -183,12 +189,12 @@ live_loop :bass do
 end`
 
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('use_bpm(120)')  // top-level, no ctx
-      expect(js).toContain('live_loop("drums", async (ctx) => {')
-      expect(js).toContain('await ctx.sample("bd_haus")')
-      expect(js).toContain('live_loop("bass", async (ctx) => {')
-      expect(js).toContain('ctx.use_synth("tb303")')  // inside loop, has ctx
-      expect(js).toContain('await ctx.play("c2", { release: 0.2, cutoff: 80 })')
+      expect(strip(js)).toContain('use_bpm(120)')  // top-level, no ctx
+      expect(strip(js)).toContain('live_loop("drums", async (ctx) => {')
+      expect(strip(js)).toContain('await ctx.sample("bd_haus")')
+      expect(strip(js)).toContain('live_loop("bass", async (ctx) => {')
+      expect(strip(js)).toContain('ctx.use_synth("tb303")')  // inside loop, has ctx
+      expect(strip(js)).toContain('await ctx.play("c2", { release: 0.2, cutoff: 80 })')
     })
 
     it('transpiles the classic Sonic Pi demo', () => {
@@ -207,10 +213,10 @@ live_loop :melody do
 end`
 
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('await ctx.sample("bd_haus")')
-      expect(js).toContain('ctx.use_synth("prophet")')
-      expect(js).toContain('ctx.use_random_seed(42)')
-      expect(js).toContain('ctx.choose(["c4", "e4", "g4", "b4"])')
+      expect(strip(js)).toContain('await ctx.sample("bd_haus")')
+      expect(strip(js)).toContain('ctx.use_synth("prophet")')
+      expect(strip(js)).toContain('ctx.use_random_seed(42)')
+      expect(strip(js)).toContain('ctx.choose(["c4", "e4", "g4", "b4"])')
     })
   })
 
@@ -220,10 +226,10 @@ end`
 sleep 0.5
 play :d4`
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('live_loop("main", async (ctx) => {')
-      expect(js).toContain('await ctx.play(60')
-      expect(js).toContain('await ctx.sleep(0.5)')
-      expect(js).toContain('await ctx.play("d4")')
+      expect(strip(js)).toContain('live_loop("main", async (ctx) => {')
+      expect(strip(js)).toContain('await ctx.play(60')
+      expect(strip(js)).toContain('await ctx.sleep(0.5)')
+      expect(strip(js)).toContain('await ctx.play("d4")')
     })
 
     it('keeps use_bpm outside the implicit loop', () => {
@@ -231,7 +237,7 @@ play :d4`
 play 60
 sleep 0.5`
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('use_bpm(120)')
+      expect(strip(js)).toContain('use_bpm(120)')
       // use_bpm should come before the live_loop
       const bpmIdx = js.indexOf('use_bpm')
       const loopIdx = js.indexOf('live_loop')
@@ -247,8 +253,8 @@ live_loop :drums do
   sleep 0.5
 end`
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('live_loop("main"')
-      expect(js).toContain('live_loop("drums"')
+      expect(strip(js)).toContain('live_loop("main"')
+      expect(strip(js)).toContain('live_loop("drums"')
     })
 
     it('handles comments in bare code', () => {
@@ -256,9 +262,9 @@ end`
 sleep 0.5    # Pauses
 play :d4     # D4`
       const js = transpileRubyToJS(ruby)
-      expect(js).toContain('live_loop("main"')
-      expect(js).toContain('await ctx.play(60')
-      expect(js).toContain('await ctx.play("d4"')
+      expect(strip(js)).toContain('live_loop("main"')
+      expect(strip(js)).toContain('await ctx.play(60')
+      expect(strip(js)).toContain('await ctx.play("d4"')
     })
   })
 
@@ -291,8 +297,8 @@ play :d4     # D4`
   sleep 1
 end`
       const result = autoTranspile(code)
-      expect(result).toContain('live_loop("test"')
-      expect(result).toContain('await ctx.play(60)')
+      expect(strip(result)).toContain('live_loop("test"')
+      expect(strip(result)).toContain('await ctx.play(60)')
     })
 
     it('passes through JS code unchanged', () => {
