@@ -350,6 +350,7 @@ export class SonicPiEngine {
         midiNote: (event.params.note as number) ?? null,
         s: (event.params.synth as string) ?? (event.params.name as string) ?? null,
         srcLine: (event.params._srcLine as number) ?? null,
+        trackId: event.taskId,
       })
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))

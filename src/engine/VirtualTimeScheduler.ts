@@ -121,7 +121,7 @@ export class VirtualTimeScheduler {
 
     const task: TaskState = {
       id: name,
-      virtualTime: 0,
+      virtualTime: this.getAudioTime(),
       bpm: options?.bpm ?? 60,
       density: 1,
       currentSynth: options?.synth ?? 'beep',

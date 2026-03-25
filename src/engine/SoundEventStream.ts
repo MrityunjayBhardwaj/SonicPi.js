@@ -13,6 +13,8 @@ export interface SoundEvent {
   s: string | null
   /** Source line number (1-based) from the original code. Consumer computes char offsets. */
   srcLine: number | null
+  /** Which live_loop / task produced this event (e.g. "drums", "bass"). */
+  trackId: string | null
 }
 
 type SoundEventHandler = (event: SoundEvent) => void
