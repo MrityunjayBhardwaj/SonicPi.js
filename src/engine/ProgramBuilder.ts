@@ -21,6 +21,8 @@ export class ProgramBuilder {
   private rng: SeededRandom
   private ticks = new Map<string, number>()
   private _densityFactor: number = 1
+  private _nextRef: number = 1
+  private _lastRef: number = 0
 
   constructor(seed: number = 0) {
     this.rng = new SeededRandom(seed)
@@ -28,6 +30,9 @@ export class ProgramBuilder {
 
   get density(): number { return this._densityFactor }
   set density(d: number) { this._densityFactor = d }
+
+  /** Returns the node reference of the last play() call, for use with control(). */
+  get lastRef(): number { return this._lastRef }
 
   play(noteVal: number | string, opts?: Record<string, number>): this {
     const midi = typeof noteVal === 'string' ? noteToMidi(noteVal) : noteVal
@@ -37,6 +42,7 @@ export class ProgramBuilder {
     const cleanOpts = { ...opts }
     delete cleanOpts._srcLine
     delete (cleanOpts as Record<string, unknown>).synth
+    this._lastRef = this._nextRef++
     this.steps.push({
       tag: 'play',
       note: midi,

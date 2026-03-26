@@ -355,4 +355,38 @@ describe('ProgramBuilder', () => {
       expect(sleepStep.beats).toBe(0.25)
     })
   })
+
+  describe('lastRef (node references for control)', () => {
+    it('play() increments lastRef', () => {
+      const b = new ProgramBuilder()
+      b.play(60)
+      expect(b.lastRef).toBe(1)
+      b.play(72)
+      expect(b.lastRef).toBe(2)
+    })
+
+    it('control uses lastRef to target a specific play step', () => {
+      const b = new ProgramBuilder()
+      b.play(60, { note_slide: 1 } as Record<string, number>)
+      const ref = b.lastRef
+      b.sleep(1)
+      b.control(ref, { note: 65 })
+      const steps = b.build()
+      expect(steps).toHaveLength(3) // play, sleep, control
+      expect(steps[2].tag).toBe('control')
+      const ctrl = steps[2] as Extract<(typeof steps)[0], { tag: 'control' }>
+      expect(ctrl.nodeRef).toBe(1)
+      expect(ctrl.params.note).toBe(65)
+    })
+
+    it('slide params pass through play opts', () => {
+      const b = new ProgramBuilder()
+      b.play(60, { note_slide: 1, amp_slide: 0.5, cutoff_slide: 2 } as Record<string, number>)
+      const steps = b.build()
+      const playStep = steps[0] as Extract<(typeof steps)[0], { tag: 'play' }>
+      expect(playStep.opts.note_slide).toBe(1)
+      expect(playStep.opts.amp_slide).toBe(0.5)
+      expect(playStep.opts.cutoff_slide).toBe(2)
+    })
+  })
 })

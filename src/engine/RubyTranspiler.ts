@@ -477,6 +477,18 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
     return `${prefix}puts(${transpileExpression(printMatch[1])})`
   }
 
+  // --- Variable assignment ---
+  const assignMatch = line.match(/^(\w+)\s*=\s*(.+)$/)
+  if (assignMatch) {
+    const varName = assignMatch[1]
+    const rhs = transpileLine(assignMatch[2], insideLoop, srcLine)
+    // play/sample return `this` for chaining — use lastRef for node control
+    if (insideLoop && /^b\.(play|sample)\(/.test(rhs)) {
+      return `${rhs}; const ${varName} = b.lastRef`
+    }
+    return `const ${varName} = ${rhs}`
+  }
+
   // General expression — transpile Ruby syntax within it
   return transpileExpression(line)
 }

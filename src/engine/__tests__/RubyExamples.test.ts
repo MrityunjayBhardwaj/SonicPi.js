@@ -547,6 +547,23 @@ end
   })
 
   // =========================================================================
+  // 22. Slide parameters — s = play, control s
+  // =========================================================================
+  it('22. Slide parameters with control', async () => {
+    const { error, events } = await runCode(`
+live_loop :slide do
+  s = play 60, release: 8, note_slide: 1
+  sleep 1
+  control s, note: 65
+  sleep 1
+end
+    `)
+    expect(error).toBeUndefined()
+    // Should have at least the play event and the control
+    expect(events.length).toBeGreaterThanOrEqual(1)
+  })
+
+  // =========================================================================
   // 20. Full composition — drums + bass + melody
   // =========================================================================
   it('20. Full composition', async () => {

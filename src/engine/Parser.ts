@@ -823,12 +823,18 @@ function transpileSonicPiLine(line: string, insideLoop: boolean): string {
   // Variable assignment
   const assignMatch = line.match(/^(\w+)\s*=\s*(.+)$/)
   if (assignMatch) {
-    const rhs = transpileSonicPiLine(assignMatch[2], insideLoop)
-    // Check if the RHS was transpiled (has b. prefix)
-    if (rhs !== assignMatch[2]) {
-      return `const ${assignMatch[1]} = ${rhs}`
+    const varName = assignMatch[1]
+    const rhsRaw = assignMatch[2]
+    const rhs = transpileSonicPiLine(rhsRaw, insideLoop)
+    // play/sample return `this` for chaining — use lastRef for node control
+    if (insideLoop && /^b\.(play|sample)\(/.test(rhs)) {
+      return `${rhs}; const ${varName} = b.lastRef`
     }
-    return `const ${assignMatch[1]} = ${assignMatch[2]}`
+    // Check if the RHS was transpiled (has b. prefix)
+    if (rhs !== rhsRaw) {
+      return `const ${varName} = ${rhs}`
+    }
+    return `const ${varName} = ${rhsRaw}`
   }
 
   return line

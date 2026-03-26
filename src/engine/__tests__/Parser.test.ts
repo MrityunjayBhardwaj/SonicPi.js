@@ -247,6 +247,21 @@ end
     expect(code).toContain('while (true)')
   })
 
+  it('transpiles s = play to use lastRef for control', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  s = play 60, note_slide: 1
+  sleep 1
+  control s, note: 65
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('b.play(60')
+    expect(code).toContain('const s = b.lastRef')
+    expect(code).toContain('b.control(s')
+  })
+
   it('transpiles density with save/restore', () => {
     const { code, errors } = parseAndTranspile(`
 live_loop :test do
