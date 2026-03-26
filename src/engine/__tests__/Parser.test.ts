@@ -327,4 +327,49 @@ end
     expect(code).toContain('b.play(60)')
     expect(code).toContain('b.sleep(1)')
   })
+
+  it('transpiles .each do |n| to for-of loop', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  [60, 62, 64].each do |n|
+    play n
+    sleep 0.25
+  end
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('for (const n of [60, 62, 64])')
+    expect(code).toContain('b.play(n)')
+    expect(code).toContain('b.sleep(0.25)')
+  })
+
+  it('transpiles .each without block variable', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  [60, 62, 64].each do
+    play 60
+    sleep 0.25
+  end
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('for (const _item of [60, 62, 64])')
+  })
+
+  it('transpiles .each on a variable', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  notes = [60, 62, 64]
+  notes.each do |n|
+    play n
+    sleep 0.25
+  end
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('for (const n of notes)')
+  })
 })

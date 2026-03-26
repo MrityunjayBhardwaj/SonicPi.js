@@ -621,4 +621,21 @@ end
     expect(melody.length).toBeGreaterThanOrEqual(1)
   })
 
+  // =========================================================================
+  // 23. Array .each iteration
+  // =========================================================================
+  it('23. Array .each iteration', async () => {
+    const { error, events } = await runCode(`
+live_loop :arp do
+  [60, 64, 67].each do |n|
+    play n
+    sleep 0.25
+  end
+end
+    `)
+    expect(error).toBeUndefined()
+    // Should play 3 notes per iteration
+    expect(events.length).toBeGreaterThanOrEqual(3)
+  })
+
 })
