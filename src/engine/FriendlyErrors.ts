@@ -5,6 +5,8 @@
  * and what to try instead.
  */
 
+import { getSynthParams, getFxParams } from './SynthParams'
+
 export interface FriendlyError {
   title: string
   message: string
@@ -145,6 +147,33 @@ const ERROR_PATTERNS: Array<{
         message: `I don't know an FX called :${name}.` +
           (suggestion ? ` Did you mean :${suggestion}?` : '') +
           `\n\nAvailable FX include: ${KNOWN_FX.slice(0, 8).map(f => ':' + f).join(', ')}...`,
+      }
+    },
+  },
+  // Unknown parameter for synth or FX
+  {
+    test: (msg) => /unknown param|invalid.*param|unrecognised.*param|unrecognized.*param/i.test(msg),
+    transform: (msg) => {
+      // Try to extract synth/FX name and the bad param from the message
+      const synthMatch = msg.match(/synth[:\s]+["']?(\w+)["']?/i)
+      const fxMatch = msg.match(/fx[:\s]+["']?(\w+)["']?/i)
+      const paramMatch = msg.match(/param(?:eter)?[:\s]+["']?(\w+)["']?/i)
+
+      const badParam = paramMatch?.[1] ?? 'unknown'
+      const isFx = !!fxMatch
+      const name = fxMatch?.[1] ?? synthMatch?.[1] ?? 'unknown'
+
+      const validParams = isFx ? getFxParams(name) : getSynthParams(name)
+      const suggestion = validParams.length > 0 ? closestMatch(badParam, validParams) : null
+
+      const kind = isFx ? 'FX' : 'synth'
+      return {
+        title: `Unknown parameter :${badParam} for ${kind} :${name}`,
+        message: `The ${kind} :${name} doesn't have a parameter called :${badParam}.` +
+          (suggestion ? ` Did you mean :${suggestion}?` : '') +
+          `\n\nValid parameters for :${name} include:\n  ` +
+          validParams.slice(0, 12).map(p => ':' + p).join(', ') +
+          (validParams.length > 12 ? '...' : ''),
       }
     },
   },
