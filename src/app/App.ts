@@ -275,6 +275,10 @@ export class App {
       if (e.key === 'Escape') {
         this.handleStop()
       }
+      if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+        e.preventDefault()
+        this.exportSession()
+      }
     })
   }
 
@@ -349,6 +353,7 @@ export class App {
       this.engine.play()
       this.playing = true
       this.toolbar.setPlaying(true)
+      await this.sessionLog.logRun(code)
 
       // Connect scope
       const audio = this.engine.components.audio
@@ -379,6 +384,7 @@ export class App {
     this.playing = false
     this.toolbar.setPlaying(false)
     this.scope.disconnect()
+    this.sessionLog.logStop()
     this.console.logSystem('')
     this.console.logSystem('  Stopping all runs...')
     this.console.logSystem('')
@@ -419,8 +425,18 @@ export class App {
     this.editor.setValue(example.ruby)
     this.buffers[this.activeBuffer] = example.ruby
     this.saveBuffers()
+    this.sessionLog.logLoadExample(example.name, example.ruby)
     this.console.logSystem(`  Loaded: ${example.name} — ${example.description}`)
     if (this.playing) this.handlePlay()
+  }
+
+  private async exportSession(): Promise<void> {
+    if (this.sessionLog.length === 0) {
+      this.console.logSystem('  No session to export.')
+      return
+    }
+    await this.sessionLog.exportAndDownload()
+    this.console.logSystem('  Session log exported.')
   }
 
   dispose(): void {
