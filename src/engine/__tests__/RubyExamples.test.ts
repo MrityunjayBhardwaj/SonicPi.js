@@ -564,6 +564,22 @@ end
   })
 
   // =========================================================================
+  // 23. at — time-offset event spawning
+  // =========================================================================
+  it('23. at with time offsets', async () => {
+    const { error, events } = await runCode(`
+live_loop :chords do
+  at [0, 0.5, 1] do
+    play 60
+  end
+  sleep 2
+end
+    `)
+    expect(error).toBeUndefined()
+    expect(events.length).toBeGreaterThanOrEqual(3)
+  })
+
+  // =========================================================================
   // 20. Full composition — drums + bass + melody
   // =========================================================================
   it('20. Full composition', async () => {

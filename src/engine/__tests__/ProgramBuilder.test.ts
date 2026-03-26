@@ -305,6 +305,102 @@ describe('ProgramBuilder', () => {
     })
   })
 
+  describe('at', () => {
+    it('creates thread steps for each time offset', () => {
+      const b = new ProgramBuilder()
+      b.at([0, 0.5, 1], null, (inner, val) => {
+        inner.play(60)
+      })
+      const steps = b.build()
+      expect(steps).toHaveLength(3)
+      expect(steps.every(s => s.tag === 'thread')).toBe(true)
+    })
+
+    it('first thread (offset 0) has no sleep prefix', () => {
+      const b = new ProgramBuilder()
+      b.at([0, 0.5, 1], null, (inner, val) => {
+        inner.play(60)
+      })
+      const steps = b.build()
+      const body0 = (steps[0] as any).body
+      expect(body0).toHaveLength(1) // just play, no sleep
+      expect(body0[0].tag).toBe('play')
+    })
+
+    it('subsequent threads have sleep prefix matching offset', () => {
+      const b = new ProgramBuilder()
+      b.at([0, 0.5, 1], null, (inner, val) => {
+        inner.play(60)
+      })
+      const steps = b.build()
+
+      const body1 = (steps[1] as any).body
+      expect(body1).toHaveLength(2) // sleep 0.5, play
+      expect(body1[0].tag).toBe('sleep')
+      expect(body1[0].beats).toBe(0.5)
+
+      const body2 = (steps[2] as any).body
+      expect(body2).toHaveLength(2) // sleep 1, play
+      expect(body2[0].tag).toBe('sleep')
+      expect(body2[0].beats).toBe(1)
+    })
+
+    it('passes values from second array to buildFn', () => {
+      const received: unknown[] = []
+      const b = new ProgramBuilder()
+      b.at([0, 1, 2], ['c4', 'e4', 'g4'], (inner, val) => {
+        received.push(val)
+        inner.play(60)
+      })
+      expect(received).toEqual(['c4', 'e4', 'g4'])
+    })
+
+    it('cycles values when shorter than times', () => {
+      const received: unknown[] = []
+      const b = new ProgramBuilder()
+      b.at([0, 1, 2, 3], ['a', 'b'], (inner, val) => {
+        received.push(val)
+      })
+      expect(received).toEqual(['a', 'b', 'a', 'b'])
+    })
+
+    it('passes index when values is null', () => {
+      const received: unknown[] = []
+      const b = new ProgramBuilder()
+      b.at([0, 0.5, 1], null, (inner, val) => {
+        received.push(val)
+      })
+      expect(received).toEqual([0, 1, 2])
+    })
+
+    it('inherits currentSynth from parent', () => {
+      const b = new ProgramBuilder()
+      b.use_synth('prophet')
+      b.at([0], null, (inner) => {
+        inner.play(60)
+      })
+      const steps = b.build()
+      const threadBody = (steps[1] as any).body // steps[0] = useSynth
+      expect(threadBody[0].synth).toBe('prophet')
+    })
+
+    it('inherits density from parent', () => {
+      const b = new ProgramBuilder()
+      b.density = 2
+      b.at([0.5], null, (inner) => {
+        inner.sleep(1)
+      })
+      const steps = b.build()
+      const threadBody = (steps[0] as any).body
+      // sleep prefix: 0.5 / density(2) = 0.25
+      expect(threadBody[0].tag).toBe('sleep')
+      expect(threadBody[0].beats).toBe(0.25)
+      // body sleep: 1 / density(2) = 0.5
+      expect(threadBody[1].tag).toBe('sleep')
+      expect(threadBody[1].beats).toBe(0.5)
+    })
+  })
+
   describe('density', () => {
     it('density 2 halves sleep duration', () => {
       const b = new ProgramBuilder()

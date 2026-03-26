@@ -130,6 +130,20 @@ export class ProgramBuilder {
     return this
   }
 
+  at(times: number[], values: unknown[] | null, buildFn: (b: ProgramBuilder, ...args: unknown[]) => void): this {
+    for (let i = 0; i < times.length; i++) {
+      const offset = times[i]
+      const val = values ? values[i % values.length] : i
+      const inner = new ProgramBuilder(this.rng.next() * 0xFFFFFFFF)
+      inner.currentSynth = this.currentSynth
+      inner._densityFactor = this._densityFactor
+      if (offset > 0) inner.sleep(offset)
+      buildFn(inner, val)
+      this.steps.push({ tag: 'thread', body: inner.build() })
+    }
+    return this
+  }
+
   stop(): this {
     this.steps.push({ tag: 'stop' })
     return this

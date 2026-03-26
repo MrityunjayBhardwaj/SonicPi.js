@@ -274,6 +274,42 @@ end
     expect(code).not.toContain('"hello ${name} world"')
   })
 
+  it('transpiles at with times array', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  at [0, 0.5] do
+    play 60
+    sleep 0.25
+  end
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('b.at(')
+    expect(code).toContain('null, (b) => {')
+    expect(code).toContain('b.play(60)')
+    expect(code).toContain('b.sleep(0.25)')
+  })
+
+  it('transpiles at with times and values arrays', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  at [0, 1, 2], [:c4, :e4, :g4] do |beat, note|
+    play note
+    sleep 0.25
+  end
+  sleep 3
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('b.at(')
+    expect(code).toContain('"c4"')
+    expect(code).toContain('"e4"')
+    expect(code).toContain('"g4"')
+    expect(code).toContain('(b, beat, note) => {')
+    expect(code).toContain('b.play(note)')
+  })
+
   it('transpiles density with save/restore', () => {
     const { code, errors } = parseAndTranspile(`
 live_loop :test do

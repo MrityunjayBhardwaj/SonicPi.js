@@ -231,6 +231,35 @@ export function transpileRubyToJS(ruby: string): string {
       continue
     }
 
+    // --- expr.each do |var| ---
+    const eachMatch = code.match(
+      /^(.+)\.each\s+do\s*(?:\|(\w+)\|)?\s*$/
+    )
+    if (eachMatch) {
+      const iterable = transpileExpression(eachMatch[1])
+      const varName = eachMatch[2] ?? '_item'
+      result.push(`${indent}for (const ${varName} of ${iterable}) {${inlineComment}`)
+      blockStack.push('block')
+      i++
+      continue
+    }
+
+    // --- at [times] do / at [times], [values] do |params| ---
+    const atMatch = code.match(
+      /^at\s+(\[.+?\])(?:\s*,\s*(\[.+?\]))?\s+do\s*(?:\|(.+?)\|)?\s*$/
+    )
+    if (atMatch) {
+      const timesArr = transpileExpression(atMatch[1])
+      const valuesArr = atMatch[2] ? transpileExpression(atMatch[2]) : 'null'
+      const params = atMatch[3]
+        ? atMatch[3].split(',').map(a => a.trim()).join(', ')
+        : ''
+      result.push(`${indent}b.at(${timesArr}, ${valuesArr}, (b${params ? ', ' + params : ''}) => {${inlineComment}`)
+      blockStack.push('loop')  // 'loop' so body gets b. prefixes
+      i++
+      continue
+    }
+
     // --- in_thread do ---
     const inThreadMatch = code.match(/^in_thread\s+do\s*$/)
     if (inThreadMatch) {

@@ -11,7 +11,7 @@
  * Grammar (simplified):
  *   program     → (statement NL)*
  *   statement   → live_loop | with_fx | define | if_block | unless_block
- *               | times_loop | loop_block | in_thread | density
+ *               | times_loop | each_loop | loop_block | in_thread | density
  *               | expression
  *   live_loop   → 'live_loop' SYMBOL (',' sync_opt)? 'do' block 'end'
  *   with_fx     → 'with_fx' SYMBOL (',' args)? 'do' block 'end'
@@ -19,6 +19,7 @@
  *   if_block    → 'if' expr block ('elsif' expr block)* ('else' block)? 'end'
  *   unless_block → 'unless' expr block 'end'
  *   times_loop  → expr '.times' 'do' ('|' var '|')? block 'end'
+ *   each_loop   → expr '.each' 'do' ('|' var '|')? block 'end'
  *   loop_block  → 'loop' 'do' block 'end'
  *   in_thread   → 'in_thread' 'do' block 'end'
  *   density     → 'density' expr 'do' block 'end'
@@ -302,6 +303,12 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
       return
     }
 
+    // at [times] do ... end
+    if (t.type === 'word' && t.value === 'at') {
+      parseAtBlock()
+      return
+    }
+
     // density N do
     if (t.type === 'word' && t.value === 'density') {
       parseDensity()
@@ -565,6 +572,77 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     if (at('newline')) advance()
   }
 
+  function parseAtBlock(): void {
+    const startLine = peek().line
+    advance() // 'at'
+
+    // Collect times array: tokens until 'do' or comma followed by '[' (second array)
+    // Strategy: collect all tokens until 'do', split by comma at depth 0 to detect
+    // whether there's a second array argument
+    const allTokens: Token[] = []
+    while (!at('word', 'do') && !at('newline') && !at('eof')) {
+      allTokens.push(advance())
+    }
+
+    // Split into times and optional values by finding comma at depth 0 between ] and [
+    let timesStr = ''
+    let valuesStr = ''
+    let splitIdx = -1
+    let depth = 0
+    for (let j = 0; j < allTokens.length; j++) {
+      const tk = allTokens[j]
+      if (tk.type === 'lbracket') depth++
+      if (tk.type === 'rbracket') depth--
+      if (tk.type === 'comma' && depth === 0) {
+        // Check if there's a '[' ahead (values array)
+        const rest = allTokens.slice(j + 1)
+        if (rest.some(r => r.type === 'lbracket')) {
+          splitIdx = j
+          break
+        }
+      }
+    }
+
+    if (splitIdx >= 0) {
+      timesStr = allTokens.slice(0, splitIdx).map(t => transpileToken(t)).join(' ').trim()
+      valuesStr = allTokens.slice(splitIdx + 1).map(t => transpileToken(t)).join(' ').trim()
+    } else {
+      timesStr = allTokens.map(t => transpileToken(t)).join(' ').trim()
+    }
+
+    if (at('word', 'do')) advance()
+
+    // Optional |params|
+    let params: string[] = []
+    if (at('pipe')) {
+      advance()
+      while (!at('pipe') && !at('newline') && !at('eof')) {
+        const tk = advance()
+        if (tk.type !== 'comma') params.push(tk.value)
+      }
+      if (at('pipe')) advance()
+    }
+    skipNewlines()
+
+    const indent = getIndent()
+    // Build the callback signature
+    const paramList = params.length > 0 ? `, ${params.join(', ')}` : ''
+    output.push(`${indent}b.at(${timesStr}, ${valuesStr || 'null'}, (b${paramList}) => {`)
+
+    blockStack.push('loop')
+    const prevInsideLoop = insideLoop
+    insideLoop = true
+    parseBlock()
+    insideLoop = prevInsideLoop
+    blockStack.pop()
+
+    if (at('word', 'end')) advance()
+    else errors.push({ message: `Expected 'end' to close 'at' block (opened on line ${startLine})`, line: peek().line, column: peek().col })
+
+    output.push(`${indent}})`)
+    if (at('newline')) advance()
+  }
+
   function parseBlock(): void {
     skipNewlines()
     while (!at('eof') && !at('word', 'end') && !at('word', 'elsif') && !at('word', 'else')) {
@@ -603,6 +681,41 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
 
       const indent = getIndent()
       output.push(`${indent}for (let ${varName} = 0; ${varName} < ${transpileExpr(count)}; ${varName}++) {`)
+      blockStack.push('block')
+      parseBlock()
+      blockStack.pop()
+      if (at('word', 'end')) advance()
+      output.push(`${indent}}`)
+      return
+    }
+
+    // Check for expr.each do |var| pattern
+    const eachIdx = lineTokens.findIndex((t, i) =>
+      t.type === 'dot' && lineTokens[i + 1]?.value === 'each'
+    )
+    if (eachIdx >= 0 && lineTokens.some(t => t.value === 'do')) {
+      const iterableTokens = lineTokens.slice(0, eachIdx)
+      const iterable = iterableTokens.map((t, idx) => {
+        const val = transpileToken(t)
+        const next = iterableTokens[idx + 1]
+        if (t.type === 'dot' || next?.type === 'dot') return val
+        if (t.type === 'lbracket' || t.type === 'lparen') return val
+        if (next && ['comma', 'rbracket', 'rparen'].includes(next.type)) return val
+        return val + ' '
+      }).join('').trim()
+
+      // Find |var| if present
+      let varName = '_item'
+      const pipeIdx = lineTokens.findIndex(t => t.type === 'pipe')
+      if (pipeIdx >= 0) {
+        const endPipe = lineTokens.findIndex((t, i) => i > pipeIdx && t.type === 'pipe')
+        if (endPipe >= 0) {
+          varName = lineTokens.slice(pipeIdx + 1, endPipe).map(t => t.value).join('').trim()
+        }
+      }
+
+      const indent = getIndent()
+      output.push(`${indent}for (const ${varName} of ${transpileExpr(iterable)}) {`)
       blockStack.push('block')
       parseBlock()
       blockStack.pop()
