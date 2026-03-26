@@ -139,7 +139,8 @@ export function transpileRubyToJS(ruby: string): string {
   let i = 0
   // Track block types so `end` produces the correct closing bracket
   // 'loop' → `})`, 'block' → `}`, 'thread' → `})()`
-  const blockStack: Array<'loop' | 'block' | 'thread'> = []
+  const blockStack: Array<'loop' | 'block' | 'thread' | 'density'> = []
+  const definedFunctions = new Set<string>()
 
   while (i < lines.length) {
     let line = lines[i]
@@ -284,10 +285,11 @@ export function transpileRubyToJS(ruby: string): string {
     const densityMatch = code.match(/^density\s+(.+?)\s+do\s*$/)
     if (densityMatch) {
       // density N compresses time: all sleeps inside are divided by N
-      // We achieve this by temporarily changing the task's density factor
       const factor = transpileExpression(densityMatch[1])
-      result.push(`${indent}{ const __prev_density = 1; // density ${factor}${inlineComment}`)
-      blockStack.push('block')
+      result.push(`${indent}{${inlineComment}`)
+      result.push(`${indent}  const __prevDensity = b.density`)
+      result.push(`${indent}  b.density = __prevDensity * ${factor}`)
+      blockStack.push('density')
       i++
       continue
     }
@@ -295,8 +297,13 @@ export function transpileRubyToJS(ruby: string): string {
     // --- end ---
     if (code === 'end') {
       const blockType = blockStack.pop() ?? 'loop'
-      const closing = blockType === 'loop' ? '})' : blockType === 'thread' ? '})()' : '}'
-      result.push(`${indent}${closing}${inlineComment}`)
+      if (blockType === 'density') {
+        result.push(`${indent}  b.density = __prevDensity`)
+        result.push(`${indent}}${inlineComment}`)
+      } else {
+        const closing = blockType === 'loop' ? '})' : blockType === 'thread' ? '})()' : '}'
+        result.push(`${indent}${closing}${inlineComment}`)
+      }
       i++
       continue
     }
@@ -310,14 +317,32 @@ export function transpileRubyToJS(ruby: string): string {
       const args = defineMatch[2]
         ? defineMatch[2].split(',').map(a => a.trim()).join(', ')
         : ''
-      result.push(`${indent}async function ${name}(${args}) {${inlineComment}`)
-      blockStack.push('block')
+      definedFunctions.add(name)
+      result.push(`${indent}function ${name}(b${args ? ', ' + args : ''}) {${inlineComment}`)
+      blockStack.push('loop') // 'loop' so body lines get b. prefix (insideLoop = blockStack.includes('loop'))
+      i++
+      continue
+    }
+
+    // --- Call to user-defined function: inject b as first arg ---
+    const insideLoop = blockStack.includes('loop')
+    const firstWord = code.match(/^(\w+)/)
+    if (firstWord && definedFunctions.has(firstWord[1])) {
+      const fnName = firstWord[1]
+      const rest = code.slice(fnName.length).trim()
+      if (!rest) {
+        result.push(`${indent}${fnName}(b)${inlineComment}`)
+      } else if (rest.startsWith('(')) {
+        const inner = rest.slice(1, -1).trim()
+        result.push(`${indent}${fnName}(b${inner ? ', ' + transpileExpression(inner) : ''})${inlineComment}`)
+      } else {
+        result.push(`${indent}${fnName}(b, ${transpileExpression(rest)})${inlineComment}`)
+      }
       i++
       continue
     }
 
     // --- General line transformation ---
-    const insideLoop = blockStack.includes('loop')
     let transformed = transpileLine(code, insideLoop, i + 1)
     result.push(`${indent}${transformed}${inlineComment}`)
     i++

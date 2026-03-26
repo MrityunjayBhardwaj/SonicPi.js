@@ -509,6 +509,26 @@ end
   })
 
   // =========================================================================
+  // 20a. Define + call from live_loop
+  // =========================================================================
+  it('20a. Define and call from live_loop', async () => {
+    const { error, events } = await runCode(`
+define :bass do |n|
+  play n
+  sleep 0.25
+end
+
+live_loop :main do
+  bass :c2
+  bass :e2
+  sleep 0.5
+end
+    `)
+    expect(error).toBeUndefined()
+    expect(events.length).toBeGreaterThanOrEqual(2)
+  })
+
+  // =========================================================================
   // 20. Full composition — drums + bass + melody
   // =========================================================================
   it('20. Full composition', async () => {

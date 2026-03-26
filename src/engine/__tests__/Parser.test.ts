@@ -88,7 +88,7 @@ end
     expect(code).toContain('for (let i = 0; i < 4; i++)')
   })
 
-  it('transpiles define', () => {
+  it('transpiles define with b parameter and body prefixes', () => {
     const { code, errors } = parseAndTranspile(`
 define :bass_line do
   play :e2
@@ -96,7 +96,54 @@ define :bass_line do
 end
 `)
     expect(errors).toHaveLength(0)
-    expect(code).toContain('async function bass_line()')
+    expect(code).toContain('function bass_line(b)')
+    expect(code).not.toContain('async function')
+    expect(code).toContain('b.play("e2")')
+    expect(code).toContain('b.sleep(0.5)')
+  })
+
+  it('transpiles define with params', () => {
+    const { code, errors } = parseAndTranspile(`
+define :bass do |n|
+  play n
+  sleep 0.5
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('function bass(b, n)')
+    expect(code).toContain('b.play(n)')
+  })
+
+  it('rewrites call site for defined function', () => {
+    const { code, errors } = parseAndTranspile(`
+define :bass do |n|
+  play n
+  sleep 0.5
+end
+
+live_loop :main do
+  bass :c2
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('bass(b, "c2")')
+  })
+
+  it('rewrites call site with no args', () => {
+    const { code, errors } = parseAndTranspile(`
+define :hit do
+  sample :bd_haus
+  sleep 0.5
+end
+
+live_loop :drums do
+  hit
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('hit(b)')
   })
 
   it('transpiles in_thread', () => {

@@ -207,6 +207,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
   // Track block depth for b. prefix
   let insideLoop = false
   const blockStack: Array<'loop' | 'block' | 'thread'> = []
+  const definedFunctions = new Set<string>()
 
   function peek(): Token { return tokens[pos] ?? { type: 'eof', value: '', line: 0, col: 0 } }
   function advance(): Token { return tokens[pos++] }
@@ -422,6 +423,8 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     let name = 'my_func'
     if (at('symbol')) name = advance().value.slice(1)
 
+    definedFunctions.add(name)
+
     if (at('word', 'do')) advance()
 
     // Optional |params|
@@ -438,10 +441,15 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     skipNewlines()
 
     const indent = getIndent()
-    output.push(`${indent}async function ${name}(${params}) {`)
+    output.push(`${indent}function ${name}(b${params ? ', ' + params : ''}) {`)
+
+    const prevInsideLoop = insideLoop
+    insideLoop = true
     blockStack.push('block')
     parseBlock()
     blockStack.pop()
+    insideLoop = prevInsideLoop
+
     if (at('word', 'end')) advance()
     output.push(`${indent}}`)
     if (at('newline')) advance()
@@ -531,11 +539,19 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     skipNewlines()
 
     const indent = getIndent()
-    output.push(`${indent}{ // density ${factor}`)
+    output.push(`${indent}{`)
+    output.push(`${indent}  const __prevDensity = b.density`)
+    output.push(`${indent}  b.density = __prevDensity * ${factor.trim()}`)
+
+    const prevInsideLoop = insideLoop
+    insideLoop = true
     blockStack.push('block')
     parseBlock()
     blockStack.pop()
+    insideLoop = prevInsideLoop
+
     if (at('word', 'end')) advance()
+    output.push(`${indent}  b.density = __prevDensity`)
     output.push(`${indent}}`)
     if (at('newline')) advance()
   }
@@ -601,6 +617,37 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
       return val + ' '
     }).join('').trim()
     const indent = getIndent()
+
+    // Rewrite calls to user-defined functions to inject `b` as first arg
+    if (insideLoop && lineTokens.length > 0 && lineTokens[0].type === 'word' && definedFunctions.has(lineTokens[0].value)) {
+      const fnName = lineTokens[0].value
+      // Collect arg tokens (everything after the function name)
+      const argTokens = lineTokens.slice(1)
+      if (argTokens.length === 0) {
+        output.push(`${indent}${fnName}(b)`)
+      } else {
+        // Reconstruct args, transpiling tokens
+        const args = argTokens.map((t, idx) => {
+          const val = transpileToken(t)
+          const next = argTokens[idx + 1]
+          const prev = argTokens[idx - 1]
+          if (t.type === 'dot' || next?.type === 'dot') return val
+          if (prev?.type === 'dot') return val
+          if (next && ['comma', 'rparen', 'rbracket'].includes(next.type)) return val
+          if (t.type === 'lparen' || t.type === 'lbracket') return val
+          return val + ' '
+        }).join('').trim()
+        // If args already have parens, inject b after opening paren
+        if (args.startsWith('(')) {
+          const inner = args.slice(1, -1).trim()
+          output.push(`${indent}${fnName}(b${inner ? ', ' + inner : ''})`)
+        } else {
+          output.push(`${indent}${fnName}(b, ${transpileSonicPiLine(args, false)})`)
+        }
+      }
+      return
+    }
+
     const transpiled = transpileSonicPiLine(rawLine, insideLoop)
     output.push(`${indent}${transpiled}`)
   }
