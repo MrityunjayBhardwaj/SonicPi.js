@@ -12,7 +12,7 @@ export interface FriendlyError {
   original: Error
 }
 
-const KNOWN_SYNTHS = [
+export const KNOWN_SYNTHS = [
   'beep', 'saw', 'prophet', 'tb303', 'supersaw', 'pluck',
   'pretty_bell', 'piano', 'dsaw', 'dpulse', 'dtri', 'fm',
   'mod_fm', 'mod_saw', 'mod_pulse', 'mod_tri', 'sine',
@@ -22,7 +22,7 @@ const KNOWN_SYNTHS = [
   'tech_saws', 'sound_in', 'sound_in_stereo',
 ]
 
-const KNOWN_SAMPLES = [
+export const KNOWN_SAMPLES = [
   'bd_haus', 'bd_zum', 'bd_808', 'bd_boom', 'bd_klub', 'bd_pure', 'bd_tek',
   'sn_dub', 'sn_dolf', 'sn_zome', 'sn_generic',
   'hat_snap', 'hat_cab', 'hat_raw',
@@ -31,6 +31,16 @@ const KNOWN_SAMPLES = [
   'bass_dnb_f', 'bass_hit_c', 'bass_thick_c', 'bass_voxy_c',
   'elec_beep', 'elec_bell', 'elec_blip', 'elec_chime', 'elec_ping',
   'perc_bell', 'perc_snap', 'perc_swoosh',
+]
+
+export const KNOWN_FX = [
+  'reverb', 'echo', 'delay', 'distortion', 'slicer',
+  'wobble', 'ixi_techno', 'compressor', 'rlpf', 'rhpf',
+  'hpf', 'lpf', 'normaliser', 'pan', 'band_eq',
+  'flanger', 'krush', 'bitcrusher', 'ring_mod', 'chorus',
+  'octaver', 'vowel', 'tanh', 'gverb', 'pitch_shift',
+  'whammy', 'tremolo', 'record', 'sound_out', 'sound_out_stereo',
+  'level', 'mono', 'autotuner',
 ]
 
 /** Try to extract a line number from an error stack trace. */
@@ -119,6 +129,22 @@ const ERROR_PATTERNS: Array<{
         message: `I couldn't find a sample called :${name}.` +
           (suggestion ? ` Did you mean :${suggestion}?` : '') +
           `\n\nSome built-in samples: ${KNOWN_SAMPLES.slice(0, 6).map(s => ':' + s).join(', ')}...`,
+      }
+    },
+  },
+  // Unknown FX
+  {
+    test: (msg) => /unknown fx|fx.*not found|loadSynthDef.*fx/i.test(msg),
+    transform: (msg) => {
+      const nameMatch = msg.match(/sonic-pi-fx_(\w+)/i) ??
+                         msg.match(/fx[:\s]+["']?(\w+)["']?/i)
+      const name = nameMatch?.[1]?.replace('sonic-pi-fx_', '') ?? 'unknown'
+      const suggestion = closestMatch(name, KNOWN_FX)
+      return {
+        title: `FX :${name} not found`,
+        message: `I don't know an FX called :${name}.` +
+          (suggestion ? ` Did you mean :${suggestion}?` : '') +
+          `\n\nAvailable FX include: ${KNOWN_FX.slice(0, 8).map(f => ':' + f).join(', ')}...`,
       }
     },
   },

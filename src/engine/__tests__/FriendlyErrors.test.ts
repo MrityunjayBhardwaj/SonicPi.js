@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { friendlyError, formatFriendlyError } from '../FriendlyErrors'
+import { friendlyError, formatFriendlyError, KNOWN_FX } from '../FriendlyErrors'
 
 describe('FriendlyErrors', () => {
   it('wraps unknown synth errors with suggestions', () => {
@@ -49,6 +49,26 @@ describe('FriendlyErrors', () => {
     const fe = friendlyError(err)
     expect(fe.title).toContain('drums')
     expect(fe.message).toContain('live_loop')
+  })
+
+  it('wraps unknown FX errors with suggestions', () => {
+    const err = new Error('loadSynthDef failed: sonic-pi-fx_reverbb not found')
+    const fe = friendlyError(err)
+    expect(fe.title).toContain('reverbb')
+    expect(fe.message).toContain('reverb') // suggests closest match
+  })
+
+  it('wraps unknown FX errors without close match', () => {
+    const err = new Error('unknown fx: zzzzzznotreal')
+    const fe = friendlyError(err)
+    expect(fe.title).toContain('zzzzzznotreal')
+    expect(fe.message).toContain('Available FX include')
+  })
+
+  it('exports KNOWN_FX as a non-empty list', () => {
+    expect(Array.isArray(KNOWN_FX)).toBe(true)
+    expect(KNOWN_FX.length).toBeGreaterThan(0)
+    expect(KNOWN_FX).toContain('reverb')
   })
 
   it('falls back gracefully for unrecognized errors', () => {
