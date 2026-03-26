@@ -110,6 +110,7 @@ function translateSampleOpts(
       case 'res':
       case 'start':
       case 'finish':
+      case 'loop':
         result[key] = value
         break
 
