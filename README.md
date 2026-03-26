@@ -1,63 +1,29 @@
 # Sonic Pi Web
 
-Browser-native reimplementation of [Sonic Pi](https://sonic-pi.net)'s temporal scheduling model in JavaScript.
+**Browser-native live coding music environment powered by SuperCollider synthesis.**
 
-Write live-coded music in the browser with the same `play`, `sleep`, `live_loop` semantics as Sonic Pi — zero install, works anywhere.
+<!-- badges -->
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
-## The Core Innovation
+---
 
-`sleep()` returns a Promise that **only the VirtualTimeScheduler can resolve**. This gives JavaScript cooperative concurrency with virtual time — Sonic Pi's exact semantics without thread blocking.
+## What is this?
 
-```typescript
-// Inside the scheduler:
-scheduleSleep(taskId, beats): Promise<void> {
-  return new Promise(resolve => {
-    this.queue.push({ time: this.virtualTime + beats, resolve })
-    this.virtualTime += beats
-  })
-}
-
-// Only tick() resolves sleep promises — driven by setInterval(25ms)
-tick(targetTime) {
-  while (this.queue.peek()?.time <= targetTime) {
-    this.queue.pop().resolve()  // resumes the async function
-  }
-}
-```
-
-Previous attempts tried to make `sleep` block the JS thread (impossible). Our insight: you don't need blocking, you need scheduler-controlled Promise resolution.
+Sonic Pi Web is a browser-native reimplementation of [Sonic Pi](https://sonic-pi.net/)'s live coding environment. It runs real SuperCollider synthesis in the browser via SuperSonic (scsynth compiled to WebAssembly) with a scheduler-controlled Promise architecture that gives JavaScript cooperative concurrency with virtual time. Zero install -- open a browser and start making music.
 
 ## Quick Start
 
 ```bash
-npm install sonic-pi-web
+npx sonic-pi-web
 ```
 
-```typescript
-import { SonicPiEngine } from 'sonic-pi-web'
+This starts a local server and opens the editor in your default browser. That's it.
 
-const engine = new SonicPiEngine()
-await engine.init()
+## Try It Now
 
-await engine.evaluate(`
-  live_loop("drums", async ({sample, sleep}) => {
-    await sample("bd_haus")
-    await sleep(0.5)
-    await sample("sn_dub")
-    await sleep(0.5)
-  })
-`)
-
-engine.play()
-```
-
-### Ruby Syntax (Auto-Transpiled)
-
-You can also write Sonic Pi's Ruby-style syntax — it auto-transpiles:
+Paste this into the editor and press Run:
 
 ```ruby
-use_bpm 120
-
 live_loop :drums do
   sample :bd_haus
   sleep 0.5
@@ -66,124 +32,142 @@ live_loop :drums do
 end
 ```
 
-## API Reference
+Add a second loop while it's playing -- the drums keep going:
 
-### Engine
-
-```typescript
-const engine = new SonicPiEngine(options?)
-await engine.init()                    // Initialize audio (requires user gesture)
-await engine.evaluate(code)            // Evaluate Sonic Pi code
-engine.play()                          // Start playback
-engine.stop()                          // Stop all loops
-engine.dispose()                       // Clean up resources
-engine.setRuntimeErrorHandler(fn)      // Handle runtime errors
-engine.components                      // Access audio/viz components
+```ruby
+live_loop :bass do
+  use_synth :tb303
+  play :e2, release: 0.3, cutoff: 70
+  sleep 0.5
+end
 ```
 
-### DSL Functions (inside live_loop)
+## Features
 
-| Function | Description |
-|----------|-------------|
-| `play(note, opts?)` | Trigger a synth note (MIDI number or name like `"c4"`) |
-| `sleep(beats)` | Wait for N beats (suspends the loop) |
-| `sample(name, opts?)` | Play a sample (`"bd_haus"`, `"sn_dub"`, etc.) |
-| `use_synth(name)` | Set synth for this loop (`"beep"`, `"saw"`, `"tb303"`, etc.) |
-| `use_bpm(bpm)` | Set tempo for this loop |
-| `cue(name)` | Broadcast a cue event |
-| `sync(name)` | Wait for a cue (inherits cue's virtual time) |
-| `control(node, opts)` | Modify a running synth node |
-| `with_fx(name, opts?, fn)` | Wrap code in an audio effect |
-| `ring(...values)` | Circular array (wraps around on index) |
-| `spread(hits, total)` | Euclidean rhythm pattern |
-| `chord(root, type)` | Generate chord notes |
-| `scale(root, type)` | Generate scale notes |
-| `tick(name?)` | Auto-incrementing counter (resets each loop iteration) |
-| `look(name?)` | Read tick counter without incrementing |
-| `rrand(min, max)` | Seeded random float in range |
-| `choose(array)` | Pick random element from array |
-| `dice(sides)` | Random integer 1..sides |
-| `use_random_seed(n)` | Set deterministic random seed |
+### DSL
 
-### Supported Synths
+Full Sonic Pi Ruby DSL with automatic transpilation to JavaScript:
 
-`beep`, `saw`, `prophet`, `tb303`, `supersaw`, `pluck`, `pretty_bell`, `piano`, `dsaw`, `dpulse`, `dtri`, `fm`, `mod_fm`, `mod_saw`, `mod_pulse`, `mod_tri`, `sine`, `square`, `tri`, `pulse`, `noise`, `pnoise`, `bnoise`, `gnoise`, `cnoise`, `chipbass`, `chiplead`, `chipnoise`, `dark_ambience`, `hollow`, `growl`, `zawa`, `blade`, `tech_saws`
+- `live_loop`, `in_thread`, `loop`, `N.times`
+- `play`, `sleep`, `sample`, `use_synth`, `use_bpm`
+- `with_fx` (nested effect chains)
+- `define` (named functions)
+- `density`, `at`, `time_warp`
+- `sync`, `cue` (inter-loop coordination with virtual time inheritance)
+- `control` with parameter slides
+- `.each`, `.map`, `.select`, `.reject`
+- `begin`/`rescue`, `if`/`elsif`/`else`/`unless`
+- `rrand`, `rrand_i`, `dice`, `one_in`, `choose` (seeded PRNG)
 
-All 127 Sonic Pi SynthDefs are available via SuperSonic.
+### Music Theory
 
-### Supported FX
+- 30+ chord types (`major`, `minor`, `dom7`, `dim`, `aug`, ...)
+- 50+ scales (`major`, `minor_pentatonic`, `dorian`, `blues`, ...)
+- `note`, `note_range`, `chord_invert`
+- `tick`, `look` (stateful iteration)
+- `ring`, `knit`, `range`, `spread` (Euclidean rhythms)
 
-`reverb`, `echo`, `distortion`, `slicer`, `flanger`, `wobble`, `lpf`, `hpf`, `bpf`, `nhpf`, `nlpf`, and more — any FX SynthDef included in the SuperSonic package.
+### Audio
 
-## Architecture
+- 127 SuperCollider SynthDefs (same definitions as desktop Sonic Pi)
+- Sample library organized by category (`bd_haus`, `sn_dub`, `hat_snap`, ...)
+- FX chain: reverb, distortion, echo, flanger, lpf, hpf, and more
+- `live_audio` for microphone input
+- Recording to WAV via `Recorder`
+- MIDI bridge for external controllers
+- Ableton Link synchronization
 
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
-│ User Code    │────→│ Transpiler   │────→│ DSL Context      │
-│ (Ruby or JS) │     │ (Ruby→JS +   │     │ (task-bound API) │
-│              │     │  add awaits) │     │                  │
-└──────────────┘     └──────────────┘     └────────┬─────────┘
-                                                    │
-                     ┌──────────────┐     ┌────────▼─────────┐
-                     │ SuperSonic   │◄────│ VirtualTime      │
-                     │ (scsynth     │     │ Scheduler        │
-                     │  WASM)       │     │ (MinHeap +       │
-                     │              │     │  Promise control) │
-                     └──────────────┘     └──────────────────┘
-```
+### Editor
 
-**Key components:**
+- CodeMirror 6 with Ruby syntax highlighting
+- Auto-indent and bracket matching
+- 10 buffer tabs (like desktop Sonic Pi)
+- 10 built-in examples from beginner to advanced
+- Friendly error messages with line numbers
 
-- **VirtualTimeScheduler** — The core innovation. Cooperative async scheduler with a MinHeap priority queue. Multiple `live_loop`s run concurrently via Promise suspension.
-- **DSLContext** — Task-bound API functions. Each loop gets its own `play`, `sleep`, etc. — no shared mutable state.
-- **SuperSonicBridge** — Wrapper around SuperSonic (scsynth compiled to WASM AudioWorklet). Handles synth/sample triggering, FX routing, and audio bus allocation.
-- **Transpiler** — Two-stage: Ruby→JS transpilation (regex-based), then missing `await` insertion.
-- **CaptureScheduler** — Fast-forward mode for pattern querying. Resolves all sleeps immediately, collects events.
-- **FriendlyErrors** — Beginner-friendly error messages matching Sonic Pi's style.
+### Security
 
-## Examples
+- Proxy-based sandbox isolating student code from browser globals
+- Session logging with Ed25519 cryptographic signing
+- Content Security Policy (CSP) ready for institutional deployment
 
-The package includes 10 built-in examples:
+## For Developers
 
-```typescript
-import { examples, getExample } from 'sonic-pi-web'
+Embed the engine in your own application:
 
-// List all examples
-examples.forEach(e => console.log(e.name, '-', e.description))
+```ts
+import { SonicPiEngine } from '@spw/core'
 
-// Get a specific example
-const beat = getExample('Basic Beat')
-await engine.evaluate(beat.ruby)  // or beat.js
+const engine = new SonicPiEngine()
+await engine.init()
+await engine.evaluate(`
+  live_loop :beat do
+    sample :bd_haus
+    sleep 0.5
+  end
+`)
+engine.play()
 ```
 
-Available: Hello Beep, Basic Beat, Ambient Pad, Arpeggio, Euclidean Rhythm, Random Melody, Sync/Cue, Multi-Layer, FX Chain, Minimal Techno.
+The engine exposes components for visualization and analysis:
 
-## Compatibility
+```ts
+const components = engine.getComponents()
 
-This is **not** a full Sonic Pi reimplementation. It covers the core scheduling model and most common API functions. Known limitations:
+// Subscribe to sound events
+components.streaming.eventStream.subscribe(event => {
+  console.log(event.type, event.time)
+})
 
-- **Transpiler**: Regex-based, handles ~85% of real Sonic Pi code. Complex Ruby syntax (method chains, string interpolation, multi-line expressions) may not transpile correctly.
-- **Audio**: Depends on SuperSonic (scsynth WASM). Some synths/FX may behave slightly differently than desktop Sonic Pi.
-- **No MIDI/OSC**: Browser environment doesn't support Sonic Pi's MIDI out or OSC communication.
-- **No `live_audio`**: Real-time audio input not implemented.
-- **No `time_warp`**: Retroactive scheduling not implemented.
-- **Timing**: Browser tab throttling can affect timing when the tab is in the background.
-
-The JS-native API is first-class. Ruby syntax support is a convenience layer.
-
-## Audio Engine
-
-Audio synthesis uses [SuperSonic](https://github.com/nicholasgasior/supersonic-scsynth) — SuperCollider's `scsynth` compiled to WebAssembly as an AudioWorklet. It loads from CDN at runtime (GPL core is never bundled).
-
-## Development
-
-```bash
-npm install
-npm test              # Run tests (Vitest)
-npm run typecheck     # TypeScript check
-npm run dev           # Vite dev server
+// Query deterministic output (no audio needed)
+const events = await components.capture.queryRange(0, 4)
 ```
+
+## Documentation
+
+- [Getting Started](docs/GETTING-STARTED.md)
+- [API Reference](docs/API.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [DSL Reference](docs/DSL-REFERENCE.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+
+## Built With
+
+- **VirtualTimeScheduler** -- scheduler-controlled Promise resolution for cooperative concurrency
+- **SuperSonic** -- scsynth (SuperCollider) compiled to WebAssembly
+- **CodeMirror 6** -- extensible code editor for the browser
+- **Vite** -- build tooling and dev server
+
+## How It Works
+
+`sleep()` returns a Promise that only the VirtualTimeScheduler can resolve. This gives JavaScript cooperative concurrency with virtual time -- multiple `live_loop`s run concurrently, each advancing through their own timeline, with the scheduler controlling exactly when each one wakes up. Previous attempts at browser-based Sonic Pi tried to make `sleep` block the JavaScript thread (impossible without freezing the UI). Our insight: you don't need blocking, you need scheduler-controlled Promise resolution.
+
+## Compatibility with Desktop Sonic Pi
+
+Approximately 95% of Sonic Pi syntax runs unmodified. The Ruby DSL is transpiled to JavaScript through a recursive descent parser that handles Sonic Pi's idiomatic patterns.
+
+**What matches exactly:**
+
+- Seeded PRNG (Mersenne Twister MT19937) -- same random sequences as desktop
+- SynthDef definitions -- same SuperCollider synthesis graphs
+- Sample names and categories
+- Music theory (chords, scales, rings, spreads)
+- Timing semantics (virtual time, hot-swap, sync/cue)
+
+**Differences:**
+
+- No OSC output (browser networking restrictions)
+- No Erlang runtime (scheduling is pure JavaScript)
+- Browser audio latency is higher than native (~20ms vs ~5ms depending on hardware)
+- Some niche Ruby syntax may not be covered by the transpiler
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE) for details.
+
+## Credits
+
+Based on [Sonic Pi](https://sonic-pi.net/) by Sam Aaron and contributors. Sonic Pi Web is an independent reimplementation -- it does not share code with the desktop application.
+
+SuperSonic (scsynth WASM) by the SuperSonic contributors. Loaded via CDN at runtime (GPL-licensed, never bundled).
