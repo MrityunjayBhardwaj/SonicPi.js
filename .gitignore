@@ -9,6 +9,9 @@ artifacts/
 # Planning artifacts (internal)
 .planning/
 
+# Claude Code instructions (internal tooling, not part of the project)
+CLAUDE.md
+
 # Test results
 test-results/
 
