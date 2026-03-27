@@ -1,10 +1,10 @@
-# Contributing to Sonic Pi Web
+# Contributing to SonicPi.js
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/user/sonic-pi-web
-cd sonic-pi-web
+git clone https://github.com/user/sonicpi.js
+cd sonicpi.js
 npm install
 npm run dev        # starts dev server at localhost:5173
 npm test           # runs vitest

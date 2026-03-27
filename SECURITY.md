@@ -1,12 +1,12 @@
-# Security Guide -- Sonic Pi Web
+# Security Guide -- SonicPi.js
 
 ## Overview
 
-Sonic Pi Web runs untrusted student code in the browser. This document covers
+SonicPi.js runs untrusted student code in the browser. This document covers
 the security measures in place and how to configure Content Security Policy (CSP)
 headers, sandbox behavior, and session logging for institutional deployment.
 
-This guide is written for IT administrators deploying Sonic Pi Web on university
+This guide is written for IT administrators deploying SonicPi.js on university
 or school networks. No JavaScript knowledge is required.
 
 ---
@@ -59,7 +59,7 @@ on any object can potentially reach the `Function` constructor and break out of
 the sandbox. This is mitigated by `validateCode()`, which scans student code for
 `constructor` and `__proto__` access before execution and issues warnings.
 
-This is a defense-in-depth measure, not a hard boundary. Sonic Pi Web is designed
+This is a defense-in-depth measure, not a hard boundary. SonicPi.js is designed
 for educational environments where students are not adversarial. It is not suitable
 as a general-purpose untrusted code execution sandbox.
 
@@ -131,7 +131,7 @@ Make sure `mod_headers` is enabled: `a2enmod headers && systemctl reload apache2
 
 ### Strict CSP (no CDN)
 
-Some institutional networks block all external CDN traffic. Sonic Pi Web can run
+Some institutional networks block all external CDN traffic. SonicPi.js can run
 without CDN access if you bundle the dependencies locally.
 
 To remove CDN requirements:
@@ -273,7 +273,7 @@ For identity verification, combine with your institution's authentication system
 
 ## Deployment Checklist
 
-Use this checklist when deploying Sonic Pi Web on your institution's servers.
+Use this checklist when deploying SonicPi.js on your institution's servers.
 
 - [ ] **Set CSP headers** on your web server (see nginx/Apache examples above)
 - [ ] **Pin CDN versions** -- already done in the source code, no action needed

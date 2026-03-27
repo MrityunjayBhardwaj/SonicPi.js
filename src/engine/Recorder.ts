@@ -119,7 +119,7 @@ export class Recorder {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = filename ?? `sonic-pi-web-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.wav`
+    a.download = filename ?? `sonicpi-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.wav`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)

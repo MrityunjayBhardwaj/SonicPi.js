@@ -83,7 +83,7 @@ export class CollaborationSession {
 
     // WebRTC provider — peer-to-peer, no server
     this.provider = new WebrtcProvider(
-      `sonic-pi-web-${roomId}`,
+      `sonicpi-${roomId}`,
       this.doc as unknown as InstanceType<typeof Y.Doc>,
       { signaling: ['wss://signaling.yjs.dev'] }
     ) as unknown as WebrtcProvider

@@ -1,4 +1,4 @@
-# Sonic Pi Web — Roadmap
+# SonicPi.js — Roadmap
 
 ## Completed
 
@@ -32,7 +32,7 @@ Turn the basic playground into a polished standalone experience that matches Son
 - [x] Toolbar: Play, Stop, BPM display, example selector
 - [x] Dark theme matching Sonic Pi's aesthetic
 - [x] Mobile-friendly (works on tablets)
-- [x] `npx sonic-pi-web` CLI launcher
+- [x] `npx sonicpi.js` CLI launcher
 
 ### 1.2 Editor
 - [x] CodeMirror 6 (NOT Monaco — lightweight, ~50KB vs ~2MB)
@@ -163,47 +163,47 @@ Three packages from day one. A developer who finds the engine shouldn't have to
 install an editor they don't need. A university IT admin who checks for security
 shouldn't have to dig through engine code. Nobody files an issue — they just leave.
 
-### @sonic-pi-web/core
+### @sonicpi.js/core
 - [ ] Pure engine: VirtualTimeScheduler, DSL, SuperSonic bridge, transpilers
 - [ ] Zero security opinion — caller's responsibility
 - [ ] ~50KB, MIT license
-- [ ] README: "npm install @sonic-pi-web/core" + 5-line usage example
+- [ ] README: "npm install @sonicpi.js/core" + 5-line usage example
 - [ ] For: struCode adapter, custom integrations, power users
 - [ ] npm page answers: "Can I embed a Sonic Pi engine?" → Yes
 
-### @sonic-pi-web/sandbox
+### @sonicpi.js/sandbox
 - [ ] Sandboxed execution wrapper (blocked globals: fetch, DOM, eval)
 - [ ] SRI verification for CDN resources
 - [ ] Session logging + Ed25519 signing
 - [ ] ~10KB, MIT license
-- [ ] README: "npm install @sonic-pi-web/sandbox" + education platform example
+- [ ] README: "npm install @sonicpi.js/sandbox" + education platform example
 - [ ] For: education platforms, any app running untrusted student code
 - [ ] npm page answers: "Is it safe for my school?" → Yes
 
-### sonic-pi-web (CLI + app)
+### sonicpi.js (CLI + app)
 - [ ] Standalone app (CodeMirror + scope + console + toolbar)
 - [ ] Depends on core + sandbox
-- [ ] `npx sonic-pi-web` launches browser
+- [ ] `npx sonicpi.js` launches browser
 - [ ] MIT license
-- [ ] README: "npx sonic-pi-web" + screenshot
+- [ ] README: "npx sonicpi.js" + screenshot
 - [ ] For: end users, teachers, students
 - [ ] npm page answers: "Can I use Sonic Pi in my browser?" → Yes
 
 ### Monorepo Structure
 ```
-sonic-pi-web/
+sonicpi.js/
   packages/
     core/
       src/engine/          ← VirtualTimeScheduler, DSL, SuperSonic, transpilers
-      package.json         ← "@sonic-pi-web/core"
+      package.json         ← "@sonicpi.js/core"
     sandbox/
       src/security/        ← Sandbox, SRI, SessionLog, CodeSign
-      package.json         ← "@sonic-pi-web/sandbox"
+      package.json         ← "@sonicpi.js/sandbox"
     app/
       src/app/             ← CodeMirror, scope, console, toolbar
       src/index.html
       bin/cli.js           ← npx entry point
-      package.json         ← "sonic-pi-web" (depends on core + sandbox)
+      package.json         ← "sonicpi.js" (depends on core + sandbox)
   package.json             ← workspace root
 ```
 
@@ -231,7 +231,7 @@ sonic-pi-web/
 - [ ] MIDI device selector in toolbar
 
 ### 5.5 Ableton Link (via WebRTC)
-- [ ] @sonic-pi-web/link-bridge companion (Node.js)
+- [ ] @sonicpi.js/link-bridge companion (Node.js)
 - [ ] WebRTC DataChannel (unreliable mode, ~1-2ms phase lock)
 - [ ] SyncComponent for tempo/beat/phase
 - [ ] Auto-discover bridge on localhost
@@ -262,7 +262,7 @@ sonic-pi-web/
 
 **What v1.0 uses instead:**
 - Regex-based RubyTranspiler for Ruby → JS conversion
-- Full re-evaluate on every Play press (sonicPiWeb standalone)
+- Full re-evaluate on every Play press (sonicpi.js standalone)
 - Full re-evaluate + scheduler hot-swap on edit (struCode live mode)
 - Both are fast enough: <5ms for typical patterns, well within frame budget
 
@@ -286,10 +286,10 @@ not the parser level (which tokens changed). Hot-swap handles it.
 3. Headline: "Sonic Pi in the browser — zero install, SuperCollider synthesis"
 
 ### struCode Integration
-- sonicPiWeb is the engine — struCode is the platform
-- struCode's adapter imports @sonic-pi-web/core
+- sonicpi.js is the engine — struCode is the platform
+- struCode's adapter imports @sonicpi.js/core
 - Viz, inline zones, engine switching handled by struCode
-- sonicPiWeb never knows about struCode's visualization layer
+- sonicpi.js never knows about struCode's visualization layer
 
 ### Upgrade Path
 ```
