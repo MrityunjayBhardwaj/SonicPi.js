@@ -48,7 +48,17 @@ interface Token {
 
 function tokenize(source: string): Token[] {
   const tokens: Token[] = []
-  const lines = source.split('\n')
+  // Join lines ending with trailing comma (Ruby line continuation)
+  const rawLines = source.split('\n')
+  const lines: string[] = []
+  for (let i = 0; i < rawLines.length; i++) {
+    let line = rawLines[i]
+    while (i + 1 < rawLines.length && line.trimEnd().endsWith(',')) {
+      i++
+      line = line.trimEnd() + ' ' + rawLines[i].trim()
+    }
+    lines.push(line)
+  }
 
   for (let lineNum = 0; lineNum < lines.length; lineNum++) {
     const line = lines[lineNum]
@@ -421,10 +431,11 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     skipNewlines()
 
     const indent = getIndent()
+    const prefix = insideLoop ? 'b.' : ''
     if (opts) {
-      output.push(`${indent}b.with_fx("${fxName}", ${transpileExpr(opts)}, (b) => {`)
+      output.push(`${indent}${prefix}with_fx("${fxName}", ${transpileArgs(opts)}, (b) => {`)
     } else {
-      output.push(`${indent}b.with_fx("${fxName}", (b) => {`)
+      output.push(`${indent}${prefix}with_fx("${fxName}", (b) => {`)
     }
 
     blockStack.push('loop')
@@ -484,7 +495,8 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     skipNewlines()
 
     const indent = getIndent()
-    output.push(`${indent}b.in_thread((b) => {`)
+    const prefix = insideLoop ? 'b.' : ''
+    output.push(`${indent}${prefix}in_thread((b) => {`)
 
     const prevInsideLoop = insideLoop
     insideLoop = true
@@ -504,7 +516,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     skipNewlines()
 
     const indent = getIndent()
-    output.push(`${indent}if (${transpileExpr(cond)}) {`)
+    output.push(`${indent}if (${addBuilderPrefixes(transpileExpr(cond), insideLoop)}) {`)
     blockStack.push('block')
     parseBlock()
 
@@ -513,7 +525,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
       advance()
       const elsifCond = collectUntilNewline()
       skipNewlines()
-      output.push(`${indent}} else if (${transpileExpr(elsifCond)}) {`)
+      output.push(`${indent}} else if (${addBuilderPrefixes(transpileExpr(elsifCond), insideLoop)}) {`)
       parseBlock()
     }
 
@@ -536,7 +548,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     skipNewlines()
 
     const indent = getIndent()
-    output.push(`${indent}if (!(${transpileExpr(cond)})) {`)
+    output.push(`${indent}if (!(${addBuilderPrefixes(transpileExpr(cond), insideLoop)})) {`)
     blockStack.push('block')
     parseBlock()
     blockStack.pop()
@@ -567,9 +579,13 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     skipNewlines()
 
     const indent = getIndent()
+    const bRef = insideLoop ? 'b' : '__densityB'
     output.push(`${indent}{`)
-    output.push(`${indent}  const __prevDensity = b.density`)
-    output.push(`${indent}  b.density = __prevDensity * ${factor.trim()}`)
+    if (!insideLoop) {
+      output.push(`${indent}  const ${bRef} = { density: 1 }`)
+    }
+    output.push(`${indent}  const __prevDensity = ${bRef}.density`)
+    output.push(`${indent}  ${bRef}.density = __prevDensity * ${factor.trim()}`)
 
     const prevInsideLoop = insideLoop
     insideLoop = true
@@ -579,7 +595,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     insideLoop = prevInsideLoop
 
     if (at('word', 'end')) advance()
-    output.push(`${indent}  b.density = __prevDensity`)
+    output.push(`${indent}  ${bRef}.density = __prevDensity`)
     output.push(`${indent}}`)
     if (at('newline')) advance()
   }
@@ -698,9 +714,10 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     skipNewlines()
 
     const indent = getIndent()
+    const prefix = insideLoop ? 'b.' : ''
     // Build the callback signature
     const paramList = params.length > 0 ? `, ${params.join(', ')}` : ''
-    output.push(`${indent}b.at(${timesStr}, ${valuesStr || 'null'}, (b${paramList}) => {`)
+    output.push(`${indent}${prefix}at(${timesStr}, ${valuesStr || 'null'}, (b${paramList}) => {`)
 
     blockStack.push('loop')
     const prevInsideLoop = insideLoop
@@ -723,7 +740,8 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     skipNewlines()
 
     const indent = getIndent()
-    output.push(`${indent}b.at([${offset}], null, (b) => {`)
+    const prefix = insideLoop ? 'b.' : ''
+    output.push(`${indent}${prefix}at([${offset}], null, (b) => {`)
 
     blockStack.push('loop')
     const prevInsideLoop = insideLoop
@@ -907,19 +925,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     }
 
     // Reconstruct line — no spaces around dots (for method chains)
-    const rawLine = lineTokens.map((t, idx) => {
-      const val = transpileToken(t)
-      const next = lineTokens[idx + 1]
-      const prev = lineTokens[idx - 1]
-      // No space before/after dot
-      if (t.type === 'dot' || next?.type === 'dot') return val
-      if (prev?.type === 'dot') return val
-      // No space before comma, rparen, rbracket
-      if (next && ['comma', 'rparen', 'rbracket'].includes(next.type)) return val
-      // No space after lparen, lbracket
-      if (t.type === 'lparen' || t.type === 'lbracket') return val
-      return val + ' '
-    }).join('').trim()
+    const rawLine = reconstructTokens(lineTokens)
     const indent = getIndent()
 
     // Rewrite calls to user-defined functions to inject `b` as first arg
@@ -931,16 +937,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
         output.push(`${indent}${fnName}(b)`)
       } else {
         // Reconstruct args, transpiling tokens
-        const args = argTokens.map((t, idx) => {
-          const val = transpileToken(t)
-          const next = argTokens[idx + 1]
-          const prev = argTokens[idx - 1]
-          if (t.type === 'dot' || next?.type === 'dot') return val
-          if (prev?.type === 'dot') return val
-          if (next && ['comma', 'rparen', 'rbracket'].includes(next.type)) return val
-          if (t.type === 'lparen' || t.type === 'lbracket') return val
-          return val + ' '
-        }).join('').trim()
+        const args = reconstructTokens(argTokens)
         // If args already have parens, inject b after opening paren
         if (args.startsWith('(')) {
           const inner = args.slice(1, -1).trim()
@@ -957,20 +954,42 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
   }
 
   // Helpers
+
+  /** Reconstruct tokens into a string with proper spacing (no space before/after colons for kwargs). */
+  function reconstructTokens(toks: Token[]): string {
+    return toks.map((t, idx) => {
+      const val = transpileToken(t)
+      const next = toks[idx + 1]
+      const prev = toks[idx - 1]
+      // No space before/after dot
+      if (t.type === 'dot' || next?.type === 'dot') return val
+      if (prev?.type === 'dot') return val
+      // No space before comma, rparen, rbracket
+      if (next && ['comma', 'rparen', 'rbracket'].includes(next.type)) return val
+      // No space after lparen, lbracket
+      if (t.type === 'lparen' || t.type === 'lbracket') return val
+      // No space before colon (for keyword args: amp: 2)
+      if (next?.type === 'colon') return val
+      // No space after colon (for keyword args: amp: 2)
+      if (t.type === 'colon') return val
+      return val + ' '
+    }).join('').trim()
+  }
+
   function collectUntilNewline(): string {
-    const parts: string[] = []
+    const toks: Token[] = []
     while (!at('newline') && !at('eof')) {
-      parts.push(transpileToken(advance()))
+      toks.push(advance())
     }
-    return parts.join(' ')
+    return reconstructTokens(toks)
   }
 
   function collectUntilDo(): string {
-    const parts: string[] = []
+    const toks: Token[] = []
     while (!at('word', 'do') && !at('newline') && !at('eof')) {
-      parts.push(transpileToken(advance()))
+      toks.push(advance())
     }
-    return parts.join(' ')
+    return reconstructTokens(toks)
   }
 
   function transpileToken(t: Token): string {
@@ -1050,14 +1069,14 @@ function transpileSonicPiLine(line: string, insideLoop: boolean): string {
   const trailingIf = line.match(/^(.+?)\s+if\s+(.+)$/)
   if (trailingIf) {
     const stmt = transpileSonicPiLine(trailingIf[1], insideLoop)
-    return `if (${trailingIf[2]}) { ${stmt} }`
+    return `if (${addBuilderPrefixes(trailingIf[2], insideLoop)}) { ${stmt} }`
   }
 
   // Trailing unless
   const trailingUnless = line.match(/^(.+?)\s+unless\s+(.+)$/)
   if (trailingUnless) {
     const stmt = transpileSonicPiLine(trailingUnless[1], insideLoop)
-    return `if (!(${trailingUnless[2]})) { ${stmt} }`
+    return `if (!(${addBuilderPrefixes(trailingUnless[2], insideLoop)})) { ${stmt} }`
   }
 
   // synth :name, opts
@@ -1123,6 +1142,9 @@ function transpileSonicPiLine(line: string, insideLoop: boolean): string {
   // live_audio
   const liveAudioMatch = line.match(/^live_audio\s+(.+)$/)
   if (liveAudioMatch) return `${prefix}live_audio(${transpileArgs(liveAudioMatch[1])})`
+
+  // stop
+  if (line === 'stop') return `${prefix}stop()`
 
   // puts / print
   const putsMatch = line.match(/^puts\s+(.+)$/)

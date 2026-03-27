@@ -113,7 +113,7 @@ end`
   describe('ring and spread', () => {
     it('transpiles ring()', () => {
       expect(strip(transpileRubyToJS('play ring(60, 64, 67).tick')))
-        .toContain('b.ring(60, 64, 67).tick()')
+        .toContain('b.ring(60, 64, 67).at(b.tick())')
     })
 
     it('transpiles spread()', () => {
@@ -435,6 +435,98 @@ end`
       const js = transpileRubyToJS(ruby)
       expect(strip(js)).toContain('.map((n) =>')
       expect(strip(js)).toContain('b.play(n)')
+    })
+  })
+
+  // --- Audit bug fixes ---
+
+  describe('top-level prefix bugs', () => {
+    it('in_thread at top level omits b. prefix', () => {
+      const ruby = `in_thread do
+  play 60
+  sleep 1
+end
+live_loop :main do
+  play 64
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('in_thread((b) => {')
+      expect(strip(js)).not.toContain('b.in_thread')
+    })
+
+    it('at block at top level omits b. prefix', () => {
+      const ruby = `at [0, 1, 2] do
+  play 60
+end
+live_loop :main do
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('at(')
+      expect(strip(js)).not.toMatch(/b\.at\(/)
+    })
+
+    it('time_warp at top level omits b. prefix', () => {
+      const ruby = `time_warp 2 do
+  play 60
+end
+live_loop :main do
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).not.toMatch(/b\.at\(/)
+    })
+
+    it('density at top level omits b. references', () => {
+      const ruby = `density 2 do
+  live_loop :test do
+    play 60
+    sleep 1
+  end
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).not.toContain('b.density')
+    })
+  })
+
+  describe('stop inside loop', () => {
+    it('emits b.stop() inside loop', () => {
+      const ruby = `live_loop :test do
+  stop
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('b.stop()')
+    })
+  })
+
+  describe('multi-line expressions', () => {
+    it('joins lines ending with trailing comma', () => {
+      const ruby = `live_loop :test do
+  play 60,
+    release: 0.2
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('b.play(60, { release: 0.2 })')
+    })
+  })
+
+  describe('wrapBareCode block recognition', () => {
+    it('recognizes with_fx as block opener', () => {
+      const ruby = `with_fx :reverb do
+  play 60
+  sleep 1
+end
+live_loop :drums do
+  sample :bd_haus
+  sleep 0.5
+end`
+      const js = transpileRubyToJS(ruby)
+      // with_fx block should be recognized and not cause broken wrapping
+      expect(strip(js)).toContain('with_fx("reverb"')
+      expect(strip(js)).toContain('live_loop("drums"')
     })
   })
 })

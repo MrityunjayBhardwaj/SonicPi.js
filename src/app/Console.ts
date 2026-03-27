@@ -136,7 +136,7 @@ export class Console {
       const prefix = document.createElement('span')
       prefix.style.cssText = `
         color: #444; font-size: 0.65rem; min-width: 9ch;
-        flex-shrink: 0; user-select: none;
+        flex-shrink: 0;
       `
       prefix.textContent = `{run:${entry.run}, t:${this.elapsed()}}`
       line.appendChild(prefix)

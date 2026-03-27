@@ -19,9 +19,25 @@ function createMockSuperSonic() {
     destroy: vi.fn(),
     node: { connect: vi.fn() },
     audioContext: {
+      currentTime: 0,
+      destination: { connect: vi.fn() },
       createAnalyser: vi.fn(() => ({
         fftSize: 2048,
         smoothingTimeConstant: 0.8,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+      createChannelSplitter: vi.fn(() => ({
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+      createChannelMerger: vi.fn(() => ({
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+      createGain: vi.fn(() => ({
+        gain: { value: 1, setTargetAtTime: vi.fn() },
+        connect: vi.fn(),
         disconnect: vi.fn(),
       })),
     },

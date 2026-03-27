@@ -10,6 +10,7 @@ import { friendlyError, formatFriendlyError, type FriendlyError } from './Friend
 import { detectStratum, Stratum } from './Stratum'
 import { SoundEventStream } from './SoundEventStream'
 import { ring, knit, range, line } from './Ring'
+import { MidiBridge } from './MidiBridge'
 import { spread } from './EuclideanRhythm'
 import { noteToMidi, midiToFreq, noteToFreq } from './NoteToFreq'
 import { chord, scale, chord_invert, note, note_range } from './ChordScale'
@@ -52,6 +53,12 @@ export class SonicPiEngine {
   private loopBuilders = new Map<string, (b: ProgramBuilder) => void>()
   /** Per-loop seed counters for deterministic random */
   private loopSeeds = new Map<string, number>()
+  /** Per-loop tick counters — persisted across iterations so ring.tick() advances correctly */
+  private loopTicks = new Map<string, Map<string, number>>()
+  /** MIDI I/O bridge — lazily accessible from DSL via get_cc() */
+  readonly midiBridge = new MidiBridge()
+
+  get schedAhead(): number { return this.schedAheadTime }
 
   constructor(options?: {
     bridge?: SuperSonicBridgeOptions
@@ -76,6 +83,15 @@ export class SonicPiEngine {
       console.warn('[SonicPi] SuperSonic init failed, running without audio:', err)
       this.bridge = null
     }
+
+    // Wire MIDI input events → scheduler cues so `sync '/midi/note_on'` works.
+    // The handler reads this.scheduler at fire-time (always the current scheduler).
+    this.midiBridge.onMidiEvent((event) => {
+      const sched = this.scheduler
+      if (!sched) return
+      const cueName = `/midi/${event.type}`
+      sched.fireCue(cueName, '__midi__', [event])
+    })
 
     this.initialized = true
   }
@@ -150,9 +166,11 @@ export class SonicPiEngine {
           const seed = this.loopSeeds.get(name) ?? 0
           this.loopSeeds.set(name, seed + 1)
 
-          const builder = new ProgramBuilder(seed)
+          const builder = new ProgramBuilder(seed, this.loopTicks.get(name))
           // Await in case builderFn is async (backward compat with old JS code)
           await Promise.resolve(builderFn(builder))
+          // Persist tick state so ring.tick() / tick() advance across iterations
+          this.loopTicks.set(name, builder.getTicks())
           const program = builder.build()
 
           await runProgram(program, {
@@ -180,20 +198,158 @@ export class SonicPiEngine {
         }
       }
 
+      // Top-level with_fx: wraps live_loops inside it with FX context.
+      // The callback receives a dummy builder — live_loops define their own.
+      // FX is applied by wrapping each live_loop's builder function.
+      let currentTopFx: { name: string; opts: Record<string, number> } | null = null
+
+      const topLevelWithFx = (
+        fxName: string,
+        optsOrFn: Record<string, number> | ((b: unknown) => void),
+        maybeFn?: (b: unknown) => void
+      ) => {
+        let opts: Record<string, number>
+        let fn: (b: unknown) => void
+        if (typeof optsOrFn === 'function') {
+          opts = {}
+          fn = optsOrFn
+        } else {
+          opts = optsOrFn
+          fn = maybeFn!
+        }
+        const prevFx = currentTopFx
+        currentTopFx = { name: fxName, opts }
+        fn(null) // execute callback to register live_loops
+        currentTopFx = prevFx
+      }
+
+      // Patch wrappedLiveLoop to apply current top-level FX
+      const originalWrappedLiveLoop = wrappedLiveLoop
+      const fxAwareWrappedLiveLoop = (name: string, builderFn: (b: ProgramBuilder) => void) => {
+        if (currentTopFx) {
+          const fx = currentTopFx
+          const wrappedBuilderFn = (b: ProgramBuilder) => {
+            b.with_fx(fx.name, fx.opts, (inner) => {
+              builderFn(inner)
+              return inner
+            })
+          }
+          originalWrappedLiveLoop(name, wrappedBuilderFn)
+        } else {
+          originalWrappedLiveLoop(name, builderFn)
+        }
+      }
+
+      // Top-level use_random_seed: store for deterministic live_loop seeding
+      let storedRandomSeed: number | null = null
+      const topLevelUseRandomSeed = (seed: number) => { storedRandomSeed = seed }
+
+      // Top-level in_thread: wrap callback in a one-shot live_loop
+      const topLevelInThread = (fn: (b: ProgramBuilder) => void) => {
+        const name = `__thread_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+        fxAwareWrappedLiveLoop(name, (b: ProgramBuilder) => {
+          fn(b)
+          b.stop()
+        })
+      }
+
+      // Top-level at: create one-shot loops with time offsets
+      const topLevelAt = (
+        times: number[],
+        values: unknown[] | null,
+        fn: (b: ProgramBuilder, ...args: unknown[]) => void
+      ) => {
+        for (let i = 0; i < times.length; i++) {
+          const t = times[i]
+          const v = values ? values[i] : undefined
+          const name = `__at_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`
+          fxAwareWrappedLiveLoop(name, (b: ProgramBuilder) => {
+            if (t > 0) b.sleep(t)
+            if (v !== undefined) {
+              fn(b, v)
+            } else {
+              fn(b)
+            }
+            b.stop()
+          })
+        }
+      }
+
+      // Top-level density: just call the callback (density only affects b.sleep)
+      const topLevelDensity = (_factor: number, fn: (b: unknown) => void) => {
+        // Check if fn is the callback (density N do ... end → density(N, (b) => { ... }))
+        if (typeof _factor === 'function') {
+          ;(_factor as unknown as (b: unknown) => void)(null)
+        } else if (typeof fn === 'function') {
+          fn(null)
+        }
+      }
+
+      // ----- MIDI input readers -----
+      const get_cc = (controller: number, channel: number = 1): number =>
+        this.midiBridge.getCCValue(controller, channel)
+      const get_pitch_bend = (channel: number = 1): number =>
+        this.midiBridge.getPitchBend(channel)
+
+      // ----- MIDI output (opts object carries keyword args from transpiler) -----
+      type MidiOpts = { channel?: number }
+      const midi_note_on = (note: number | string, velocity: number = 100, opts: MidiOpts = {}) => {
+        const n = typeof note === 'string' ? noteToMidi(note) : note
+        this.midiBridge.noteOn(n, velocity, opts.channel ?? 1)
+      }
+      const midi_note_off = (note: number | string, opts: MidiOpts = {}) => {
+        const n = typeof note === 'string' ? noteToMidi(note) : note
+        this.midiBridge.noteOff(n, opts.channel ?? 1)
+      }
+      const midi_cc = (controller: number, value: number, opts: MidiOpts = {}) =>
+        this.midiBridge.cc(controller, value, opts.channel ?? 1)
+      const midi_pitch_bend = (val: number, opts: MidiOpts = {}) =>
+        this.midiBridge.pitchBend(val, opts.channel ?? 1)
+      const midi_channel_pressure = (val: number, opts: MidiOpts = {}) =>
+        this.midiBridge.channelPressure(val, opts.channel ?? 1)
+      const midi_poly_pressure = (note: number, val: number, opts: MidiOpts = {}) =>
+        this.midiBridge.polyPressure(note, val, opts.channel ?? 1)
+      const midi_prog_change = (program: number, opts: MidiOpts = {}) =>
+        this.midiBridge.programChange(program, opts.channel ?? 1)
+      const midi_clock_tick = () => this.midiBridge.clockTick()
+      const midi_start = () => this.midiBridge.midiStart()
+      const midi_stop = () => this.midiBridge.midiStop()
+      const midi_continue = () => this.midiBridge.midiContinue()
+      const midi_all_notes_off = (opts: MidiOpts = {}) =>
+        this.midiBridge.allNotesOff(opts.channel ?? 1)
+
       // Build DSL parameter names and values for the executor
       const dslNames = [
-        'live_loop', 'use_bpm', 'use_synth',
+        'live_loop', 'with_fx', 'use_bpm', 'use_synth', 'use_random_seed',
+        'in_thread', 'at', 'density',
         'ring', 'knit', 'range', 'line', 'spread',
         'chord', 'scale', 'chord_invert', 'note', 'note_range',
         'noteToMidi', 'midiToFreq', 'noteToFreq',
         'puts', 'stop',
+        // MIDI input
+        'get_cc', 'get_pitch_bend',
+        // MIDI output
+        'midi_note_on', 'midi_note_off', 'midi_cc',
+        'midi_pitch_bend', 'midi_channel_pressure', 'midi_poly_pressure',
+        'midi_prog_change', 'midi_clock_tick',
+        'midi_start', 'midi_stop', 'midi_continue',
+        'midi_all_notes_off',
       ]
       const dslValues = [
-        wrappedLiveLoop, topLevelUseBpm, topLevelUseSynth,
+        fxAwareWrappedLiveLoop, topLevelWithFx, topLevelUseBpm, topLevelUseSynth, topLevelUseRandomSeed,
+        topLevelInThread, topLevelAt, topLevelDensity,
         ring, knit, range, line, spread,
         chord, scale, chord_invert, note, note_range,
         noteToMidi, midiToFreq, noteToFreq,
         topLevelPuts, topLevelStop,
+        // MIDI input
+        get_cc, get_pitch_bend,
+        // MIDI output
+        midi_note_on, midi_note_off, midi_cc,
+        midi_pitch_bend, midi_channel_pressure, midi_poly_pressure,
+        midi_prog_change, midi_clock_tick,
+        midi_start, midi_stop, midi_continue,
+        midi_all_notes_off,
       ]
 
       const executor = createSandboxedExecutor(transpiledCode, dslNames)
@@ -262,6 +418,7 @@ export class SonicPiEngine {
     this.scheduler = null
     this.loopBuilders.clear()
     this.loopSeeds.clear()
+    this.loopTicks.clear()
   }
 
   dispose(): void {

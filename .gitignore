@@ -6,6 +6,9 @@ dist/
 # Artifacts — thesis, research, cognitive framework (not part of the product)
 artifacts/
 
+# Planning artifacts (internal)
+.planning/
+
 # Test results
 test-results/
 

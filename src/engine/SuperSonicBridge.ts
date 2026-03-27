@@ -57,42 +57,63 @@ const COMMON_SYNTHDEFS = [
  * Translate Sonic Pi sample opts to scsynth params.
  *
  * Sonic Pi → scsynth mappings:
- * - beat_stretch: N → rate adjusted so sample fits N beats at current BPM
- * - pitch_stretch: N → rate + pitch correction (not fully supported yet)
+ * - beat_stretch: N → rate = (1/N) * existing_rate * (bpm / (60 / duration))
+ *     Exact formula from Sonic Pi sound.rb. Requires sample duration.
+ *     Falls back to (existing_rate / N) when duration is unknown (first play only).
+ * - pitch_stretch: N → same rate as beat_stretch + pitch compensation
+ *     pitch_shift = 12 * log2(rate), then pitch -= pitch_shift to cancel it.
+ *     Preserves pitch exactly via scsynth's :pitch parameter.
  * - rpitch: N → pitch shift in semitones (rate = 2^(N/12))
  * - start/finish → normalized start/end points [0..1]
- * - amp, pan, rate → pass through directly
+ * - amp, pan, rate, pitch → pass through directly
  * - attack, sustain, decay, release → envelope params
- * - lpf, hpf, cutoff → filter params
  */
 function translateSampleOpts(
   opts: Record<string, number> | undefined,
-  bpm: number
+  bpm: number,
+  sampleDuration: number | null  // seconds — null = unknown (first play), use fallback
 ): Record<string, number> {
   if (!opts) return {}
 
   const result: Record<string, number> = {}
-  const beatDuration = 60 / bpm // seconds per beat
 
   for (const [key, value] of Object.entries(opts)) {
     switch (key) {
-      case 'beat_stretch':
-        // Approximate: assume typical sample is ~1 beat long at default rate
-        // Real implementation would query sample duration from SuperSonic
-        // rate = original_duration / (beat_stretch * beat_duration)
-        // For a rough approximation, use rate = 1 / (value * bpm/60)
-        // This works well for loop samples that are ~1 second at 60bpm
-        result['rate'] = (result['rate'] ?? 1) / value
+      case 'beat_stretch': {
+        // Sonic Pi sound.rb exact formula:
+        //   rate = (1.0 / beat_stretch) * existing_rate * (bpm / (60.0 / duration))
+        const existingRate = result['rate'] ?? 1
+        if (sampleDuration !== null) {
+          result['rate'] = (1.0 / value) * existingRate * (bpm / (60.0 / sampleDuration))
+        } else {
+          // Duration not yet cached (first play) — approximate until next iteration
+          result['rate'] = existingRate / value
+        }
         break
+      }
 
-      case 'pitch_stretch':
-        // Like beat_stretch but should preserve pitch — needs granular synthesis
-        // Approximate with rate change (pitch will change)
-        result['rate'] = (result['rate'] ?? 1) / value
+      case 'pitch_stretch': {
+        // Sonic Pi sound.rb exact formula:
+        //   new_rate    = (1.0 / pitch_stretch) * (bpm / (60.0 / duration))
+        //   pitch_shift = 12 * log2(new_rate)          — semitones the rate would cause
+        //   rate        = new_rate * existing_rate
+        //   pitch      -= pitch_shift                  — compensate exactly
+        const existingRate = result['rate'] ?? 1
+        const existingPitch = result['pitch'] ?? 0
+        if (sampleDuration !== null) {
+          const newRate = (1.0 / value) * (bpm / (60.0 / sampleDuration))
+          const pitchShift = 12 * Math.log2(newRate)
+          result['rate'] = newRate * existingRate
+          result['pitch'] = existingPitch - pitchShift
+        } else {
+          // Duration not yet cached — rate only, pitch will drift this iteration
+          result['rate'] = existingRate / value
+        }
         break
+      }
 
       case 'rpitch':
-        // Pitch shift in semitones via rate change
+        // Pitch shift in semitones via rate change (matches Sonic Pi rpitch behaviour)
         result['rate'] = (result['rate'] ?? 1) * Math.pow(2, value / 12)
         break
 
@@ -100,6 +121,7 @@ function translateSampleOpts(
       case 'rate':
       case 'amp':
       case 'pan':
+      case 'pitch':
       case 'attack':
       case 'sustain':
       case 'decay':
@@ -115,7 +137,6 @@ function translateSampleOpts(
         break
 
       default:
-        // Pass unknown params through — scsynth may understand them
         result[key] = value
         break
     }
@@ -132,6 +153,9 @@ export class SuperSonicBridge {
   private sonic: SuperSonic | null = null
   private loadedSynthDefs = new Set<string>()
   private loadedSamples = new Map<string, number>()
+  /** Sample duration cache — populated asynchronously on first load via Web Audio decode. */
+  private sampleDurations = new Map<string, number>()
+  private resolvedSampleBaseURL = 'https://unpkg.com/supersonic-scsynth-samples@latest/samples/'
   private nextBufNum = 0
   private analyserNode: AnalyserNode | null = null
   private options: SuperSonicBridgeOptions
@@ -164,11 +188,18 @@ export class SuperSonicBridge {
       )
     }
 
+    // SuperSonic constructor options — URLs for workers, WASM, synthdefs, samples.
+    // Workers and JS live in the main package; WASM in the core package.
+    const pkgBase = 'https://unpkg.com/supersonic-scsynth@latest/dist/'
+    const coreBase = 'https://unpkg.com/supersonic-scsynth-core@latest/'
+    this.resolvedSampleBaseURL = this.options.sampleBaseURL ?? 'https://unpkg.com/supersonic-scsynth-samples@latest/samples/'
     this.sonic = new SuperSonicClass({
-      baseURL: this.options.baseURL ?? 'https://unpkg.com/supersonic-scsynth@latest/dist/',
-      coreBaseURL: this.options.coreBaseURL ?? 'https://unpkg.com/supersonic-scsynth-core@latest/',
+      baseURL: this.options.baseURL ?? pkgBase,
+      workerBaseURL: this.options.baseURL ?? `${pkgBase}workers/`,
+      wasmBaseURL: this.options.coreBaseURL ?? `${coreBase}wasm/`,
+      coreBaseURL: this.options.coreBaseURL ?? coreBase,
       synthdefBaseURL: this.options.synthdefBaseURL ?? 'https://unpkg.com/supersonic-scsynth-synthdefs@latest/synthdefs/',
-      sampleBaseURL: this.options.sampleBaseURL ?? 'https://unpkg.com/supersonic-scsynth-samples@latest/samples/',
+      sampleBaseURL: this.resolvedSampleBaseURL,
       autoConnect: false,
       scsynthOptions: { numOutputBusChannels: NUM_OUTPUT_CHANNELS },
     } as never)
@@ -246,10 +277,26 @@ export class SuperSonicBridge {
     if (!this.sonic) throw new Error('SuperSonic not initialized')
 
     const bufNum = this.nextBufNum++
-    // Samples are typically .flac in SuperSonic's sample pack
     await this.sonic.loadSample(bufNum, `${name}.flac`)
     this.loadedSamples.set(name, bufNum)
+    // Cache duration asynchronously — ready for the next loop iteration.
+    this.fetchSampleDuration(name).catch(() => {})
     return bufNum
+  }
+
+  /**
+   * Decode the sample via Web Audio to get its exact duration in seconds.
+   * Fires once per sample name and caches the result.
+   * Used by beat_stretch / pitch_stretch to apply Sonic Pi's exact formula.
+   */
+  private async fetchSampleDuration(name: string): Promise<void> {
+    if (this.sampleDurations.has(name)) return
+    if (!this.sonic) return
+    const url = `${this.resolvedSampleBaseURL}${name}.flac`
+    const response = await fetch(url)
+    const arrayBuffer = await response.arrayBuffer()
+    const audioBuffer = await this.sonic.audioContext.decodeAudioData(arrayBuffer)
+    this.sampleDurations.set(name, audioBuffer.duration)
   }
 
   async triggerSynth(
@@ -283,8 +330,9 @@ export class SuperSonicBridge {
     const bufNum = await this.ensureSampleLoaded(sampleName)
     const nodeId = this.sonic.nextNodeId()
 
-    // Translate Sonic Pi sample opts to scsynth params
-    const params = translateSampleOpts(opts, bpm ?? 60)
+    // Duration is null on first play (async fetch in flight); exact from second play on.
+    const duration = this.sampleDurations.get(sampleName) ?? null
+    const params = translateSampleOpts(opts, bpm ?? 60, duration)
 
     const paramList: (string | number)[] = ['buf', bufNum]
     for (const [key, value] of Object.entries(params)) {

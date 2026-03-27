@@ -19,7 +19,14 @@
  * codemirror                 6.0.1     esm.sh    Editor.ts
  * @codemirror/language       6.10.8    esm.sh    Editor.ts
  * @lezer/highlight           1.2.1     esm.sh    Editor.ts
- * supersonic-scsynth         0.4.0     unpkg     App.ts
+ * supersonic-scsynth         @latest   unpkg     SuperSonicBridge.ts  (0.66.x at time of writing)
+ * supersonic-scsynth-core    @latest   unpkg     SuperSonicBridge.ts
+ * supersonic-scsynth-samples @latest   unpkg     SuperSonicBridge.ts
+ * supersonic-scsynth-synthdefs @latest unpkg     SuperSonicBridge.ts
+ *
+ * Note: supersonic-scsynth packages use @latest rather than a pinned version
+ * because the WASM binary and worker URLs must match the JS package exactly.
+ * Pinning requires coordinating four package versions simultaneously.
  */
 
 export const CDN_DEPENDENCIES = {
@@ -49,8 +56,8 @@ export const CDN_DEPENDENCIES = {
     url: 'https://esm.sh/@lezer/highlight@1.2.1',
   },
   'supersonic-scsynth': {
-    version: '0.4.0',
+    version: 'latest',
     cdn: 'unpkg',
-    url: 'https://unpkg.com/supersonic-scsynth@0.4.0',
+    url: 'https://unpkg.com/supersonic-scsynth@latest/dist/',
   },
 } as const

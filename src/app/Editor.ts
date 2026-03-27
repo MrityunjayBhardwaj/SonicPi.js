@@ -183,26 +183,25 @@ export class Editor {
   }
 
   private async loadCodeMirror(): Promise<CMModule> {
-    // CDN dependencies — pinned to exact versions for reproducibility.
-    // Note: dynamic import() does not support SRI integrity attributes.
-    // For maximum security, bundle these dependencies instead of loading from CDN.
+    // CDN dependencies — use esm.sh with major version to avoid multiple
+    // @codemirror/state instances (which break instanceof checks).
     // See src/engine/cdn-manifest.ts for the full dependency manifest.
 
     // @ts-ignore — CDN URLs
-    const viewMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/view@6.36.5')
+    const viewMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/view@6')
     // @ts-ignore
-    const stateMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/state@6.5.2')
+    const stateMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/state@6')
     // @ts-ignore
-    const cmMod = await import(/* @vite-ignore */ 'https://esm.sh/codemirror@6.0.1')
+    const cmMod = await import(/* @vite-ignore */ 'https://esm.sh/codemirror@6')
 
     // Sonic Pi syntax highlighting — inline tokenizer, no CDN dependency
     let rubyLang: unknown = null
     let highlightStyle: unknown = null
     try {
       // @ts-ignore
-      const langMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/language@6.10.8')
+      const langMod = await import(/* @vite-ignore */ 'https://esm.sh/@codemirror/language@6')
       // @ts-ignore
-      const highlightMod = await import(/* @vite-ignore */ 'https://esm.sh/@lezer/highlight@1.2.1')
+      const highlightMod = await import(/* @vite-ignore */ 'https://esm.sh/@lezer/highlight@1')
       if (langMod.StreamLanguage) {
         rubyLang = langMod.StreamLanguage.define(sonicPiStreamParser)
       }

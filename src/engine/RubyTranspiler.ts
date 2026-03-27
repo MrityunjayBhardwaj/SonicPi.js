@@ -63,7 +63,7 @@ function wrapBareCode(code: string): string {
         continue
       }
 
-      if (/^\s*(live_loop|define|in_thread)\s/.test(line)) {
+      if (/^\s*(live_loop|define|in_thread|with_fx|at|time_warp|density)\s/.test(line)) {
         inBlock = true
         blockDepth = 1
         blocks.push(line)
@@ -133,13 +133,23 @@ export function transpileRubyToJS(ruby: string): string {
   // Wrap bare top-level code in an implicit live_loop
   ruby = wrapBareCode(ruby)
 
-  let lines = ruby.split('\n')
+  // Join lines ending with trailing comma (Ruby line continuation)
+  const rawLines = ruby.split('\n')
+  let lines: string[] = []
+  for (let j = 0; j < rawLines.length; j++) {
+    let ln = rawLines[j]
+    while (j + 1 < rawLines.length && ln.trimEnd().endsWith(',')) {
+      j++
+      ln = ln.trimEnd() + ' ' + rawLines[j].trim()
+    }
+    lines.push(ln)
+  }
 
   let result: string[] = []
   let i = 0
   // Track block types so `end` produces the correct closing bracket
   // 'loop' → `})`, 'block' → `}`, 'thread' → `})()`
-  const blockStack: Array<'loop' | 'block' | 'thread' | 'density'> = []
+  const blockStack: Array<'loop' | 'block' | 'thread' | 'density' | 'density-toplevel'> = []
   const definedFunctions = new Set<string>()
 
   while (i < lines.length) {
@@ -208,10 +218,12 @@ export function transpileRubyToJS(ruby: string): string {
     if (withFxMatch) {
       const fxName = withFxMatch[1]
       const fxOpts = withFxMatch[2] ? transpileArgs(withFxMatch[2]) : ''
+      const insideLoop = blockStack.includes('loop')
+      const prefix = insideLoop ? 'b.' : ''
       if (fxOpts) {
-        result.push(`${indent}b.with_fx("${fxName}", ${fxOpts}, (b) => {${inlineComment}`)
+        result.push(`${indent}${prefix}with_fx("${fxName}", ${fxOpts}, (b) => {${inlineComment}`)
       } else {
-        result.push(`${indent}b.with_fx("${fxName}", (b) => {${inlineComment}`)
+        result.push(`${indent}${prefix}with_fx("${fxName}", (b) => {${inlineComment}`)
       }
       blockStack.push('loop') // uses }) closing like live_loop
       i++
@@ -303,7 +315,9 @@ export function transpileRubyToJS(ruby: string): string {
       const params = atMatch[3]
         ? atMatch[3].split(',').map(a => a.trim()).join(', ')
         : ''
-      result.push(`${indent}b.at(${timesArr}, ${valuesArr}, (b${params ? ', ' + params : ''}) => {${inlineComment}`)
+      const insideLoop = blockStack.includes('loop')
+      const atPrefix = insideLoop ? 'b.' : ''
+      result.push(`${indent}${atPrefix}at(${timesArr}, ${valuesArr}, (b${params ? ', ' + params : ''}) => {${inlineComment}`)
       blockStack.push('loop')  // 'loop' so body gets b. prefixes
       i++
       continue
@@ -313,7 +327,9 @@ export function transpileRubyToJS(ruby: string): string {
     const timeWarpMatch = code.match(/^time_warp\s+(.+?)\s+do\s*$/)
     if (timeWarpMatch) {
       const offset = transpileExpression(timeWarpMatch[1])
-      result.push(`${indent}b.at([${offset}], null, (b) => {${inlineComment}`)
+      const insideLoop = blockStack.includes('loop')
+      const twPrefix = insideLoop ? 'b.' : ''
+      result.push(`${indent}${twPrefix}at([${offset}], null, (b) => {${inlineComment}`)
       blockStack.push('loop')
       i++
       continue
@@ -322,7 +338,9 @@ export function transpileRubyToJS(ruby: string): string {
     // --- in_thread do ---
     const inThreadMatch = code.match(/^in_thread\s+do\s*$/)
     if (inThreadMatch) {
-      result.push(`${indent}b.in_thread((b) => {${inlineComment}`)
+      const insideLoop = blockStack.includes('loop')
+      const itPrefix = insideLoop ? 'b.' : ''
+      result.push(`${indent}${itPrefix}in_thread((b) => {${inlineComment}`)
       blockStack.push('loop')  // 'loop' so body gets b. prefixes
       i++
       continue
@@ -374,10 +392,15 @@ export function transpileRubyToJS(ruby: string): string {
     if (densityMatch) {
       // density N compresses time: all sleeps inside are divided by N
       const factor = transpileExpression(densityMatch[1])
+      const insideLoop = blockStack.includes('loop')
+      const bRef = insideLoop ? 'b' : '__densityB'
       result.push(`${indent}{${inlineComment}`)
-      result.push(`${indent}  const __prevDensity = b.density`)
-      result.push(`${indent}  b.density = __prevDensity * ${factor}`)
-      blockStack.push('density')
+      if (!insideLoop) {
+        result.push(`${indent}  const ${bRef} = { density: 1 }`)
+      }
+      result.push(`${indent}  const __prevDensity = ${bRef}.density`)
+      result.push(`${indent}  ${bRef}.density = __prevDensity * ${factor}`)
+      blockStack.push(insideLoop ? 'density' : 'density-toplevel')
       i++
       continue
     }
@@ -409,8 +432,9 @@ export function transpileRubyToJS(ruby: string): string {
     // --- end ---
     if (code === 'end') {
       const blockType = blockStack.pop() ?? 'loop'
-      if (blockType === 'density') {
-        result.push(`${indent}  b.density = __prevDensity`)
+      if (blockType === 'density' || blockType === 'density-toplevel') {
+        const dBRef = blockType === 'density' ? 'b' : '__densityB'
+        result.push(`${indent}  ${dBRef}.density = __prevDensity`)
         result.push(`${indent}}${inlineComment}`)
       } else {
         const closing = blockType === 'loop' ? '})' : blockType === 'thread' ? '})()' : '}'
@@ -474,6 +498,9 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
   if (line.startsWith('#')) return '//' + line.slice(1)
 
   // NOTE: inline comments are stripped by the caller before we get here
+
+  // --- stop ---
+  if (line === 'stop') return `b.stop()`
 
   // --- Ruby trailing conditional: `statement if condition` ---
   const trailingIfMatch = line.match(/^(.+?)\s+if\s+(.+)$/)
@@ -646,11 +673,15 @@ function transpileExpression(expr: string): string {
   result = result.replace(/(?<!\.)(?<!\w)\btick\b(?!\s*[.(])/g, 'b.tick()')
   result = result.replace(/(?<!\.)(?<!\w)\blook\b(?!\s*[.(])/g, 'b.look()')
 
-  // .tick → .tick()
-  result = result.replace(/\.tick(?!\()/g, '.tick()')
+  // .tick / .tick() on ring objects → .at(b.tick())
+  // Ring.tick() uses the ring's own counter which resets each iteration.
+  // b.tick() uses the ProgramBuilder's counter which persists across iterations.
+  result = result.replace(/\.tick\(\)/g, '.at(b.tick())')
+  result = result.replace(/\.tick(?!\()/g, '.at(b.tick())')
 
-  // .look → .look()
-  result = result.replace(/\.look(?!\()/g, '.look()')
+  // .look / .look() → .at(b.look())
+  result = result.replace(/\.look\(\)/g, '.at(b.look())')
+  result = result.replace(/\.look(?!\()/g, '.at(b.look())')
 
   // .reverse → .reverse()
   result = result.replace(/\.reverse(?!\()/g, '.reverse()')
@@ -790,6 +821,9 @@ export function detectLanguage(code: string): 'ruby' | 'js' {
  */
 export function autoTranspile(code: string): string {
   if (detectLanguage(code) === 'js') return code
+
+  // Wrap bare code in implicit live_loop BEFORE either transpiler
+  code = wrapBareCode(code)
 
   // Primary: recursive descent parser
   const { code: parsed, errors } = _parseAndTranspile(code)

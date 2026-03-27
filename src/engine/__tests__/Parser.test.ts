@@ -522,4 +522,126 @@ end
     expect(code).toContain('b.live_audio("mic"')
     expect(code).toMatch(/stereo\s*:\s*true/)
   })
+
+  // --- BUG-12: kwargs token reconstruction ---
+
+  it('reconstructs keyword args without spaces around colons', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  sample :bd_haus, amp: 2
+  sleep 0.5
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('{ amp: 2')
+    expect(code).not.toContain('amp : 2')
+  })
+
+  it('reconstructs multiple kwargs correctly', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  play 60, release: 0.5, amp: 2
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('{ release: 0.5, amp: 2')
+  })
+
+  it('reconstructs with_fx opts as kwargs object', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  with_fx :reverb, room: 0.5 do
+    play 60
+    sleep 1
+  end
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('{ room: 0.5 }')
+    expect(code).not.toContain('room : 0.5')
+  })
+
+  // --- BUG-01/02/03/04: top-level prefix ---
+
+  it('in_thread at top level omits b. prefix', () => {
+    const { code, errors } = parseAndTranspile(`
+in_thread do
+  play 60
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('in_thread((b) => {')
+    expect(code).not.toContain('b.in_thread')
+  })
+
+  it('at block at top level omits b. prefix', () => {
+    const { code, errors } = parseAndTranspile(`
+at [0, 1, 2] do
+  play 60
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('at(')
+    expect(code).not.toContain('b.at(')
+  })
+
+  it('time_warp at top level omits b. prefix', () => {
+    const { code, errors } = parseAndTranspile(`
+time_warp 2 do
+  play 60
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('at([2]')
+    expect(code).not.toContain('b.at(')
+  })
+
+  it('density at top level omits b. references', () => {
+    const { code, errors } = parseAndTranspile(`
+density 2 do
+  play 60
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).not.toContain('b.density')
+  })
+
+  // --- BUG-19: stop inside loop ---
+
+  it('stop inside loop emits b.stop()', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  stop
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('b.stop()')
+  })
+
+  it('stop at top level emits stop()', () => {
+    const { code, errors } = parseAndTranspile(`stop`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('stop()')
+    expect(code).not.toContain('b.stop()')
+  })
+
+  // --- BUG-18: multi-line expressions ---
+
+  it('joins lines ending with trailing comma', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  play 60,
+    release: 0.2
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('b.play(60')
+    expect(code).toContain('release: 0.2')
+    // Should be a single play call with kwargs, not separate lines
+    expect(code).not.toMatch(/^release/m)
+  })
 })

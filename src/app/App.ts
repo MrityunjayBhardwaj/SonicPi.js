@@ -307,10 +307,10 @@ export class App {
 
         let SuperSonicClass: unknown = undefined
         try {
-          // CDN dependency — pinned version. dynamic import() does not support SRI.
+          // CDN dependency. dynamic import() does not support SRI.
           // See src/engine/cdn-manifest.ts for the full dependency manifest.
           // @ts-ignore — CDN URL
-          const mod = await import(/* @vite-ignore */ 'https://unpkg.com/supersonic-scsynth@0.4.0')
+          const mod = await import(/* @vite-ignore */ 'https://unpkg.com/supersonic-scsynth@latest')
           SuperSonicClass = mod.SuperSonic ?? mod.default
         } catch {
           this.console.logSystem('  SuperSonic CDN unavailable.')
@@ -421,13 +421,19 @@ export class App {
     this.console.logSystem('  Recording... Press Rec again to save.')
   }
 
-  private loadExample(example: Example): void {
+  private async loadExample(example: Example): Promise<void> {
     this.editor.setValue(example.ruby)
     this.buffers[this.activeBuffer] = example.ruby
     this.saveBuffers()
     this.sessionLog.logLoadExample(example.name, example.ruby)
     this.console.logSystem(`  Loaded: ${example.name} — ${example.description}`)
-    if (this.playing) this.handlePlay()
+    if (this.playing) {
+      this.engine!.stop()
+      // Wait for pre-scheduled audio in the lookahead buffer to drain before
+      // starting the new example — otherwise scsynth plays the tail of the old one.
+      await new Promise(r => setTimeout(r, this.engine!.schedAhead * 1000 + 50))
+      await this.handlePlay()
+    }
   }
 
   private async exportSession(): Promise<void> {

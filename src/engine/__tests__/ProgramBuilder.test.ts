@@ -27,7 +27,7 @@ describe('ProgramBuilder', () => {
 
   it('play() accepts per-note synth override via opts', () => {
     const b = new ProgramBuilder()
-    b.play(60, { synth: 'prophet' } as Record<string, number>)
+    b.play(60, { synth: 'prophet' } as unknown as Record<string, number>)
     const steps = b.build()
     const step = steps[0] as Extract<(typeof steps)[0], { tag: 'play' }>
     expect(step.synth).toBe('prophet')

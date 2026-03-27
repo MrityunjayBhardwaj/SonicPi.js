@@ -24,8 +24,14 @@ export class ProgramBuilder {
   private _nextRef: number = 1
   private _lastRef: number = 0
 
-  constructor(seed: number = 0) {
+  constructor(seed: number = 0, initialTicks?: Map<string, number>) {
     this.rng = new SeededRandom(seed)
+    if (initialTicks) this.ticks = new Map(initialTicks)
+  }
+
+  /** Snapshot current tick state — saved by the engine between loop iterations. */
+  getTicks(): Map<string, number> {
+    return new Map(this.ticks)
   }
 
   get density(): number { return this._densityFactor }
@@ -34,7 +40,18 @@ export class ProgramBuilder {
   /** Returns the node reference of the last play() call, for use with control(). */
   get lastRef(): number { return this._lastRef }
 
-  play(noteVal: number | string, opts?: Record<string, number>): this {
+  play(noteVal: number | string | Ring<number> | number[], opts?: Record<string, number>): this {
+    // Chord: Ring or array — push one play step per note (all at the same virtual time).
+    if (noteVal instanceof Ring || Array.isArray(noteVal)) {
+      const notes: number[] = noteVal instanceof Ring ? noteVal.toArray() : noteVal
+      for (const n of notes) this._pushPlayStep(n, opts)
+      return this
+    }
+    this._pushPlayStep(noteVal, opts)
+    return this
+  }
+
+  private _pushPlayStep(noteVal: number | string, opts?: Record<string, number>): void {
     const midi = typeof noteVal === 'string' ? noteToMidi(noteVal) : noteVal
     const freq = midiToFreq(midi)
     const synth = (opts as Record<string, unknown>)?.synth as string | undefined
@@ -50,7 +67,6 @@ export class ProgramBuilder {
       synth: synth ?? this.currentSynth,
       srcLine,
     })
-    return this
   }
 
   sleep(beats: number): this {

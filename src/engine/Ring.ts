@@ -4,10 +4,23 @@
  */
 export class Ring<T> {
   private items: T[]
-  private _tick = 0
+  private _tick = 0;
+
+  /** Numeric index access — ring[0], ring[1], etc. with wrapping. */
+  [key: number]: T
 
   constructor(items: T[]) {
     this.items = [...items]
+
+    // Proxy intercepts numeric bracket access → delegates to .at()
+    return new Proxy(this, {
+      get(target, prop, receiver) {
+        if (typeof prop === 'string' && /^\d+$/.test(prop)) {
+          return target.at(Number(prop))
+        }
+        return Reflect.get(target, prop, receiver)
+      },
+    })
   }
 
   get length(): number {
