@@ -149,8 +149,11 @@ export function transpileRubyToJS(ruby: string): string {
   let i = 0
   // Track block types so `end` produces the correct closing bracket
   // 'loop' → `})`, 'block' → `}`, 'thread' → `})()`
-  const blockStack: Array<'loop' | 'block' | 'thread' | 'density' | 'density-toplevel'> = []
+  const blockStack: Array<'loop' | 'block' | 'thread' | 'density' | 'density-toplevel' | 'case'> = []
   const definedFunctions = new Set<string>()
+  // Stack for case/when — stores the expression being matched and whether first when was seen
+  const caseExprStack: string[] = []
+  const caseHadWhenStack: boolean[] = []
 
   while (i < lines.length) {
     let line = lines[i]
@@ -346,6 +349,33 @@ export function transpileRubyToJS(ruby: string): string {
       continue
     }
 
+    // --- case expr ---
+    const caseMatch = code.match(/^case\s+(.+)$/)
+    if (caseMatch) {
+      caseExprStack.push(transpileExpression(caseMatch[1]))
+      caseHadWhenStack.push(false)
+      blockStack.push('case')
+      i++
+      continue
+    }
+
+    // --- when val1, val2, ... ---
+    const whenMatch = code.match(/^when\s+(.+)$/)
+    if (whenMatch && caseExprStack.length > 0) {
+      const expr = caseExprStack[caseExprStack.length - 1]
+      const vals = whenMatch[1].split(',').map(v => v.trim())
+      const condition = vals.map(v => `${expr} === ${transpileExpression(v)}`).join(' || ')
+      const hadWhen = caseHadWhenStack[caseHadWhenStack.length - 1]
+      if (hadWhen) {
+        result.push(`${indent}} else if (${condition}) {${inlineComment}`)
+      } else {
+        result.push(`${indent}if (${condition}) {${inlineComment}`)
+        caseHadWhenStack[caseHadWhenStack.length - 1] = true
+      }
+      i++
+      continue
+    }
+
     // --- if condition ---
     const ifMatch = code.match(/^if\s+(.+)$/)
     if (ifMatch) {
@@ -435,6 +465,10 @@ export function transpileRubyToJS(ruby: string): string {
       if (blockType === 'density' || blockType === 'density-toplevel') {
         const dBRef = blockType === 'density' ? 'b' : '__densityB'
         result.push(`${indent}  ${dBRef}.density = __prevDensity`)
+        result.push(`${indent}}${inlineComment}`)
+      } else if (blockType === 'case') {
+        caseExprStack.pop()
+        caseHadWhenStack.pop()
         result.push(`${indent}}${inlineComment}`)
       } else {
         const closing = blockType === 'loop' ? '})' : blockType === 'thread' ? '})()' : '}'

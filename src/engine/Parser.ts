@@ -331,6 +331,12 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
       return
     }
 
+    // case/when
+    if (t.type === 'word' && t.value === 'case') {
+      parseCaseWhen()
+      return
+    }
+
     // begin/rescue/ensure/end
     if (t.type === 'word' && t.value === 'begin') {
       parseBeginRescue()
@@ -539,6 +545,49 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     blockStack.pop()
     if (at('word', 'end')) advance()
     output.push(`${indent}}`)
+    if (at('newline')) advance()
+  }
+
+  function parseCaseWhen(): void {
+    advance() // 'case'
+    const expr = collectUntilNewline().trim()
+    skipNewlines()
+
+    const indent = getIndent()
+    let firstWhen = true
+
+    while (!at('eof') && !at('word', 'end')) {
+      if (at('word', 'when')) {
+        advance()
+        const vals = collectUntilNewline().split(',').map(v => v.trim())
+        const condition = vals.map(v =>
+          `${addBuilderPrefixes(transpileExpr(expr), insideLoop)} === ${addBuilderPrefixes(transpileExpr(v), insideLoop)}`
+        ).join(' || ')
+        skipNewlines()
+        if (firstWhen) {
+          output.push(`${indent}if (${condition}) {`)
+          firstWhen = false
+        } else {
+          output.push(`${indent}} else if (${condition}) {`)
+        }
+        blockStack.push('block')
+        parseBlock()
+        blockStack.pop()
+      } else if (at('word', 'else')) {
+        advance()
+        skipNewlines()
+        output.push(`${indent}} else {`)
+        blockStack.push('block')
+        parseBlock()
+        blockStack.pop()
+        break
+      } else {
+        break
+      }
+    }
+
+    if (at('word', 'end')) advance()
+    if (!firstWhen) output.push(`${indent}}`)
     if (at('newline')) advance()
   }
 
