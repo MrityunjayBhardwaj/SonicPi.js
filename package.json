@@ -1,5 +1,5 @@
 {
-  "name": "sonicpi",
+  "name": "sonicpi.js",
   "version": "1.3.0",
   "description": "SonicPi.js — browser-native Sonic Pi with real SuperCollider synthesis via WebAssembly",
   "type": "module",
