@@ -1,19 +1,28 @@
 {
-  "name": "sonicpi.js",
+  "name": "@mjayb/sonicpijs",
   "version": "1.3.0",
   "description": "SonicPi.js — browser-native Sonic Pi with real SuperCollider synthesis via WebAssembly",
   "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "bin": {
     "sonicpi": "./bin/cli.js"
   },
   "files": [
     "bin",
-    "src",
-    "public",
-    "index.html",
-    "vite.build.config.ts",
-    "vitest.config.ts",
-    "tsconfig.json"
+    "dist/index.js",
+    "dist/index.js.map",
+    "dist/index.cjs",
+    "dist/index.cjs.map",
+    "dist/types"
   ],
   "scripts": {
     "start": "node bin/cli.js",
@@ -24,7 +33,8 @@
     "typecheck": "tsc --noEmit",
     "dev": "vite",
     "build": "vite build",
-    "build:single": "vite build --config vite.build.config.ts"
+    "build:single": "vite build --config vite.build.config.ts",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -39,12 +49,11 @@
     "webaudio",
     "wasm"
   ],
-  "dependencies": {
-    "vite": "^7.3.1"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "typescript": "^5.7.0",
+    "vite": "^7.3.1",
     "vite-plugin-singlefile": "^2.3.2",
     "vitest": "^3.0.0"
   },
