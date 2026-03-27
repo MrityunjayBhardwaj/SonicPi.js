@@ -513,6 +513,90 @@ end`
     })
   })
 
+  describe('stop_loop', () => {
+    it('transpiles stop_loop :name', () => {
+      const ruby = `live_loop :ctrl do
+  stop_loop :drums
+  sleep 4
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('stop_loop("drums")')
+      expect(strip(js)).not.toContain('b.stop_loop')
+    })
+  })
+
+  describe('multi-line continuation operators', () => {
+    it('joins lines ending with &&', () => {
+      const ruby = `live_loop :test do
+  if x > 0 &&
+    y > 0
+    play 60
+  end
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('x > 0 && y > 0')
+    })
+
+    it('joins lines ending with ||', () => {
+      const ruby = `live_loop :test do
+  if a ||
+    b
+    play 60
+  end
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('a || b')
+    })
+
+    it('joins lines ending with +', () => {
+      const ruby = `live_loop :test do
+  x = 1 +
+    2
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('1 + 2')
+    })
+
+    it('joins lines ending with backslash', () => {
+      const ruby = `live_loop :test do
+  x = 1 \\
+    + 2
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('1 + 2')
+    })
+  })
+
+  describe('ternary operator', () => {
+    it('passes numeric ternary through unchanged', () => {
+      const ruby = `live_loop :test do
+  vol = x > 0 ? 0.8 : 0.5
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('0.8')
+      expect(strip(js)).toContain('0.5')
+      expect(strip(js)).toContain('?')
+      // 0.5 should NOT become "0" (digit not treated as symbol)
+      expect(strip(js)).not.toContain('"0"')
+      expect(strip(js)).not.toContain('"5"')
+    })
+
+    it('converts symbol values in ternary to strings', () => {
+      const ruby = `live_loop :test do
+  n = cond ? :C4 : :G3
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      expect(strip(js)).toContain('"C4"')
+      expect(strip(js)).toContain('"G3"')
+    })
+  })
+
   describe('wrapBareCode block recognition', () => {
     it('recognizes with_fx as block opener', () => {
       const ruby = `with_fx :reverb do

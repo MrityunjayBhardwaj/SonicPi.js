@@ -149,6 +149,14 @@ export class VirtualTimeScheduler {
     return names
   }
 
+  /** Stop a named loop from outside. Returns true if the loop was running. */
+  stopLoop(name: string): boolean {
+    const task = this.tasks.get(name)
+    if (!task || !task.running) return false
+    task.running = false
+    return true
+  }
+
 
   /**
    * Hot-swap a running loop's function.

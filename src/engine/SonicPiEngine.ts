@@ -161,6 +161,11 @@ export class SonicPiEngine {
         // At top level, stop just halts evaluation
       }
 
+      // stop_loop :name — stop a named loop from any context
+      const stop_loop = (name: string): void => {
+        scheduler.stopLoop(name)
+      }
+
       const wrappedLiveLoop = (name: string, builderFn: (b: ProgramBuilder) => void) => {
         const trackBus = this.bridge?.allocateTrackBus(name) ?? 0
 
@@ -362,7 +367,7 @@ export class SonicPiEngine {
         'ring', 'knit', 'range', 'line', 'spread',
         'chord', 'scale', 'chord_invert', 'note', 'note_range',
         'noteToMidi', 'midiToFreq', 'noteToFreq',
-        'puts', 'stop',
+        'puts', 'stop', 'stop_loop',
         // Global store
         'get', 'set',
         // Sample catalog
@@ -382,7 +387,7 @@ export class SonicPiEngine {
         ring, knit, range, line, spread,
         chord, scale, chord_invert, note, note_range,
         noteToMidi, midiToFreq, noteToFreq,
-        topLevelPuts, topLevelStop,
+        topLevelPuts, topLevelStop, stop_loop,
         // Global store
         get, set,
         // Sample catalog

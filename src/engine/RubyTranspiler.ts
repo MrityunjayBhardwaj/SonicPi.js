@@ -133,14 +133,22 @@ export function transpileRubyToJS(ruby: string): string {
   // Wrap bare top-level code in an implicit live_loop
   ruby = wrapBareCode(ruby)
 
-  // Join lines ending with trailing comma (Ruby line continuation)
+  // Join continuation lines: trailing comma, backslash, or binary operator
   const rawLines = ruby.split('\n')
   let lines: string[] = []
   for (let j = 0; j < rawLines.length; j++) {
     let ln = rawLines[j]
-    while (j + 1 < rawLines.length && ln.trimEnd().endsWith(',')) {
-      j++
-      ln = ln.trimEnd() + ' ' + rawLines[j].trim()
+    while (j + 1 < rawLines.length) {
+      const t = ln.trimEnd()
+      if (t.endsWith('\\')) {
+        ln = t.slice(0, -1).trimEnd() + ' ' + rawLines[j + 1].trim()
+        j++
+      } else if (t.endsWith(',') || /(?:&&|\|\||[+*\/%]|and|or)$/.test(t)) {
+        ln = t + ' ' + rawLines[j + 1].trim()
+        j++
+      } else {
+        break
+      }
     }
     lines.push(ln)
   }
@@ -536,6 +544,10 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
   // --- stop ---
   if (line === 'stop') return `b.stop()`
 
+  // --- stop_loop :name --- (top-level only, no b. prefix)
+  const stopLoopMatch = line.match(/^stop_loop\s+(.+)$/)
+  if (stopLoopMatch) return `stop_loop(${transpileExpression(stopLoopMatch[1])})`
+
   // --- Ruby trailing conditional: `statement if condition` ---
   const trailingIfMatch = line.match(/^(.+?)\s+if\s+(.+)$/)
   if (trailingIfMatch) {
@@ -679,8 +691,8 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
 function transpileExpression(expr: string): string {
   let result = expr.trim()
 
-  // Ruby symbols :name → "name"
-  result = result.replace(/:(\w+)/g, '"$1"')
+  // Ruby symbols :name → "name" (only letter/underscore-starting; skip ternary :50)
+  result = result.replace(/:([a-zA-Z_]\w*)/g, '"$1"')
 
   // Ruby string interpolation #{expr} → ${expr} with backtick conversion
   // "hello #{name}" → `hello ${name}`

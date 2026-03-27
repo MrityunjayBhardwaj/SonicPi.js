@@ -386,4 +386,36 @@ describe('VirtualTimeScheduler', () => {
       expect(scheduler.getTask('good')?.running).toBe(true)
     })
   })
+
+  describe('stopLoop', () => {
+    it('stops a running loop by name and returns true', async () => {
+      const { scheduler } = createTestScheduler()
+      scheduler.registerLoop('target', async () => {
+        await scheduler.scheduleSleep('target', 1)
+      })
+      scheduler.tick(100)
+      await flushMicrotasks()
+
+      const result = scheduler.stopLoop('target')
+      expect(result).toBe(true)
+      expect(scheduler.getTask('target')?.running).toBe(false)
+    })
+
+    it('returns false for unknown loop name', () => {
+      const { scheduler } = createTestScheduler()
+      expect(scheduler.stopLoop('nonexistent')).toBe(false)
+    })
+
+    it('returns false if loop is already stopped', async () => {
+      const { scheduler } = createTestScheduler()
+      scheduler.registerLoop('target', async () => {
+        await scheduler.scheduleSleep('target', 1)
+      })
+      scheduler.tick(100)
+      await flushMicrotasks()
+
+      scheduler.stopLoop('target')
+      expect(scheduler.stopLoop('target')).toBe(false)
+    })
+  })
 })

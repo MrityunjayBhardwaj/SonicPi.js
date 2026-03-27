@@ -644,4 +644,124 @@ end
     // Should be a single play call with kwargs, not separate lines
     expect(code).not.toMatch(/^release/m)
   })
+
+  // --- stop_loop ---
+
+  it('transpiles stop_loop :name at top level', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :foo do
+  sleep 1
+end
+stop_loop :foo
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('stop_loop("foo")')
+    expect(code).not.toContain('b.stop_loop')
+  })
+
+  it('transpiles stop_loop :name inside a loop', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :ctrl do
+  stop_loop :drums
+  sleep 4
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('stop_loop("drums")')
+  })
+
+  // --- multi-line continuation ---
+
+  it('joins lines ending with &&', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  if x > 0 &&
+    y > 0
+    play 60
+  end
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('x > 0 && y > 0')
+  })
+
+  it('joins lines ending with ||', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  if a ||
+    b
+    play 60
+  end
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('a || b')
+  })
+
+  it('joins lines ending with +', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  x = 1 +
+    2
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('1 + 2')
+  })
+
+  it('joins lines ending with backslash', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  x = 1 \\
+    + 2
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('1 + 2')
+  })
+
+  // --- ternary operator ---
+
+  it('transpiles ternary with numeric values', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  vol = x > 0 ? 0.8 : 0.5
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('0.8')
+    expect(code).toContain('0.5')
+    expect(code).toContain('?')
+  })
+
+  it('transpiles ternary with symbol values', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  n = cond ? :C4 : :G3
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('"C4"')
+    expect(code).toContain('"G3"')
+    expect(code).toContain('?')
+  })
+
+  it('kwargs colons are not affected by ternary fix', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  play 60, amp: 0.5, release: 1
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    expect(code).toContain('amp: 0.5')
+    expect(code).toContain('release: 1')
+    expect(code).not.toContain('amp : 0.5')
+  })
 })
