@@ -3,8 +3,8 @@
 ## Development Setup
 
 ```bash
-git clone https://github.com/user/sonicpi.js
-cd sonicpi.js
+git clone https://github.com/MrityunjayBhardwaj/SonicPi.js
+cd SonicPi.js
 npm install
 npm run dev        # starts dev server at localhost:5173
 npm test           # runs vitest

@@ -16,7 +16,7 @@ SonicPi.js is a browser-native reimplementation of [Sonic Pi](https://sonic-pi.n
 ## Quick Start
 
 ```bash
-npx sonicpi
+npx sonicpijs
 ```
 
 This starts a local server and opens the editor in your default browser. That's it.
@@ -98,7 +98,7 @@ Full Sonic Pi Ruby DSL with automatic transpilation to JavaScript:
 Embed the engine in your own application:
 
 ```ts
-import { SonicPiEngine } from '@spw/core'
+import { SonicPiEngine } from '@mjayb/sonicpijs'
 
 const engine = new SonicPiEngine()
 await engine.init()

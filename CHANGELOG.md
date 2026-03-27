@@ -24,7 +24,7 @@
 - `version` aligned with git tag convention
 - `private: true` removed — package is now publishable
 - `main` field removed — it was pointing at TypeScript source, which is wrong for a CLI package
-- `vite` moved from `devDependencies` to `dependencies` — the CLI requires it at runtime; `npx sonic-pi-web` was silently broken in fresh installs
+- `vite` moved from `devDependencies` to `dependencies` — the CLI requires it at runtime; `npx sonicpijs` was silently broken in fresh installs
 - `files` whitelist added — prevents publishing `artifacts/`, `tests/`, `.anvi/`, etc.
 - `engines` field added: Node ≥ 18.0.0
 - `repository`, `bugs`, `homepage` fields added
@@ -79,7 +79,7 @@ The first public release of Sonic Pi Web — a browser-native reimplementation o
 - 10 built-in examples grouped by difficulty
 - 10 buffer tabs with localStorage persistence
 - Volume slider, BPM display, recording to WAV
-- `npx sonic-pi-web` CLI launcher
+- `npx sonicpijs` CLI launcher
 - Single HTML file deployment (87KB, 27KB gzipped)
 - Mobile-friendly with touch-sized controls
 
@@ -121,7 +121,7 @@ The first public release of Sonic Pi Web — a browser-native reimplementation o
 - Ctrl+Shift+S to export signed session log
 
 ### Developer API
-- `@spw/core` engine embeddable in any app
+- `@mjayb/sonicpijs` engine embeddable in any app
 - ProgramBuilder fluent API for building music programs
 - AudioInterpreter + QueryInterpreter dual-interpreter architecture
 - Full TypeScript types exported

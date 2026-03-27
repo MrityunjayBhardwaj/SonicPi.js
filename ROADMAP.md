@@ -32,7 +32,7 @@ Turn the basic playground into a polished standalone experience that matches Son
 - [x] Toolbar: Play, Stop, BPM display, example selector
 - [x] Dark theme matching Sonic Pi's aesthetic
 - [x] Mobile-friendly (works on tablets)
-- [x] `npx sonicpi.js` CLI launcher
+- [x] `npx sonicpijs` CLI launcher
 
 ### 1.2 Editor
 - [x] CodeMirror 6 (NOT Monaco — lightweight, ~50KB vs ~2MB)
@@ -163,47 +163,47 @@ Three packages from day one. A developer who finds the engine shouldn't have to
 install an editor they don't need. A university IT admin who checks for security
 shouldn't have to dig through engine code. Nobody files an issue — they just leave.
 
-### @sonicpi.js/core
+### @mjayb/sonicpijs
 - [ ] Pure engine: VirtualTimeScheduler, DSL, SuperSonic bridge, transpilers
 - [ ] Zero security opinion — caller's responsibility
 - [ ] ~50KB, MIT license
-- [ ] README: "npm install @sonicpi.js/core" + 5-line usage example
+- [ ] README: "npm install @mjayb/sonicpijs" + 5-line usage example
 - [ ] For: struCode adapter, custom integrations, power users
 - [ ] npm page answers: "Can I embed a Sonic Pi engine?" → Yes
 
-### @sonicpi.js/sandbox
+### @mjayb/sonicpijs-sandbox
 - [ ] Sandboxed execution wrapper (blocked globals: fetch, DOM, eval)
 - [ ] SRI verification for CDN resources
 - [ ] Session logging + Ed25519 signing
 - [ ] ~10KB, MIT license
-- [ ] README: "npm install @sonicpi.js/sandbox" + education platform example
+- [ ] README: "npm install @mjayb/sonicpijs-sandbox" + education platform example
 - [ ] For: education platforms, any app running untrusted student code
 - [ ] npm page answers: "Is it safe for my school?" → Yes
 
-### sonicpi.js (CLI + app)
+### sonicpijs (CLI + app)
 - [ ] Standalone app (CodeMirror + scope + console + toolbar)
 - [ ] Depends on core + sandbox
-- [ ] `npx sonicpi.js` launches browser
+- [ ] `npx sonicpijs` launches browser
 - [ ] MIT license
-- [ ] README: "npx sonicpi.js" + screenshot
+- [ ] README: "npx sonicpijs" + screenshot
 - [ ] For: end users, teachers, students
 - [ ] npm page answers: "Can I use Sonic Pi in my browser?" → Yes
 
 ### Monorepo Structure
 ```
-sonicpi.js/
+SonicPi.js/
   packages/
     core/
       src/engine/          ← VirtualTimeScheduler, DSL, SuperSonic, transpilers
-      package.json         ← "@sonicpi.js/core"
+      package.json         ← "@mjayb/sonicpijs"
     sandbox/
       src/security/        ← Sandbox, SRI, SessionLog, CodeSign
-      package.json         ← "@sonicpi.js/sandbox"
+      package.json         ← "@mjayb/sonicpijs-sandbox"
     app/
       src/app/             ← CodeMirror, scope, console, toolbar
       src/index.html
       bin/cli.js           ← npx entry point
-      package.json         ← "sonicpi.js" (depends on core + sandbox)
+      package.json         ← "sonicpijs" (depends on core + sandbox)
   package.json             ← workspace root
 ```
 
@@ -231,7 +231,7 @@ sonicpi.js/
 - [ ] MIDI device selector in toolbar
 
 ### 5.5 Ableton Link (via WebRTC)
-- [ ] @sonicpi.js/link-bridge companion (Node.js)
+- [ ] @mjayb/sonicpijs-link-bridge companion (Node.js)
 - [ ] WebRTC DataChannel (unreliable mode, ~1-2ms phase lock)
 - [ ] SyncComponent for tempo/beat/phase
 - [ ] Auto-discover bridge on localhost
@@ -262,7 +262,7 @@ sonicpi.js/
 
 **What v1.0 uses instead:**
 - Regex-based RubyTranspiler for Ruby → JS conversion
-- Full re-evaluate on every Play press (sonicpi.js standalone)
+- Full re-evaluate on every Play press (sonicpijs standalone)
 - Full re-evaluate + scheduler hot-swap on edit (struCode live mode)
 - Both are fast enough: <5ms for typical patterns, well within frame budget
 
@@ -286,10 +286,10 @@ not the parser level (which tokens changed). Hot-swap handles it.
 3. Headline: "Sonic Pi in the browser — zero install, SuperCollider synthesis"
 
 ### struCode Integration
-- sonicpi.js is the engine — struCode is the platform
-- struCode's adapter imports @sonicpi.js/core
+- sonicpijs is the engine — struCode is the platform
+- struCode's adapter imports @mjayb/sonicpijs
 - Viz, inline zones, engine switching handled by struCode
-- sonicpi.js never knows about struCode's visualization layer
+- sonicpijs never knows about struCode's visualization layer
 
 ### Upgrade Path
 ```

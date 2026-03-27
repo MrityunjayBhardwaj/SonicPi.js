@@ -11,10 +11,10 @@ Based on [Sonic Pi](https://sonic-pi.net) by Sam Aaron.
 **Option A:** Run locally with Node.js:
 
 ```
-npx sonicpi
+npx sonicpijs
 ```
 
-**Option B:** Visit the hosted URL (if available).
+**Option B:** Visit [sonicpi.cc](https://sonicpi.cc) (hosted, zero install).
 
 Once it loads, you will see a code editor with a welcome program already written.
 Press **Run** (or **Ctrl+Enter**) to hear it. Press **Stop** (or **Escape**) to silence everything.

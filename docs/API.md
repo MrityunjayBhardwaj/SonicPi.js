@@ -1,6 +1,6 @@
 # SonicPi.js -- API Reference
 
-> Package: `@spw/core`
+> Package: `@mjayb/sonicpijs`
 > Engine for browser-native Sonic Pi temporal scheduling.
 
 ---
@@ -32,7 +32,7 @@
 Minimal code to get audio playing in the browser:
 
 ```ts
-import { SonicPiEngine } from '@spw/core'
+import { SonicPiEngine } from '@mjayb/sonicpijs'
 
 const engine = new SonicPiEngine()
 await engine.init()
@@ -221,7 +221,7 @@ if (capture) {
 Fluent chain API for constructing `Program` arrays. Each `live_loop` body receives a `ProgramBuilder` instance (the `b` parameter).
 
 ```ts
-import { ProgramBuilder } from '@spw/core'
+import { ProgramBuilder } from '@mjayb/sonicpijs'
 
 const b = new ProgramBuilder(seed)
 b.play(60).sleep(0.5).sample('bd_haus').sleep(0.5)
@@ -747,7 +747,7 @@ Convert between Sonic Pi's Ruby DSL, JavaScript, and executable functions.
 Auto-detect language and transpile Ruby to JS if needed. This is the primary entry point used by `SonicPiEngine`.
 
 ```ts
-import { autoTranspile } from '@spw/core'
+import { autoTranspile } from '@mjayb/sonicpijs'
 
 const js = autoTranspile(`
   live_loop :drums do
@@ -762,7 +762,7 @@ const js = autoTranspile(`
 Detect whether code is Ruby DSL or JavaScript.
 
 ```ts
-import { detectLanguage } from '@spw/core'
+import { detectLanguage } from '@mjayb/sonicpijs'
 
 detectLanguage('live_loop :drums do')  // 'ruby'
 detectLanguage('live_loop("drums"')    // 'js'
@@ -773,7 +773,7 @@ detectLanguage('live_loop("drums"')    // 'js'
 Regex-based Ruby-to-JS transpiler. Used as fallback when the parser encounters errors.
 
 ```ts
-import { transpileRubyToJS } from '@spw/core'
+import { transpileRubyToJS } from '@mjayb/sonicpijs'
 
 const js = transpileRubyToJS(`
   live_loop :drums do
@@ -789,7 +789,7 @@ const js = transpileRubyToJS(`
 Recursive descent parser for the Ruby DSL. Primary transpilation path -- gives better error messages and handles nested blocks correctly.
 
 ```ts
-import { parseAndTranspile } from '@spw/core'
+import { parseAndTranspile } from '@mjayb/sonicpijs'
 
 const { code, errors } = parseAndTranspile(`
   live_loop :drums do
@@ -819,7 +819,7 @@ interface ParseError {
 Wrap user code for execution via `new Function()`. Currently a pass-through (builder chain code is synchronous).
 
 ```ts
-import { transpile } from '@spw/core'
+import { transpile } from '@mjayb/sonicpijs'
 
 const { code, lineOffset } = transpile(jsCode)
 ```
@@ -829,7 +829,7 @@ const { code, lineOffset } = transpile(jsCode)
 Create an executable function from transpiled code. DSL function names become parameters.
 
 ```ts
-import { createExecutor } from '@spw/core'
+import { createExecutor } from '@mjayb/sonicpijs'
 
 const executor = createExecutor('live_loop("test", (b) => b.play(60))', ['live_loop'])
 await executor(myLiveLoopImpl)
@@ -992,7 +992,7 @@ Standalone functions for note conversion, chord/scale generation, and data struc
 Convert a note name to MIDI number. Accepts: `"c4"`, `"fs3"` (F#3), `"eb5"` (Eb5), or plain numbers.
 
 ```ts
-import { noteToMidi } from '@spw/core'
+import { noteToMidi } from '@mjayb/sonicpijs'
 
 noteToMidi('c4')  // 60
 noteToMidi('a4')  // 69
@@ -1005,7 +1005,7 @@ noteToMidi(60)    // 60
 Convert MIDI number to frequency in Hz. A4 (MIDI 69) = 440 Hz.
 
 ```ts
-import { midiToFreq } from '@spw/core'
+import { midiToFreq } from '@mjayb/sonicpijs'
 
 midiToFreq(69) // 440
 midiToFreq(60) // 261.63
@@ -1016,7 +1016,7 @@ midiToFreq(60) // 261.63
 Convert note name or MIDI number directly to frequency.
 
 ```ts
-import { noteToFreq } from '@spw/core'
+import { noteToFreq } from '@mjayb/sonicpijs'
 
 noteToFreq('a4') // 440
 ```
@@ -1028,7 +1028,7 @@ noteToFreq('a4') // 440
 Build a chord as a Ring of MIDI note numbers.
 
 ```ts
-import { chord } from '@spw/core'
+import { chord } from '@mjayb/sonicpijs'
 
 chord('c4', 'major')  // Ring([60, 64, 67])
 chord('e3', 'minor7') // Ring([52, 55, 59, 62])
@@ -1041,7 +1041,7 @@ Chord types: `major`, `minor`, `dim`, `aug`, `dom7`, `7`, `major7`, `M7`, `minor
 Build a scale as a Ring of MIDI note numbers.
 
 ```ts
-import { scale } from '@spw/core'
+import { scale } from '@mjayb/sonicpijs'
 
 scale('c4', 'major')         // Ring([60, 62, 64, 65, 67, 69, 71])
 scale('a3', 'minor_pentatonic') // Ring([57, 60, 62, 64, 67])
@@ -1062,7 +1062,7 @@ List all available scale type names.
 Invert a chord by shifting the lowest N notes up an octave.
 
 ```ts
-import { chord_invert } from '@spw/core'
+import { chord_invert } from '@mjayb/sonicpijs'
 
 chord_invert([60, 64, 67], 1) // [64, 67, 72] -- first inversion
 ```
@@ -1080,7 +1080,7 @@ Generate all MIDI note numbers in a range, optionally filtering by pitch classes
 Circular array that wraps indices. Never goes out of bounds.
 
 ```ts
-import { ring } from '@spw/core'
+import { ring } from '@mjayb/sonicpijs'
 
 const r = ring(60, 64, 67, 72)
 r.at(0)  // 60
@@ -1115,7 +1115,7 @@ Ring is also iterable (`for...of` works).
 Repeat each value N times, alternating value/count pairs.
 
 ```ts
-import { knit } from '@spw/core'
+import { knit } from '@mjayb/sonicpijs'
 
 knit('c4', 2, 'e4', 1) // Ring(['c4', 'c4', 'e4'])
 ```
@@ -1123,7 +1123,7 @@ knit('c4', 2, 'e4', 1) // Ring(['c4', 'c4', 'e4'])
 #### `range(start: number, end: number, step?: number): Ring<number>`
 
 ```ts
-import { range } from '@spw/core'
+import { range } from '@mjayb/sonicpijs'
 
 range(1, 5)      // Ring([1, 2, 3, 4])
 range(1, 10, 2)  // Ring([1, 3, 5, 7, 9])
@@ -1135,7 +1135,7 @@ range(10, 0, -2) // Ring([10, 8, 6, 4, 2])
 Generate evenly spaced values. Default `steps` is 4.
 
 ```ts
-import { line } from '@spw/core'
+import { line } from '@mjayb/sonicpijs'
 
 line(60, 72, 5) // Ring([60, 63, 66, 69, 72])
 ```
@@ -1145,7 +1145,7 @@ line(60, 72, 5) // Ring([60, 63, 66, 69, 72])
 Euclidean rhythm pattern (Bjorklund algorithm).
 
 ```ts
-import { spread } from '@spw/core'
+import { spread } from '@mjayb/sonicpijs'
 
 spread(3, 8)    // Ring([true, false, false, true, false, false, true, false])
 spread(5, 8)    // Ring([true, false, true, true, false, true, true, false])
@@ -1157,7 +1157,7 @@ spread(3, 8, 1) // rotated by 1 position
 Deterministic PRNG using Mersenne Twister (MT19937). Matches Sonic Pi's Ruby `Random` class -- same seed produces same sequence.
 
 ```ts
-import { SeededRandom } from '@spw/core'
+import { SeededRandom } from '@mjayb/sonicpijs'
 
 const rng = new SeededRandom(42)
 rng.next()         // float in [0, 1)
@@ -1179,7 +1179,7 @@ Blocks dangerous browser globals in user code using a `Proxy`-based scope with `
 Create a sandboxed executor. All variable lookups go through a Proxy that returns `undefined` for blocked globals and the real value for DSL functions.
 
 ```ts
-import { createSandboxedExecutor } from '@spw/core'
+import { createSandboxedExecutor } from '@mjayb/sonicpijs'
 
 const executor = createSandboxedExecutor(
   'live_loop("test", (b) => b.play(60))',
@@ -1193,7 +1193,7 @@ await executor(myLiveLoopFn)
 Check for obvious sandbox escape hatches. Returns warning strings.
 
 ```ts
-import { validateCode } from '@spw/core'
+import { validateCode } from '@mjayb/sonicpijs'
 
 const warnings = validateCode(userCode)
 // e.g. ['Code accesses "constructor" -- this may not work in sandbox mode.']
@@ -1222,7 +1222,7 @@ Records every Run/Stop/Edit action with SHA-256 code hashes. Supports Ed25519 or
 ### SessionLog
 
 ```ts
-import { SessionLog } from '@spw/core'
+import { SessionLog } from '@mjayb/sonicpijs'
 
 const log = new SessionLog()
 await log.initSigning()        // generate signing keys
@@ -1303,7 +1303,7 @@ Verify a signed session against a public key. Returns `false` for unsigned sessi
 Captures AudioContext output to WAV.
 
 ```ts
-import { Recorder } from '@spw/core'
+import { Recorder } from '@mjayb/sonicpijs'
 
 const { audio } = engine.components
 const recorder = new Recorder(audio.audioCtx, audio.analyser)
@@ -1337,7 +1337,7 @@ new Recorder(audioCtx: AudioContext, source: AudioNode, options?: {
 Web MIDI API for note output and input-as-cue.
 
 ```ts
-import { MidiBridge } from '@spw/core'
+import { MidiBridge } from '@mjayb/sonicpijs'
 
 const midi = new MidiBridge()
 const ok = await midi.init()
@@ -1387,7 +1387,7 @@ type MidiEventHandler = (event: {
 Ableton Link tempo/beat/phase synchronization via WebRTC.
 
 ```ts
-import { LinkBridge } from '@spw/core'
+import { LinkBridge } from '@mjayb/sonicpijs'
 
 const link = new LinkBridge()
 link.onStateChange((state) => {
@@ -1417,7 +1417,7 @@ Without the Node.js bridge running, LinkBridge provides local-only tempo/beat tr
 CRDT-based shared code buffer using Yjs and WebRTC. Peer-to-peer, no server required. Yjs is loaded from CDN at runtime.
 
 ```ts
-import { CollaborationSession, generateRoomId } from '@spw/core'
+import { CollaborationSession, generateRoomId } from '@mjayb/sonicpijs'
 
 const roomId = generateRoomId()
 const session = new CollaborationSession({
@@ -1459,7 +1459,7 @@ Instant O(n) query of Programs without running the scheduler. Walks the step arr
 Query a single iteration of a Program for events in `[begin, end)`.
 
 ```ts
-import { queryProgram } from '@spw/core'
+import { queryProgram } from '@mjayb/sonicpijs'
 
 const events = queryProgram(program, 0, 4, 120)
 ```
@@ -1469,7 +1469,7 @@ const events = queryProgram(program, 0, 4, 120)
 Query a looping Program across a time range. Tiles the program to cover `[begin, end)`.
 
 ```ts
-import { queryLoopProgram } from '@spw/core'
+import { queryLoopProgram } from '@mjayb/sonicpijs'
 
 const events = queryLoopProgram(program, 0, 16, 120)
 ```
@@ -1479,7 +1479,7 @@ const events = queryLoopProgram(program, 0, 16, 120)
 Capture all events from a looping Program up to a duration. Convenience wrapper around `queryLoopProgram`.
 
 ```ts
-import { captureAll } from '@spw/core'
+import { captureAll } from '@mjayb/sonicpijs'
 
 const events = captureAll(program, 8, 120) // 8 seconds at 120 BPM
 ```
@@ -1520,7 +1520,7 @@ interface Example {
 Find an example by name (case-insensitive).
 
 ```ts
-import { getExample } from '@spw/core'
+import { getExample } from '@mjayb/sonicpijs'
 
 const ex = getExample('Basic Beat')
 if (ex) engine.evaluate(ex.ruby)
@@ -1535,7 +1535,7 @@ Get all example names.
 Get examples grouped by difficulty level.
 
 ```ts
-import { getExamplesByDifficulty } from '@spw/core'
+import { getExamplesByDifficulty } from '@mjayb/sonicpijs'
 
 const groups = getExamplesByDifficulty()
 // groups.beginner, groups.intermediate, groups.advanced
@@ -1581,7 +1581,7 @@ Get all sample names as a flat array.
 Classifies code into computational strata for determining whether capture/query is available.
 
 ```ts
-import { detectStratum, Stratum } from '@spw/core'
+import { detectStratum, Stratum } from '@mjayb/sonicpijs'
 
 enum Stratum {
   S1 = 1,  // Stateless, cyclic, deterministic -- capturable
@@ -1604,7 +1604,7 @@ if (stratum <= Stratum.S2) {
 Convert a raw error into a structured friendly error.
 
 ```ts
-import { friendlyError } from '@spw/core'
+import { friendlyError } from '@mjayb/sonicpijs'
 
 interface FriendlyError {
   title: string
