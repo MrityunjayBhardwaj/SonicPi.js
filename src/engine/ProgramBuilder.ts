@@ -198,12 +198,34 @@ export class ProgramBuilder {
     return this.rng.rrand_i(0, max - 1)
   }
 
+  rand_look(): number {
+    return this.rng.peek()
+  }
+
   choose<T>(arr: T[]): T {
     return this.rng.choose(arr)
   }
 
-  dice(sides: number): number {
-    return this.rng.dice(sides)
+  shuffle<T>(arr: T[] | Ring<T>): Ring<T> {
+    const items = arr instanceof Ring ? arr.toArray() : [...arr]
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = this.rng.rrand_i(0, i)
+      ;[items[i], items[j]] = [items[j], items[i]]
+    }
+    return new Ring(items)
+  }
+
+  pick<T>(arr: T[] | Ring<T>, n: number = 1): Ring<T> {
+    const items = arr instanceof Ring ? arr.toArray() : [...arr]
+    const result: T[] = []
+    for (let i = 0; i < n; i++) {
+      result.push(items[Math.floor(this.rng.next() * items.length)])
+    }
+    return new Ring(result)
+  }
+
+  dice(sides: number, bonus: number = 0): number {
+    return this.rng.dice(sides) + bonus
   }
 
   one_in(n: number): boolean {
@@ -212,14 +234,15 @@ export class ProgramBuilder {
 
   // --- Tick (resolved at build time, per-builder counter) ---
 
-  tick(name: string = '__default'): number {
-    const v = (this.ticks.get(name) ?? -1) + 1
+  tick(name: string = '__default', opts?: { step?: number }): number {
+    const step = opts?.step ?? 1
+    const v = (this.ticks.get(name) ?? -step) + step
     this.ticks.set(name, v)
     return v
   }
 
-  look(name: string = '__default'): number {
-    return this.ticks.get(name) ?? 0
+  look(name: string = '__default', offset: number = 0): number {
+    return (this.ticks.get(name) ?? 0) + offset
   }
 
   // --- Data constructors (pure, no side effects) ---

@@ -48,14 +48,22 @@ interface Token {
 
 function tokenize(source: string): Token[] {
   const tokens: Token[] = []
-  // Join lines ending with trailing comma (Ruby line continuation)
+  // Join continuation lines: trailing comma, backslash, or binary operator
   const rawLines = source.split('\n')
   const lines: string[] = []
   for (let i = 0; i < rawLines.length; i++) {
     let line = rawLines[i]
-    while (i + 1 < rawLines.length && line.trimEnd().endsWith(',')) {
-      i++
-      line = line.trimEnd() + ' ' + rawLines[i].trim()
+    while (i + 1 < rawLines.length) {
+      const t = line.trimEnd()
+      if (t.endsWith('\\')) {
+        line = t.slice(0, -1).trimEnd() + ' ' + rawLines[i + 1].trim()
+        i++
+      } else if (t.endsWith(',') || /(?:&&|\|\||[+*\/%]|\band\b|\bor\b)$/.test(t)) {
+        line = t + ' ' + rawLines[i + 1].trim()
+        i++
+      } else {
+        break
+      }
     }
     lines.push(line)
   }
@@ -138,6 +146,12 @@ function tokenize(source: string): Token[] {
       }
 
       // Operators and punctuation
+      // Check || BEFORE singles — '|' is in singles (pipe) and would swallow it
+      if (ch === '|' && i + 1 < line.length && line[i + 1] === '|') {
+        tokens.push({ type: 'op', value: '||', line: lineNum + 1, col: i + 1 })
+        i += 2; continue
+      }
+
       const singles: Record<string, Token['type']> = {
         '(': 'lparen', ')': 'rparen',
         '[': 'lbracket', ']': 'rbracket',
@@ -328,6 +342,12 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     // density N do
     if (t.type === 'word' && t.value === 'density') {
       parseDensity()
+      return
+    }
+
+    // case/when
+    if (t.type === 'word' && t.value === 'case') {
+      parseCaseWhen()
       return
     }
 
@@ -539,6 +559,49 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
     blockStack.pop()
     if (at('word', 'end')) advance()
     output.push(`${indent}}`)
+    if (at('newline')) advance()
+  }
+
+  function parseCaseWhen(): void {
+    advance() // 'case'
+    const expr = collectUntilNewline().trim()
+    skipNewlines()
+
+    const indent = getIndent()
+    let firstWhen = true
+
+    while (!at('eof') && !at('word', 'end')) {
+      if (at('word', 'when')) {
+        advance()
+        const vals = collectUntilNewline().split(',').map(v => v.trim())
+        const condition = vals.map(v =>
+          `${addBuilderPrefixes(transpileExpr(expr), insideLoop)} === ${addBuilderPrefixes(transpileExpr(v), insideLoop)}`
+        ).join(' || ')
+        skipNewlines()
+        if (firstWhen) {
+          output.push(`${indent}if (${condition}) {`)
+          firstWhen = false
+        } else {
+          output.push(`${indent}} else if (${condition}) {`)
+        }
+        blockStack.push('block')
+        parseBlock()
+        blockStack.pop()
+      } else if (at('word', 'else')) {
+        advance()
+        skipNewlines()
+        output.push(`${indent}} else {`)
+        blockStack.push('block')
+        parseBlock()
+        blockStack.pop()
+        break
+      } else {
+        break
+      }
+    }
+
+    if (at('word', 'end')) advance()
+    if (!firstWhen) output.push(`${indent}}`)
     if (at('newline')) advance()
   }
 
@@ -968,10 +1031,10 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
       if (next && ['comma', 'rparen', 'rbracket'].includes(next.type)) return val
       // No space after lparen, lbracket
       if (t.type === 'lparen' || t.type === 'lbracket') return val
-      // No space before colon (for keyword args: amp: 2)
-      if (next?.type === 'colon') return val
-      // No space after colon (for keyword args: amp: 2)
-      if (t.type === 'colon') return val
+      // No space before colon only for kwargs (word immediately before: amp: 2)
+      if (next?.type === 'colon' && t.type === 'word') return val
+      // No space after colon only for kwargs (word immediately before)
+      if (t.type === 'colon' && prev?.type === 'word') return val
       return val + ' '
     }).join('').trim()
   }
@@ -1145,6 +1208,10 @@ function transpileSonicPiLine(line: string, insideLoop: boolean): string {
 
   // stop
   if (line === 'stop') return `${prefix}stop()`
+
+  // stop_loop :name — top-level only (no b. prefix)
+  const stopLoopMatch = line.match(/^stop_loop\s+(.+)$/)
+  if (stopLoopMatch) return `stop_loop(${transpileArgs(stopLoopMatch[1])})`
 
   // puts / print
   const putsMatch = line.match(/^puts\s+(.+)$/)

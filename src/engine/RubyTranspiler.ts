@@ -133,14 +133,22 @@ export function transpileRubyToJS(ruby: string): string {
   // Wrap bare top-level code in an implicit live_loop
   ruby = wrapBareCode(ruby)
 
-  // Join lines ending with trailing comma (Ruby line continuation)
+  // Join continuation lines: trailing comma, backslash, or binary operator
   const rawLines = ruby.split('\n')
   let lines: string[] = []
   for (let j = 0; j < rawLines.length; j++) {
     let ln = rawLines[j]
-    while (j + 1 < rawLines.length && ln.trimEnd().endsWith(',')) {
-      j++
-      ln = ln.trimEnd() + ' ' + rawLines[j].trim()
+    while (j + 1 < rawLines.length) {
+      const t = ln.trimEnd()
+      if (t.endsWith('\\')) {
+        ln = t.slice(0, -1).trimEnd() + ' ' + rawLines[j + 1].trim()
+        j++
+      } else if (t.endsWith(',') || /(?:&&|\|\||[+*\/%]|\band\b|\bor\b)$/.test(t)) {
+        ln = t + ' ' + rawLines[j + 1].trim()
+        j++
+      } else {
+        break
+      }
     }
     lines.push(ln)
   }
@@ -149,8 +157,11 @@ export function transpileRubyToJS(ruby: string): string {
   let i = 0
   // Track block types so `end` produces the correct closing bracket
   // 'loop' → `})`, 'block' → `}`, 'thread' → `})()`
-  const blockStack: Array<'loop' | 'block' | 'thread' | 'density' | 'density-toplevel'> = []
+  const blockStack: Array<'loop' | 'block' | 'thread' | 'density' | 'density-toplevel' | 'case'> = []
   const definedFunctions = new Set<string>()
+  // Stack for case/when — stores the expression being matched and whether first when was seen
+  const caseExprStack: string[] = []
+  const caseHadWhenStack: boolean[] = []
 
   while (i < lines.length) {
     let line = lines[i]
@@ -346,6 +357,33 @@ export function transpileRubyToJS(ruby: string): string {
       continue
     }
 
+    // --- case expr ---
+    const caseMatch = code.match(/^case\s+(.+)$/)
+    if (caseMatch) {
+      caseExprStack.push(transpileExpression(caseMatch[1]))
+      caseHadWhenStack.push(false)
+      blockStack.push('case')
+      i++
+      continue
+    }
+
+    // --- when val1, val2, ... ---
+    const whenMatch = code.match(/^when\s+(.+)$/)
+    if (whenMatch && caseExprStack.length > 0) {
+      const expr = caseExprStack[caseExprStack.length - 1]
+      const vals = whenMatch[1].split(',').map(v => v.trim())
+      const condition = vals.map(v => `${expr} === ${transpileExpression(v)}`).join(' || ')
+      const hadWhen = caseHadWhenStack[caseHadWhenStack.length - 1]
+      if (hadWhen) {
+        result.push(`${indent}} else if (${condition}) {${inlineComment}`)
+      } else {
+        result.push(`${indent}if (${condition}) {${inlineComment}`)
+        caseHadWhenStack[caseHadWhenStack.length - 1] = true
+      }
+      i++
+      continue
+    }
+
     // --- if condition ---
     const ifMatch = code.match(/^if\s+(.+)$/)
     if (ifMatch) {
@@ -436,6 +474,10 @@ export function transpileRubyToJS(ruby: string): string {
         const dBRef = blockType === 'density' ? 'b' : '__densityB'
         result.push(`${indent}  ${dBRef}.density = __prevDensity`)
         result.push(`${indent}}${inlineComment}`)
+      } else if (blockType === 'case') {
+        caseExprStack.pop()
+        caseHadWhenStack.pop()
+        result.push(`${indent}}${inlineComment}`)
       } else {
         const closing = blockType === 'loop' ? '})' : blockType === 'thread' ? '})()' : '}'
         result.push(`${indent}${closing}${inlineComment}`)
@@ -501,6 +543,10 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
 
   // --- stop ---
   if (line === 'stop') return `b.stop()`
+
+  // --- stop_loop :name --- (top-level only, no b. prefix)
+  const stopLoopMatch = line.match(/^stop_loop\s+(.+)$/)
+  if (stopLoopMatch) return `stop_loop(${transpileExpression(stopLoopMatch[1])})`
 
   // --- Ruby trailing conditional: `statement if condition` ---
   const trailingIfMatch = line.match(/^(.+?)\s+if\s+(.+)$/)
@@ -645,8 +691,8 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
 function transpileExpression(expr: string): string {
   let result = expr.trim()
 
-  // Ruby symbols :name → "name"
-  result = result.replace(/:(\w+)/g, '"$1"')
+  // Ruby symbols :name → "name" (only letter/underscore-starting; skip ternary :50)
+  result = result.replace(/:([a-zA-Z_]\w*)/g, '"$1"')
 
   // Ruby string interpolation #{expr} → ${expr} with backtick conversion
   // "hello #{name}" → `hello ${name}`

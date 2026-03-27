@@ -14,6 +14,7 @@ import { MidiBridge } from './MidiBridge'
 import { spread } from './EuclideanRhythm'
 import { noteToMidi, midiToFreq, noteToFreq } from './NoteToFreq'
 import { chord, scale, chord_invert, note, note_range } from './ChordScale'
+import { getSampleNames, getCategories } from './SampleCatalog'
 import type { Program } from './Program'
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,8 @@ export class SonicPiEngine {
   private loopTicks = new Map<string, Map<string, number>>()
   /** MIDI I/O bridge — lazily accessible from DSL via get_cc() */
   readonly midiBridge = new MidiBridge()
+  /** Global key-value store — shared across all loops via get/set */
+  private globalStore = new Map<string | symbol, unknown>()
 
   get schedAhead(): number { return this.schedAheadTime }
 
@@ -119,6 +122,13 @@ export class SonicPiEngine {
           schedAheadTime: this.schedAheadTime,
         })
 
+        this.scheduler.onLoopError((loopName, err) => {
+          const msg = `Error in loop '${loopName}': ${err.message}`
+          if (this.runtimeErrorHandler) this.runtimeErrorHandler(err)
+          if (this.printHandler) this.printHandler(msg)
+          else console.error('[SonicPi]', msg)
+        })
+
         this.loopBuilders.clear()
         this.loopSeeds.clear()
       }
@@ -149,6 +159,11 @@ export class SonicPiEngine {
       // Top-level stop sentinel
       const topLevelStop = () => {
         // At top level, stop just halts evaluation
+      }
+
+      // stop_loop :name — stop a named loop from any context
+      const stop_loop = (name: string): void => {
+        scheduler.stopLoop(name)
       }
 
       const wrappedLiveLoop = (name: string, builderFn: (b: ProgramBuilder) => void) => {
@@ -285,11 +300,33 @@ export class SonicPiEngine {
         }
       }
 
+      // ----- Global store (get/set) -----
+      // get[:key] returns the stored value (or nil). get is a Proxy so get[:key] works.
+      // set(:key, value) stores it. Shared across all loops.
+      const set = (key: string | symbol, value: unknown): void => {
+        this.globalStore.set(key, value)
+      }
+      const get = new Proxy({} as Record<string | symbol, unknown>, {
+        get: (_target, key) => this.globalStore.get(key) ?? null,
+      })
+
       // ----- MIDI input readers -----
       const get_cc = (controller: number, channel: number = 1): number =>
         this.midiBridge.getCCValue(controller, channel)
       const get_pitch_bend = (channel: number = 1): number =>
         this.midiBridge.getPitchBend(channel)
+
+      // ----- Sample catalog -----
+      const sample_names = (): string[] => getSampleNames()
+      const sample_groups = (): string[] => getCategories()
+      const sample_loaded = (name: string): boolean => {
+        if (!this.bridge) return false
+        return this.bridge.isSampleLoaded(name)
+      }
+      const sample_duration = (name: string): number => {
+        if (!this.bridge) return 0
+        return this.bridge.getSampleDuration(name) ?? 0
+      }
 
       // ----- MIDI output (opts object carries keyword args from transpiler) -----
       type MidiOpts = { channel?: number }
@@ -317,6 +354,11 @@ export class SonicPiEngine {
       const midi_continue = () => this.midiBridge.midiContinue()
       const midi_all_notes_off = (opts: MidiOpts = {}) =>
         this.midiBridge.allNotesOff(opts.channel ?? 1)
+      const midi_notes_off = (opts: MidiOpts = {}) =>
+        this.midiBridge.allNotesOff(opts.channel ?? 1)
+      const midi_devices = () => this.midiBridge.getDevices()
+      const get_note_on = (channel: number = 1) => this.midiBridge.getLastNoteOn(channel)
+      const get_note_off = (channel: number = 1) => this.midiBridge.getLastNoteOff(channel)
 
       // Build DSL parameter names and values for the executor
       const dslNames = [
@@ -325,15 +367,19 @@ export class SonicPiEngine {
         'ring', 'knit', 'range', 'line', 'spread',
         'chord', 'scale', 'chord_invert', 'note', 'note_range',
         'noteToMidi', 'midiToFreq', 'noteToFreq',
-        'puts', 'stop',
+        'puts', 'stop', 'stop_loop',
+        // Global store
+        'get', 'set',
+        // Sample catalog
+        'sample_names', 'sample_groups', 'sample_loaded', 'sample_duration',
         // MIDI input
-        'get_cc', 'get_pitch_bend',
+        'get_cc', 'get_pitch_bend', 'get_note_on', 'get_note_off',
         // MIDI output
         'midi_note_on', 'midi_note_off', 'midi_cc',
         'midi_pitch_bend', 'midi_channel_pressure', 'midi_poly_pressure',
         'midi_prog_change', 'midi_clock_tick',
         'midi_start', 'midi_stop', 'midi_continue',
-        'midi_all_notes_off',
+        'midi_all_notes_off', 'midi_notes_off', 'midi_devices',
       ]
       const dslValues = [
         fxAwareWrappedLiveLoop, topLevelWithFx, topLevelUseBpm, topLevelUseSynth, topLevelUseRandomSeed,
@@ -341,15 +387,19 @@ export class SonicPiEngine {
         ring, knit, range, line, spread,
         chord, scale, chord_invert, note, note_range,
         noteToMidi, midiToFreq, noteToFreq,
-        topLevelPuts, topLevelStop,
+        topLevelPuts, topLevelStop, stop_loop,
+        // Global store
+        get, set,
+        // Sample catalog
+        sample_names, sample_groups, sample_loaded, sample_duration,
         // MIDI input
-        get_cc, get_pitch_bend,
+        get_cc, get_pitch_bend, get_note_on, get_note_off,
         // MIDI output
         midi_note_on, midi_note_off, midi_cc,
         midi_pitch_bend, midi_channel_pressure, midi_poly_pressure,
         midi_prog_change, midi_clock_tick,
         midi_start, midi_stop, midi_continue,
-        midi_all_notes_off,
+        midi_all_notes_off, midi_notes_off, midi_devices,
       ]
 
       const executor = createSandboxedExecutor(transpiledCode, dslNames)
@@ -419,6 +469,7 @@ export class SonicPiEngine {
     this.loopBuilders.clear()
     this.loopSeeds.clear()
     this.loopTicks.clear()
+    this.globalStore.clear()
   }
 
   dispose(): void {
@@ -432,6 +483,7 @@ export class SonicPiEngine {
     this.currentStratum = Stratum.S3  // Reset to S3 so capture is unavailable
     this.loopBuilders.clear()
     this.loopSeeds.clear()
+    this.globalStore.clear()
   }
 
   setRuntimeErrorHandler(handler: (err: Error) => void): void {

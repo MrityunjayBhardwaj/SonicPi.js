@@ -109,4 +109,10 @@ export class SeededRandom {
     r.mti = this.mti
     return r
   }
+
+  /** Return next value without advancing state. */
+  peek(): number {
+    const clone = this.clone()
+    return clone.next()
+  }
 }

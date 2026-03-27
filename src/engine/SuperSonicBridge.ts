@@ -461,6 +461,16 @@ export class SuperSonicBridge {
     this.freeBuses.push(busNum)
   }
 
+  /** Check if a sample has been loaded (duration cached). */
+  isSampleLoaded(name: string): boolean {
+    return this.loadedSamples.has(name)
+  }
+
+  /** Get cached sample duration in seconds, or undefined if not yet loaded. */
+  getSampleDuration(name: string): number | undefined {
+    return this.sampleDurations.get(name)
+  }
+
   /** Free all synth and FX nodes (clean slate for re-evaluate). */
   freeAllNodes(): void {
     if (!this.sonic) return

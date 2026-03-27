@@ -326,4 +326,28 @@ live_loop("drums", (b) => {
 
     engine.dispose()
   })
+
+  it('get/set global store shares state across loops', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+
+    const result = await engine.evaluate(`
+      set(:note, 60)
+    `)
+    expect(result.error).toBeUndefined()
+    expect((engine as any).globalStore.get('note')).toBe(60)
+
+    engine.dispose()
+  })
+
+  it('global store is cleared on dispose', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+
+    await engine.evaluate(`set(:note, 99)`)
+    expect((engine as any).globalStore.get('note')).toBe(99)
+
+    engine.dispose()
+    expect((engine as any).globalStore.size).toBe(0)
+  })
 })

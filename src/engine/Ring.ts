@@ -15,8 +15,11 @@ export class Ring<T> {
     // Proxy intercepts numeric bracket access → delegates to .at()
     return new Proxy(this, {
       get(target, prop, receiver) {
-        if (typeof prop === 'string' && /^\d+$/.test(prop)) {
-          return target.at(Number(prop))
+        if (typeof prop === 'string') {
+          const n = Number(prop)
+          if (!isNaN(n) && String(n) === prop) {
+            return target.at(n)
+          }
         }
         return Reflect.get(target, prop, receiver)
       },

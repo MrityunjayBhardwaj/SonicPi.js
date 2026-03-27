@@ -311,4 +311,111 @@ describe('VirtualTimeScheduler', () => {
       expect(task.asyncFn).toBeDefined()
     })
   })
+
+  describe('error recovery', () => {
+    it('loop survives a runtime error and keeps running', async () => {
+      const { scheduler } = createTestScheduler()
+      const errors: string[] = []
+      const events: string[] = []
+      let iteration = 0
+
+      scheduler.onLoopError((taskId, err) => {
+        errors.push(`${taskId}: ${err.message}`)
+      })
+
+      scheduler.registerLoop('test', async () => {
+        iteration++
+        if (iteration === 1) throw new Error('boom')
+        events.push(`iteration ${iteration}`)
+        await scheduler.scheduleSleep('test', 1)
+      })
+
+      // First tick — starts the loop, hits the error
+      scheduler.tick(100)
+      await flushMicrotasks()
+      // Recovery sleep gets queued — tick again to advance past it
+      scheduler.tick(200)
+      await flushMicrotasks()
+      scheduler.tick(300)
+      await flushMicrotasks()
+
+      expect(errors).toEqual(['test: boom'])
+      expect(events.length).toBeGreaterThan(0)
+      expect(scheduler.getTask('test')?.running).toBe(true)
+    })
+
+    it('calls onLoopError with loop name and error', async () => {
+      const { scheduler } = createTestScheduler()
+      const captured: { id: string; message: string }[] = []
+
+      scheduler.onLoopError((taskId, err) => {
+        captured.push({ id: taskId, message: err.message })
+      })
+
+      scheduler.registerLoop('myloop', async () => {
+        throw new Error('test error')
+      })
+
+      scheduler.tick(100)
+      await flushMicrotasks()
+
+      expect(captured).toEqual([{ id: 'myloop', message: 'test error' }])
+    })
+
+    it('other loops keep running when one loop errors', async () => {
+      const { scheduler } = createTestScheduler()
+      const goodEvents: string[] = []
+
+      scheduler.onLoopError(() => {})
+
+      scheduler.registerLoop('bad', async () => {
+        throw new Error('bad loop error')
+      })
+
+      scheduler.registerLoop('good', async () => {
+        goodEvents.push('tick')
+        await scheduler.scheduleSleep('good', 1)
+      })
+
+      scheduler.tick(100)
+      await flushMicrotasks()
+      scheduler.tick(200)
+      await flushMicrotasks()
+
+      expect(goodEvents.length).toBeGreaterThan(0)
+      expect(scheduler.getTask('good')?.running).toBe(true)
+    })
+  })
+
+  describe('stopLoop', () => {
+    it('stops a running loop by name and returns true', async () => {
+      const { scheduler } = createTestScheduler()
+      scheduler.registerLoop('target', async () => {
+        await scheduler.scheduleSleep('target', 1)
+      })
+      scheduler.tick(100)
+      await flushMicrotasks()
+
+      const result = scheduler.stopLoop('target')
+      expect(result).toBe(true)
+      expect(scheduler.getTask('target')?.running).toBe(false)
+    })
+
+    it('returns false for unknown loop name', () => {
+      const { scheduler } = createTestScheduler()
+      expect(scheduler.stopLoop('nonexistent')).toBe(false)
+    })
+
+    it('returns false if loop is already stopped', async () => {
+      const { scheduler } = createTestScheduler()
+      scheduler.registerLoop('target', async () => {
+        await scheduler.scheduleSleep('target', 1)
+      })
+      scheduler.tick(100)
+      await flushMicrotasks()
+
+      scheduler.stopLoop('target')
+      expect(scheduler.stopLoop('target')).toBe(false)
+    })
+  })
 })

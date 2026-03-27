@@ -50,6 +50,8 @@ export class MidiBridge {
    * Raw 14-bit value: 0x0000 = -1, 0x2000 = 0, 0x3FFF = +1.
    */
   private pitchBendState = new Map<number, number>()
+  private noteOnState = new Map<string, { note: number; velocity: number }>()
+  private noteOffState = new Map<string, number>()
 
   /** Running MIDI clock interval (started by startClock / stopped by stopClock). */
   private clockInterval: ReturnType<typeof setInterval> | null = null
@@ -281,6 +283,14 @@ export class MidiBridge {
     this.ccState.set(`${controller}:${channel}`, value)
   }
 
+  getLastNoteOn(channel: number = 1): { note: number; velocity: number } | null {
+    return this.noteOnState.get(`${channel}`) ?? null
+  }
+
+  getLastNoteOff(channel: number = 1): number | null {
+    return this.noteOffState.get(`${channel}`) ?? null
+  }
+
   /**
    * Return the most recently received pitch bend normalised to [-1, 1].
    * Returns 0 (centre) if no pitch bend message has been received.
@@ -304,13 +314,16 @@ export class MidiBridge {
       case 0x90: // Note on
         if (data.length >= 3 && data[2] > 0) {
           this.emit({ type: 'note_on', channel, note: data[1], velocity: data[2] })
+          this.noteOnState.set(`${channel}`, { note: data[1], velocity: data[2] })
         } else {
           this.emit({ type: 'note_off', channel, note: data[1] })
+          this.noteOffState.set(`${channel}`, data[1])
         }
         break
 
       case 0x80: // Note off
         this.emit({ type: 'note_off', channel, note: data[1] })
+        this.noteOffState.set(`${channel}`, data[1])
         break
 
       case 0xB0: { // CC

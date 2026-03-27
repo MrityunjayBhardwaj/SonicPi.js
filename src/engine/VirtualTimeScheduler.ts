@@ -69,6 +69,7 @@ export class VirtualTimeScheduler {
   private schedAheadTime: number
   private tickInterval: number
   private eventHandlers: EventHandler[] = []
+  private loopErrorHandler: ((taskId: string, err: Error) => void) | null = null
   /** Monotonic counter for deterministic ordering of same-time entries */
   private insertionOrder = 0
   /** Map from `${time}:${taskId}` to insertion order for stable sorting */
@@ -148,6 +149,14 @@ export class VirtualTimeScheduler {
     return names
   }
 
+  /** Stop a named loop from outside. Returns true if the loop was running. */
+  stopLoop(name: string): boolean {
+    const task = this.tasks.get(name)
+    if (!task || !task.running) return false
+    task.running = false
+    return true
+  }
+
 
   /**
    * Hot-swap a running loop's function.
@@ -219,6 +228,11 @@ export class VirtualTimeScheduler {
 
   onEvent(handler: EventHandler): void {
     this.eventHandlers.push(handler)
+  }
+
+  /** Register a handler called when a loop throws a runtime error. */
+  onLoopError(handler: (taskId: string, err: Error) => void): void {
+    this.loopErrorHandler = handler
   }
 
   emitEvent(event: SchedulerEvent): void {
@@ -364,9 +378,16 @@ export class VirtualTimeScheduler {
           task.running = false
           break
         }
-        console.error(`[SonicPi] Error in loop "${task.id}":`, err)
-        task.running = false
-        break
+        const error = err instanceof Error ? err : new Error(String(err))
+        if (this.loopErrorHandler) {
+          this.loopErrorHandler(task.id, error)
+        } else {
+          console.error(`[SonicPi] Error in loop "${task.id}":`, error)
+        }
+        // Recovery sleep: pause 1 beat so we don't spin on a tight error loop
+        if (task.running) {
+          await this.scheduleSleep(task.id, 1)
+        }
       }
     }
   }
