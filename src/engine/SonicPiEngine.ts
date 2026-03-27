@@ -1,10 +1,10 @@
-import { VirtualTimeScheduler } from './VirtualTimeScheduler'
+import { VirtualTimeScheduler, DEFAULT_SCHED_AHEAD_TIME } from './VirtualTimeScheduler'
 import { ProgramBuilder } from './ProgramBuilder'
 import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioInterpreter'
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
 import { transpile } from './Transpiler'
-import { createSandboxedExecutor } from './Sandbox'
+import { createSandboxedExecutor, validateCode } from './Sandbox'
 import { autoTranspile } from './RubyTranspiler'
 import { friendlyError, formatFriendlyError, type FriendlyError } from './FriendlyErrors'
 import { detectStratum, Stratum } from './Stratum'
@@ -18,6 +18,13 @@ import { getSampleNames, getCategories } from './SampleCatalog'
 import type { Program } from './Program'
 
 // ---------------------------------------------------------------------------
+// Module-level helpers
+// ---------------------------------------------------------------------------
+
+/** 4-character base-36 suffix — enough entropy for unique in-session loop names. */
+const randomSuffix = (): string => randomSuffix()
+
+// ---------------------------------------------------------------------------
 // Engine interfaces
 // ---------------------------------------------------------------------------
 
@@ -27,7 +34,7 @@ export interface EngineComponents {
   /** Audio context and analyser node for scope/recording. */
   audio: { analyser: AnalyserNode; audioCtx: AudioContext; trackAnalysers?: Map<string, AnalyserNode> }
   /** Capture query for deterministic (S1/S2) code introspection. */
-  capture: { queryRange(begin: number, end: number): Promise<unknown[]> }
+  capture: { queryRange(begin: number, end: number): Promise<QueryEvent[]> }
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +63,13 @@ export class SonicPiEngine {
   private loopSeeds = new Map<string, number>()
   /** Per-loop tick counters — persisted across iterations so ring.tick() advances correctly */
   private loopTicks = new Map<string, Map<string, number>>()
-  /** MIDI I/O bridge — lazily accessible from DSL via get_cc() */
+  /**
+   * MIDI I/O bridge — exposed for shell-level device management (listing devices,
+   * opening ports, registering event handlers). Not intended for direct note
+   * triggering from application code; use the DSL functions (`midi_note_on`,
+   * `midi_cc`, etc.) inside `live_loop` blocks instead, so events are
+   * scheduler-aware and time-stamped correctly.
+   */
   readonly midiBridge = new MidiBridge()
   /** Global key-value store — shared across all loops via get/set */
   private globalStore = new Map<string | symbol, unknown>()
@@ -68,9 +81,18 @@ export class SonicPiEngine {
     schedAheadTime?: number
   }) {
     this.bridgeOptions = options?.bridge ?? {}
-    this.schedAheadTime = options?.schedAheadTime ?? 0.1
+    this.schedAheadTime = options?.schedAheadTime ?? DEFAULT_SCHED_AHEAD_TIME
   }
 
+  /**
+   * Initialize the engine. Must be called once before `evaluate()`.
+   * Safe to call multiple times — subsequent calls are no-ops.
+   *
+   * Audio initializes via SuperSonic (WebAssembly). If that fails (e.g. in
+   * test environments or when WebAssembly is blocked), the engine continues
+   * without audio — the scheduler still runs and `capture` queries still work.
+   * Check `hasAudio` after `init()` to know whether audio is available.
+   */
   async init(): Promise<void> {
     if (this.initialized) return
 
@@ -99,6 +121,22 @@ export class SonicPiEngine {
     this.initialized = true
   }
 
+  /** Whether audio output is available. False when SuperSonic failed to initialize. */
+  get hasAudio(): boolean {
+    return this.bridge !== null
+  }
+
+  /**
+   * Evaluate and schedule a Sonic Pi program.
+   *
+   * Accepts Ruby DSL syntax (auto-transpiled) or raw JS builder code.
+   * On the first call, `play()` must be called afterward to start the scheduler.
+   * On subsequent calls while playing, loops are hot-swapped in place.
+   *
+   * Returns `{ error }` on syntax or runtime errors during evaluation.
+   * Does NOT throw — check the return value. Runtime errors inside `live_loop`
+   * bodies after the scheduler has started are delivered via `setRuntimeErrorHandler`.
+   */
   async evaluate(code: string): Promise<{ error?: Error }> {
     if (!this.initialized) {
       return { error: new Error('SonicPiEngine not initialized — call init() first') }
@@ -234,8 +272,11 @@ export class SonicPiEngine {
         }
         const prevFx = currentTopFx
         currentTopFx = { name: fxName, opts }
-        fn(null) // execute callback to register live_loops
-        currentTopFx = prevFx
+        try {
+          fn(null) // execute callback to register live_loops
+        } finally {
+          currentTopFx = prevFx
+        }
       }
 
       // Patch wrappedLiveLoop to apply current top-level FX
@@ -261,7 +302,7 @@ export class SonicPiEngine {
 
       // Top-level in_thread: wrap callback in a one-shot live_loop
       const topLevelInThread = (fn: (b: ProgramBuilder) => void) => {
-        const name = `__thread_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+        const name = `__thread_${Date.now()}_${randomSuffix()}`
         fxAwareWrappedLiveLoop(name, (b: ProgramBuilder) => {
           fn(b)
           b.stop()
@@ -277,7 +318,7 @@ export class SonicPiEngine {
         for (let i = 0; i < times.length; i++) {
           const t = times[i]
           const v = values ? values[i] : undefined
-          const name = `__at_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`
+          const name = `__at_${Date.now()}_${i}_${randomSuffix()}`
           fxAwareWrappedLiveLoop(name, (b: ProgramBuilder) => {
             if (t > 0) b.sleep(t)
             if (v !== undefined) {
@@ -402,6 +443,12 @@ export class SonicPiEngine {
         midi_all_notes_off, midi_notes_off, midi_devices,
       ]
 
+      const codeWarnings = validateCode(transpiledCode)
+      for (const warning of codeWarnings) {
+        if (this.printHandler) this.printHandler(`[Warning] ${warning}`)
+        else console.warn('[SonicPi]', warning)
+      }
+
       const executor = createSandboxedExecutor(transpiledCode, dslNames)
       await executor(...dslValues)
 
@@ -443,6 +490,7 @@ export class SonicPiEngine {
     }
   }
 
+  /** Start the scheduler. Call after the first `evaluate()`. */
   play(): void {
     if (!this.scheduler) return
     if (this.playing) return
@@ -451,6 +499,7 @@ export class SonicPiEngine {
     this.scheduler.start()
   }
 
+  /** Stop all loops and free audio resources. The next `evaluate()` starts fresh. */
   stop(): void {
     if (!this.playing) return
 
@@ -486,16 +535,20 @@ export class SonicPiEngine {
     this.globalStore.clear()
   }
 
+  /** Register a handler for runtime errors inside `live_loop` bodies. */
   setRuntimeErrorHandler(handler: (err: Error) => void): void {
     this.runtimeErrorHandler = handler
   }
 
-  /** Set handler for puts/print output from user code. */
+  /** Register a handler for `puts` / `print` output from user code. */
   setPrintHandler(handler: (msg: string) => void): void {
     this.printHandler = handler
   }
 
-  /** Set master volume (0-1). Safe to call before init — volume is applied when bridge is ready. */
+  /**
+   * Set master volume. Range: 0 (silent) to 1 (full).
+   * Safe to call before `init()` — applied when the audio bridge is ready.
+   */
   setVolume(volume: number): void {
     this.pendingVolume = volume
     this.bridge?.setMasterVolume(volume)
@@ -530,7 +583,7 @@ export class SonicPiEngine {
       const scheduler = this.scheduler
 
       result.capture = {
-        async queryRange(begin: number, end: number): Promise<unknown[]> {
+        async queryRange(begin: number, end: number): Promise<QueryEvent[]> {
           const events: QueryEvent[] = []
           for (const [name, builderFn] of loopBuilders) {
             const builder = new ProgramBuilder(0)

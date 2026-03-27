@@ -12,6 +12,41 @@
  *               go to every selected output simultaneously.
  */
 
+// ---------------------------------------------------------------------------
+// MIDI protocol constants (MIDI 1.0 spec)
+// ---------------------------------------------------------------------------
+
+/** Status byte upper nibbles — OR'd with (channel - 1) to get the full status byte. */
+const NOTE_ON            = 0x90
+const NOTE_OFF           = 0x80
+const CONTROL_CHANGE     = 0xB0
+const PITCH_BEND         = 0xE0
+const CHANNEL_PRESSURE   = 0xD0
+const POLY_PRESSURE      = 0xA0
+const PROGRAM_CHANGE     = 0xC0
+
+/** System real-time: MIDI timing clock (one pulse per 24th of a quarter note). */
+const MIDI_TIMING_CLOCK  = 0xF8
+
+/** Masks a value to the 4-bit channel range (0–15). */
+const CHANNEL_NIBBLE_MASK = 0x0F
+/** Masks a value to the 7-bit MIDI data range (0–127). */
+const MIDI_DATA_MASK     = 0x7F
+
+/** MIDI clock pulses per quarter note (MIDI 1.0 standard). */
+const MIDI_CLOCKS_PER_QUARTER_NOTE = 24
+
+/** Maximum 14-bit pitch bend value (0x3FFF). Centre is half this: 8192. */
+const PITCH_BEND_14BIT_MAX = 16383
+
+/** CC number for "all notes off" (MIDI 1.0 spec, section 4.4). */
+const ALL_NOTES_OFF_CC = 123
+
+/** Seconds per minute — used when computing MIDI clock intervals from BPM. */
+const SECONDS_PER_MINUTE = 60
+
+// ---------------------------------------------------------------------------
+
 export interface MidiDevice {
   id: string
   name: string
@@ -155,14 +190,14 @@ export class MidiBridge {
 
   /** Send MIDI note on. Channel 1-16, note 0-127, velocity 0-127. */
   noteOn(note: number, velocity: number = 100, channel: number = 1): void {
-    const status = 0x90 | ((channel - 1) & 0x0F)
-    this.send([status, note & 0x7F, velocity & 0x7F])
+    const status = NOTE_ON | ((channel - 1) & CHANNEL_NIBBLE_MASK)
+    this.send([status, note & MIDI_DATA_MASK, velocity & MIDI_DATA_MASK])
   }
 
   /** Send MIDI note off. */
   noteOff(note: number, channel: number = 1): void {
-    const status = 0x80 | ((channel - 1) & 0x0F)
-    this.send([status, note & 0x7F, 0])
+    const status = NOTE_OFF | ((channel - 1) & CHANNEL_NIBBLE_MASK)
+    this.send([status, note & MIDI_DATA_MASK, 0])
   }
 
   // ---------------------------------------------------------------------------
@@ -171,13 +206,13 @@ export class MidiBridge {
 
   /** Send MIDI CC (control change). controller 0-127, value 0-127. */
   cc(controller: number, value: number, channel: number = 1): void {
-    const status = 0xB0 | ((channel - 1) & 0x0F)
-    this.send([status, controller & 0x7F, value & 0x7F])
+    const status = CONTROL_CHANGE | ((channel - 1) & CHANNEL_NIBBLE_MASK)
+    this.send([status, controller & MIDI_DATA_MASK, value & MIDI_DATA_MASK])
   }
 
   /** Send all notes off on a channel (CC 123). */
   allNotesOff(channel: number = 1): void {
-    this.cc(123, 0, channel)
+    this.cc(ALL_NOTES_OFF_CC, 0, channel)
   }
 
   /**
@@ -186,11 +221,11 @@ export class MidiBridge {
    */
   pitchBend(val: number, channel: number = 1): void {
     const clamped = Math.max(-1, Math.min(1, val))
-    // Convert [-1,1] → [0, 16383]; centre = 8192 (0x2000)
-    const raw = Math.round((clamped + 1) * 0.5 * 16383)
-    const lsb = raw & 0x7F
-    const msb = (raw >> 7) & 0x7F
-    const status = 0xE0 | ((channel - 1) & 0x0F)
+    // Map [-1, 1] → [0, PITCH_BEND_14BIT_MAX]; centre = 8192 (0x2000)
+    const raw = Math.round((clamped + 1) * 0.5 * PITCH_BEND_14BIT_MAX)
+    const lsb = raw & MIDI_DATA_MASK         // lower 7 bits
+    const msb = (raw >> 7) & MIDI_DATA_MASK  // upper 7 bits
+    const status = PITCH_BEND | ((channel - 1) & CHANNEL_NIBBLE_MASK)
     this.send([status, lsb, msb])
   }
 
@@ -199,8 +234,8 @@ export class MidiBridge {
    * Affects all notes on the channel.
    */
   channelPressure(val: number, channel: number = 1): void {
-    const status = 0xD0 | ((channel - 1) & 0x0F)
-    this.send([status, val & 0x7F])
+    const status = CHANNEL_PRESSURE | ((channel - 1) & CHANNEL_NIBBLE_MASK)
+    this.send([status, val & MIDI_DATA_MASK])
   }
 
   /**
@@ -208,8 +243,8 @@ export class MidiBridge {
    * Targets a specific note on the channel.
    */
   polyPressure(note: number, val: number, channel: number = 1): void {
-    const status = 0xA0 | ((channel - 1) & 0x0F)
-    this.send([status, note & 0x7F, val & 0x7F])
+    const status = POLY_PRESSURE | ((channel - 1) & CHANNEL_NIBBLE_MASK)
+    this.send([status, note & MIDI_DATA_MASK, val & MIDI_DATA_MASK])
   }
 
   /**
@@ -217,8 +252,8 @@ export class MidiBridge {
    * Switches the sound/patch on the receiving device.
    */
   programChange(program: number, channel: number = 1): void {
-    const status = 0xC0 | ((channel - 1) & 0x0F)
-    this.send([status, program & 0x7F])
+    const status = PROGRAM_CHANGE | ((channel - 1) & CHANNEL_NIBBLE_MASK)
+    this.send([status, program & MIDI_DATA_MASK])
   }
 
   // ---------------------------------------------------------------------------
@@ -227,7 +262,7 @@ export class MidiBridge {
 
   /** Send a single MIDI timing clock pulse (0xF8). 24 per quarter note. */
   clockTick(): void {
-    this.send([0xF8])
+    this.send([MIDI_TIMING_CLOCK])
   }
 
   /**
@@ -237,8 +272,7 @@ export class MidiBridge {
    */
   startClock(bpm: number): void {
     this.stopClock()
-    // Interval between clock ticks: (60 / bpm / 24) seconds
-    const intervalMs = (60 / bpm / 24) * 1000
+    const intervalMs = (SECONDS_PER_MINUTE / bpm / MIDI_CLOCKS_PER_QUARTER_NOTE) * 1000
     this.clockInterval = setInterval(() => this.clockTick(), intervalMs)
   }
 

@@ -7,6 +7,11 @@
  */
 
 import type { Program } from '../Program'
+
+/** Visual duration used for note events in the sound event stream (seconds). */
+const NOTE_EVENT_VISUAL_DURATION = 0.25
+/** Visual duration used for sample events in the sound event stream (seconds). */
+const SAMPLE_EVENT_VISUAL_DURATION = 0.5
 import type { VirtualTimeScheduler } from '../VirtualTimeScheduler'
 import type { SuperSonicBridge } from '../SuperSonicBridge'
 import type { SoundEventStream, SoundEvent } from '../SoundEventStream'
@@ -54,7 +59,7 @@ export async function runProgram(
         const audioCtxTime = ctx.bridge?.audioContext?.currentTime ?? 0
         ctx.eventStream.emitEvent({
           audioTime,
-          audioDuration: 0.25,
+          audioDuration: NOTE_EVENT_VISUAL_DURATION,
           scheduledAheadMs: (audioTime - audioCtxTime) * 1000,
           midiNote: step.note,
           s: synth,
@@ -74,7 +79,7 @@ export async function runProgram(
         const audioCtxTime = ctx.bridge?.audioContext?.currentTime ?? 0
         ctx.eventStream.emitEvent({
           audioTime,
-          audioDuration: 0.5,
+          audioDuration: SAMPLE_EVENT_VISUAL_DURATION,
           scheduledAheadMs: (audioTime - audioCtxTime) * 1000,
           midiNote: null,
           s: step.name,

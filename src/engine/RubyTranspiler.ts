@@ -880,7 +880,10 @@ export function autoTranspile(code: string): string {
       return parsed
     } catch {
       // Parser output is invalid JS — fall back
+      console.warn('[SonicPi] Parser produced invalid JS, falling back to regex transpiler')
     }
+  } else {
+    console.warn('[SonicPi] Parser reported errors, falling back to regex transpiler:', errors)
   }
 
   // Fallback: regex transpiler

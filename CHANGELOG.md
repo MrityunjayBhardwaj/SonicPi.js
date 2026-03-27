@@ -1,5 +1,48 @@
 # Changelog
 
+## v1.3.0
+
+### Bug Fixes
+- **`with_fx` state corruption** — callback errors no longer leave all subsequent loops permanently wrapped in a phantom FX context; `currentTopFx` is now restored via `try/finally`
+- **`validateCode` never ran** — sandbox escape-hatch checks (`constructor`, `__proto__`) are now called during `evaluate()` and surfaced via the print handler
+- **`capture.queryRange` return type** — was typed `Promise<unknown[]>`, now correctly `Promise<QueryEvent[]>`; removes the need for callers to cast the result
+- **Silent transpiler fallback** — `autoTranspile` now logs a `console.warn` when the parser produces invalid JS or reports errors and falls back to the regex transpiler; both paths are now observable
+
+### New API
+- **`engine.hasAudio`** — getter that returns `false` when SuperSonic failed to initialize, so callers know audio is unavailable without inferring it from silent playback
+- **`DEFAULT_SCHED_AHEAD_TIME`** — exported constant from `VirtualTimeScheduler`; both the scheduler and engine now share one source of truth instead of two `0.1` literals
+
+### Code Quality
+- Named constants replace all magic numbers: MIDI status bytes, WAV format fields, scheduling intervals, musical tuning constants (`A4_MIDI`, `A4_FREQ_HZ`, `SEMITONES_PER_OCTAVE`), pitch bend range, clock rates
+- JSDoc on all public `SonicPiEngine` methods: `init()`, `evaluate()`, `play()`, `stop()`, `setVolume()`, `setRuntimeErrorHandler()`, `setPrintHandler()`
+- `index.ts` reorganized into three tiers: **Public API**, **Extensions**, **Advanced/internals**
+- `midiBridge` public field documented: shell-level device management only, not for bypassing the DSL scheduler
+- `ProgramBuilder.play()` and `.sample()` now accept `Record<string, unknown>` opts — removes the double-cast that was hiding the `synth: string` vs `Record<string, number>` mismatch
+
+### npm Package
+- `name` corrected to `sonic-pi-web` (was `sonic-pi-web-root`)
+- `version` aligned with git tag convention
+- `private: true` removed — package is now publishable
+- `main` field removed — it was pointing at TypeScript source, which is wrong for a CLI package
+- `vite` moved from `devDependencies` to `dependencies` — the CLI requires it at runtime; `npx sonic-pi-web` was silently broken in fresh installs
+- `files` whitelist added — prevents publishing `artifacts/`, `tests/`, `.anvi/`, etc.
+- `engines` field added: Node ≥ 18.0.0
+- `repository`, `bugs`, `homepage` fields added
+
+---
+
+## v1.2.0
+
+### New Features
+- **`stop_loop :name`** — stop a named loop from anywhere in the program, including from inside another loop
+- **Multi-line continuation** — statements split across lines with trailing operators (`+`, `-`, `and`, `or`, etc.) are now correctly joined before transpilation
+- **Ternary operator** — `condition ? then_val : else_val` syntax supported in both the parser and regex transpiler
+
+### Bug Fixes
+- **Word-boundary continuation regex** — words ending in continuation-like suffixes (`color`, `minor`, `razor`, etc.) no longer incorrectly trigger line joining
+
+---
+
 ## v1.1.0
 
 ### Bug Fixes

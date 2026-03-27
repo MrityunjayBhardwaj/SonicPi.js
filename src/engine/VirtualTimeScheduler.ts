@@ -1,6 +1,23 @@
 import { MinHeap } from './MinHeap'
 
 // ---------------------------------------------------------------------------
+// Scheduling constants
+// ---------------------------------------------------------------------------
+
+/** How far ahead (seconds) events are submitted to the audio graph. */
+export const DEFAULT_SCHED_AHEAD_TIME = 0.1
+
+/** Scheduler heartbeat interval in ms — 25ms = 40Hz, fast enough for 100ms lookahead. */
+export const DEFAULT_TICK_INTERVAL_MS = 25
+
+/**
+ * Tiebreak weight applied to insertion order when two sleep entries share the same
+ * virtual time. 1e-12 s is far below any audio scheduling precision (≥1 ms), so it
+ * never shifts actual timing — it only produces a deterministic total order in the heap.
+ */
+const HEAP_TIEBREAK_EPSILON = 1e-12
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -85,14 +102,13 @@ export class VirtualTimeScheduler {
 
   constructor(options: SchedulerOptions = {}) {
     this.getAudioTime = options.getAudioTime ?? (() => 0)
-    this.schedAheadTime = options.schedAheadTime ?? 0.1
-    this.tickInterval = options.tickInterval ?? 25
+    this.schedAheadTime = options.schedAheadTime ?? DEFAULT_SCHED_AHEAD_TIME
+    this.tickInterval = options.tickInterval ?? DEFAULT_TICK_INTERVAL_MS
 
     // Priority: by time, then by insertion order for determinism (SP1)
     this.queue = new MinHeap<SleepEntry>((entry) => {
       const orderKey = this.entryOrder.get(`${entry.time}:${entry.taskId}`) ?? 0
-      // Combine time with a tiny fraction of insertion order for stable sort
-      return entry.time + orderKey * 1e-12
+      return entry.time + orderKey * HEAP_TIEBREAK_EPSILON
     })
   }
 

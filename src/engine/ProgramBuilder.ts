@@ -20,8 +20,8 @@ export class ProgramBuilder {
   private currentSynth = 'beep'
   private rng: SeededRandom
   private ticks = new Map<string, number>()
-  private _densityFactor: number = 1
-  private _nextRef: number = 1
+  private densityFactor: number = 1
+  private nextRef: number = 1
   private _lastRef: number = 0
 
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
@@ -34,13 +34,13 @@ export class ProgramBuilder {
     return new Map(this.ticks)
   }
 
-  get density(): number { return this._densityFactor }
-  set density(d: number) { this._densityFactor = d }
+  get density(): number { return this.densityFactor }
+  set density(d: number) { this.densityFactor = d }
 
   /** Returns the node reference of the last play() call, for use with control(). */
   get lastRef(): number { return this._lastRef }
 
-  play(noteVal: number | string | Ring<number> | number[], opts?: Record<string, number>): this {
+  play(noteVal: number | string | Ring<number> | number[], opts?: Record<string, unknown>): this {
     // Chord: Ring or array — push one play step per note (all at the same virtual time).
     if (noteVal instanceof Ring || Array.isArray(noteVal)) {
       const notes: number[] = noteVal instanceof Ring ? noteVal.toArray() : noteVal
@@ -51,15 +51,16 @@ export class ProgramBuilder {
     return this
   }
 
-  private _pushPlayStep(noteVal: number | string, opts?: Record<string, number>): void {
+  private _pushPlayStep(noteVal: number | string, opts?: Record<string, unknown>): void {
     const midi = typeof noteVal === 'string' ? noteToMidi(noteVal) : noteVal
     const freq = midiToFreq(midi)
-    const synth = (opts as Record<string, unknown>)?.synth as string | undefined
-    const srcLine = opts?._srcLine
-    const cleanOpts = { ...opts }
-    delete cleanOpts._srcLine
+    const synth = opts?.synth as string | undefined
+    const srcLine = opts?._srcLine as number | undefined
+    // Strip non-numeric keys before storing; remaining values are synthesis params (all numbers).
+    const cleanOpts = { ...opts } as Record<string, number>
+    delete (cleanOpts as Record<string, unknown>)._srcLine
     delete (cleanOpts as Record<string, unknown>).synth
-    this._lastRef = this._nextRef++
+    this._lastRef = this.nextRef++
     this.steps.push({
       tag: 'play',
       note: midi,
@@ -70,14 +71,15 @@ export class ProgramBuilder {
   }
 
   sleep(beats: number): this {
-    this.steps.push({ tag: 'sleep', beats: beats / this._densityFactor })
+    this.steps.push({ tag: 'sleep', beats: beats / this.densityFactor })
     return this
   }
 
-  sample(name: string, opts?: Record<string, number>): this {
-    const srcLine = opts?._srcLine
-    const cleanOpts = { ...opts }
-    delete cleanOpts._srcLine
+  sample(name: string, opts?: Record<string, unknown>): this {
+    const srcLine = opts?._srcLine as number | undefined
+    // Strip internal keys before storing; remaining values are sample playback params.
+    const cleanOpts = { ...opts } as Record<string, number>
+    delete (cleanOpts as Record<string, unknown>)._srcLine
     this.steps.push({ tag: 'sample', name, opts: cleanOpts, srcLine })
     return this
   }
@@ -131,7 +133,7 @@ export class ProgramBuilder {
     }
     const inner = new ProgramBuilder(this.rng.next() * 0xFFFFFFFF)
     inner.currentSynth = this.currentSynth
-    inner._densityFactor = this._densityFactor
+    inner.densityFactor = this.densityFactor
     fn(inner)
     this.steps.push({ tag: 'fx', name, opts, body: inner.build() })
     return this
@@ -140,7 +142,7 @@ export class ProgramBuilder {
   in_thread(buildFn: (b: ProgramBuilder) => void): this {
     const inner = new ProgramBuilder(this.rng.next() * 0xFFFFFFFF)
     inner.currentSynth = this.currentSynth
-    inner._densityFactor = this._densityFactor
+    inner.densityFactor = this.densityFactor
     buildFn(inner)
     this.steps.push({ tag: 'thread', body: inner.build() })
     return this
@@ -152,7 +154,7 @@ export class ProgramBuilder {
       const val = values ? values[i % values.length] : i
       const inner = new ProgramBuilder(this.rng.next() * 0xFFFFFFFF)
       inner.currentSynth = this.currentSynth
-      inner._densityFactor = this._densityFactor
+      inner.densityFactor = this.densityFactor
       if (offset > 0) inner.sleep(offset)
       buildFn(inner, val)
       this.steps.push({ tag: 'thread', body: inner.build() })

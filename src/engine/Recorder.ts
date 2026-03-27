@@ -5,6 +5,36 @@
  * audio graph output, then encodes to WAV for download.
  */
 
+// ---------------------------------------------------------------------------
+// WAV format constants (RIFF/PCM, little-endian, 16-bit stereo)
+// ---------------------------------------------------------------------------
+
+/** Default number of output channels (stereo). */
+const DEFAULT_CHANNELS = 2
+/** MediaRecorder chunk interval — 100ms keeps memory bounded during long recordings. */
+const RECORDER_CHUNK_INTERVAL_MS = 100
+/** WAV header size in bytes (standard PCM RIFF header). */
+const WAV_HEADER_SIZE = 44
+/** Size of the fmt subchunk for uncompressed PCM (bytes). */
+const WAV_FMT_CHUNK_SIZE = 16
+/** Audio format code for uncompressed PCM (WAVE_FORMAT_PCM). */
+const WAV_FMT_PCM = 1
+/** Bit depth for the output WAV file. */
+const BITS_PER_SAMPLE = 16
+/** Bytes per sample (BITS_PER_SAMPLE / 8). */
+const BYTES_PER_SAMPLE = 2
+/**
+ * Bytes between "RIFF" and the end of the file, excluding the 8-byte RIFF chunk header.
+ * Equals WAV_HEADER_SIZE - 8 = 36.
+ */
+const WAV_RIFF_DATA_OFFSET = 36
+/** Scale factor for negative float samples → signed 16-bit (−32768). */
+const INT16_NEGATIVE_SCALE = 0x8000
+/** Scale factor for non-negative float samples → signed 16-bit (32767). */
+const INT16_POSITIVE_SCALE = 0x7FFF
+
+// ---------------------------------------------------------------------------
+
 export interface RecorderOptions {
   /** Sample rate (default: audioContext.sampleRate) */
   sampleRate?: number
@@ -26,7 +56,7 @@ export class Recorder {
   constructor(audioCtx: AudioContext, source: AudioNode, options?: RecorderOptions) {
     this.audioCtx = audioCtx
     this.source = source
-    this.channels = options?.channels ?? 2
+    this.channels = options?.channels ?? DEFAULT_CHANNELS
   }
 
   get state(): RecorderState {
@@ -49,7 +79,7 @@ export class Recorder {
       if (e.data.size > 0) this.chunks.push(e.data)
     }
 
-    this.mediaRecorder.start(100) // collect chunks every 100ms
+    this.mediaRecorder.start(RECORDER_CHUNK_INTERVAL_MS)
     this._state = 'recording'
   }
 
@@ -127,25 +157,23 @@ export class Recorder {
     const numChannels = Math.min(audioBuffer.numberOfChannels, this.channels)
     const sampleRate = audioBuffer.sampleRate
     const length = audioBuffer.length
-    const bytesPerSample = 2 // 16-bit
-    const blockAlign = numChannels * bytesPerSample
+    const blockAlign = numChannels * BYTES_PER_SAMPLE
     const dataSize = length * blockAlign
-    const headerSize = 44
-    const buffer = new ArrayBuffer(headerSize + dataSize)
+    const buffer = new ArrayBuffer(WAV_HEADER_SIZE + dataSize)
     const view = new DataView(buffer)
 
-    // WAV header
+    // WAV header (RIFF/PCM, little-endian)
     this.writeString(view, 0, 'RIFF')
-    view.setUint32(4, 36 + dataSize, true)
+    view.setUint32(4, WAV_RIFF_DATA_OFFSET + dataSize, true)
     this.writeString(view, 8, 'WAVE')
     this.writeString(view, 12, 'fmt ')
-    view.setUint32(16, 16, true) // chunk size
-    view.setUint16(20, 1, true)  // PCM
+    view.setUint32(16, WAV_FMT_CHUNK_SIZE, true)
+    view.setUint16(20, WAV_FMT_PCM, true)
     view.setUint16(22, numChannels, true)
     view.setUint32(24, sampleRate, true)
     view.setUint32(28, sampleRate * blockAlign, true)
     view.setUint16(32, blockAlign, true)
-    view.setUint16(34, 16, true) // bits per sample
+    view.setUint16(34, BITS_PER_SAMPLE, true)
 
     this.writeString(view, 36, 'data')
     view.setUint32(40, dataSize, true)
@@ -156,12 +184,12 @@ export class Recorder {
       channels.push(audioBuffer.getChannelData(ch))
     }
 
-    let offset = 44
+    let offset = WAV_HEADER_SIZE
     for (let i = 0; i < length; i++) {
       for (let ch = 0; ch < numChannels; ch++) {
         const sample = Math.max(-1, Math.min(1, channels[ch][i]))
-        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true)
-        offset += 2
+        view.setInt16(offset, sample < 0 ? sample * INT16_NEGATIVE_SCALE : sample * INT16_POSITIVE_SCALE, true)
+        offset += BYTES_PER_SAMPLE
       }
     }
 

@@ -17,6 +17,15 @@
  * tempo/beat tracking using AudioContext.currentTime.
  */
 
+/** Default tempo when no Link peers are connected. */
+const DEFAULT_TEMPO_BPM = 120
+/** Link state poll interval — 50ms gives 20Hz updates, fast enough for beat-accurate UI. */
+const LINK_POLL_INTERVAL_MS = 50
+/** Number of beats per bar in the Link phase calculation (4/4 time). */
+const BEATS_PER_BAR = 4
+/** Seconds per minute — used to convert BPM to beats-per-second. */
+const SECONDS_PER_MINUTE = 60
+
 export interface LinkState {
   tempo: number
   beat: number
@@ -32,7 +41,7 @@ export class LinkBridge {
   private pc: RTCPeerConnection | null = null
   private handlers: LinkStateHandler[] = []
   private _state: LinkState = {
-    tempo: 120,
+    tempo: DEFAULT_TEMPO_BPM,
     beat: 0,
     phase: 0,
     peers: 0,
@@ -73,7 +82,7 @@ export class LinkBridge {
         // Start polling for state
         this.pollTimer = setInterval(() => {
           this.dc?.send(JSON.stringify({ type: 'get_state' }))
-        }, 50) // 20Hz updates (~50ms)
+        }, LINK_POLL_INTERVAL_MS)
       }
 
       this.dc.onmessage = (e) => {
@@ -135,7 +144,7 @@ export class LinkBridge {
    * Start local-only beat tracking (no Link bridge needed).
    * Uses AudioContext time to track beats at the current tempo.
    */
-  startLocal(audioCtx: AudioContext, tempo: number = 120): void {
+  startLocal(audioCtx: AudioContext, tempo: number = DEFAULT_TEMPO_BPM): void {
     this.audioCtx = audioCtx
     this._state.tempo = tempo
     this._state.connected = false
@@ -145,11 +154,11 @@ export class LinkBridge {
     this.pollTimer = setInterval(() => {
       if (!this.audioCtx) return
       const elapsed = this.audioCtx.currentTime - this.startTime
-      const beatsPerSecond = this._state.tempo / 60
+      const beatsPerSecond = this._state.tempo / SECONDS_PER_MINUTE
       this._state.beat = elapsed * beatsPerSecond
-      this._state.phase = this._state.beat % 4 // 4-beat phase
+      this._state.phase = this._state.beat % BEATS_PER_BAR
       this.emit()
-    }, 50)
+    }, LINK_POLL_INTERVAL_MS)
   }
 
   /** Set tempo (sends to bridge if connected, or updates local). */
