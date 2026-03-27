@@ -1,4 +1,4 @@
-# Sonic Pi Web -- API Reference
+# SonicPi.js -- API Reference
 
 > Package: `@spw/core`
 > Engine for browser-native Sonic Pi temporal scheduling.

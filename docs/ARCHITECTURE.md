@@ -1,6 +1,6 @@
 # Architecture Guide
 
-This document explains how the Sonic Pi Web engine works internally.
+This document explains how the SonicPi.js engine works internally.
 Read this before modifying the engine.
 
 ## The Core Innovation

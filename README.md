@@ -1,4 +1,4 @@
-# Sonic Pi Web
+# SonicPi.js
 
 **Browser-native live coding music environment powered by SuperCollider synthesis.**
 
@@ -9,12 +9,12 @@
 
 ## What is this?
 
-Sonic Pi Web is a browser-native reimplementation of [Sonic Pi](https://sonic-pi.net/)'s live coding environment. It runs real SuperCollider synthesis in the browser via SuperSonic (scsynth compiled to WebAssembly) with a scheduler-controlled Promise architecture that gives JavaScript cooperative concurrency with virtual time. Zero install -- open a browser and start making music.
+SonicPi.js is a browser-native reimplementation of [Sonic Pi](https://sonic-pi.net/)'s live coding environment. It runs real SuperCollider synthesis in the browser via SuperSonic (scsynth compiled to WebAssembly) with a scheduler-controlled Promise architecture that gives JavaScript cooperative concurrency with virtual time. Zero install -- open a browser and start making music.
 
 ## Quick Start
 
 ```bash
-npx sonic-pi-web
+npx sonicpi
 ```
 
 This starts a local server and opens the editor in your default browser. That's it.
@@ -168,6 +168,6 @@ MIT. See [LICENSE](LICENSE) for details.
 
 ## Credits
 
-Based on [Sonic Pi](https://sonic-pi.net/) by Sam Aaron and contributors. Sonic Pi Web is an independent reimplementation -- it does not share code with the desktop application.
+Based on [Sonic Pi](https://sonic-pi.net/) by Sam Aaron and contributors. SonicPi.js is an independent reimplementation -- it does not share code with the desktop application.
 
 SuperSonic (scsynth WASM) by the SuperSonic contributors. Loaded via CDN at runtime (GPL-licensed, never bundled).

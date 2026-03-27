@@ -1,6 +1,6 @@
-# Getting Started with Sonic Pi Web
+# Getting Started with SonicPi.js
 
-Sonic Pi Web lets you make music by writing code in your browser. No downloads, no installs -- just open the page and start playing.
+SonicPi.js lets you make music by writing code in your browser. No downloads, no installs -- just open the page and start playing.
 
 Based on [Sonic Pi](https://sonic-pi.net) by Sam Aaron.
 
@@ -11,7 +11,7 @@ Based on [Sonic Pi](https://sonic-pi.net) by Sam Aaron.
 **Option A:** Run locally with Node.js:
 
 ```
-npx sonic-pi-web
+npx sonicpi
 ```
 
 **Option B:** Visit the hosted URL (if available).
@@ -535,7 +535,7 @@ The Examples menu contains 10 built-in programs organized by difficulty. Load on
 
 ## Differences from Desktop Sonic Pi
 
-Sonic Pi Web aims to be compatible with the desktop version's Ruby DSL. Here is what to know:
+SonicPi.js aims to be compatible with the desktop version's Ruby DSL. Here is what to know:
 
 **Works the same:**
 - `play`, `sleep`, `sample`, `live_loop`, `in_thread`

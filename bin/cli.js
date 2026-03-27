@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * sonic-pi-web CLI — starts the dev server and opens the browser.
- * Usage: npx sonic-pi-web
+ * SonicPi.js CLI — starts the dev server and opens the browser.
+ * Usage: npx sonicpi
  */
 
 import { createServer } from 'vite'
@@ -16,7 +16,7 @@ async function main() {
   const port = parseInt(process.env.PORT || '3000', 10)
 
   console.log('')
-  console.log('  ♫ Sonic Pi Web')
+  console.log('  ♫ SonicPi.js')
   console.log('  The Live Coding Music Synth for Everyone')
   console.log('')
 

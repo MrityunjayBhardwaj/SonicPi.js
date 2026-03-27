@@ -1,10 +1,10 @@
 {
-  "name": "sonic-pi-web",
+  "name": "sonicpi",
   "version": "1.3.0",
-  "description": "Browser-native Sonic Pi — live coding music synth with SuperCollider synthesis via WebAssembly",
+  "description": "SonicPi.js — browser-native Sonic Pi with real SuperCollider synthesis via WebAssembly",
   "type": "module",
   "bin": {
-    "sonic-pi-web": "./bin/cli.js"
+    "sonicpi": "./bin/cli.js"
   },
   "files": [
     "bin",

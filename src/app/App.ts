@@ -1,5 +1,5 @@
 /**
- * App shell — Sonic Pi Web.
+ * App shell — SonicPi.js.
  * Matches Sonic Pi desktop layout with welcome experience.
  */
 
@@ -14,7 +14,7 @@ import { Console } from './Console'
 import { Toolbar } from './Toolbar'
 
 // Sonic Pi's actual welcome buffer
-const WELCOME_CODE = `# Welcome to Sonic Pi Web
+const WELCOME_CODE = `# Welcome to SonicPi.js
 # The Live Coding Music Synth for Everyone.
 #
 # Press Run (or Ctrl+Enter) to hear this code.
@@ -38,7 +38,7 @@ end`
 const WELCOME_LOG = [
   '',
   '  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-  '  ~~  Welcome to Sonic Pi Web                               ~~',
+  '  ~~  Welcome to SonicPi.js                               ~~',
   '  ~~  The Live Coding Music Synth for Everyone              ~~',
   '  ~~                                                        ~~',
   '  ~~  Based on Sonic Pi by Sam Aaron                        ~~',

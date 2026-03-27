@@ -1,4 +1,4 @@
-# Sonic Pi Web -- DSL Reference
+# SonicPi.js -- DSL Reference
 
 Complete reference for every Sonic Pi construct supported in the browser.
 Write code using standard Sonic Pi (Ruby) syntax -- the parser transpiles it automatically.
@@ -931,7 +931,7 @@ puts "Playing note #{n}"   # "Playing note 60"
 
 ## 13. What's NOT Supported (vs Desktop Sonic Pi)
 
-These features exist in desktop Sonic Pi but are **not available** in Sonic Pi Web:
+These features exist in desktop Sonic Pi but are **not available** in SonicPi.js:
 
 | Feature | Reason |
 |---------|--------|
