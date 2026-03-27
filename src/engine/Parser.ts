@@ -58,7 +58,7 @@ function tokenize(source: string): Token[] {
       if (t.endsWith('\\')) {
         line = t.slice(0, -1).trimEnd() + ' ' + rawLines[i + 1].trim()
         i++
-      } else if (t.endsWith(',') || /(?:&&|\|\||[+*\/%]|and|or)$/.test(t)) {
+      } else if (t.endsWith(',') || /(?:&&|\|\||[+*\/%]|\band\b|\bor\b)$/.test(t)) {
         line = t + ' ' + rawLines[i + 1].trim()
         i++
       } else {

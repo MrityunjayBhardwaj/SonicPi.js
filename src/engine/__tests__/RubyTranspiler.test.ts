@@ -569,6 +569,18 @@ end`
       const js = transpileRubyToJS(ruby)
       expect(strip(js)).toContain('1 + 2')
     })
+
+    it('does NOT join when line ends with a word containing "or" (e.g. minor, color)', () => {
+      const ruby = `live_loop :test do
+  color = :minor
+  x = 5
+  sleep 1
+end`
+      const js = transpileRubyToJS(ruby)
+      // color = :minor and x = 5 must remain separate statements
+      expect(strip(js)).toContain('"minor"')
+      expect(strip(js)).toContain('x = 5')
+    })
   })
 
   describe('ternary operator', () => {

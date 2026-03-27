@@ -712,6 +712,20 @@ end
     expect(code).toContain('1 + 2')
   })
 
+  it('does NOT join lines when variable ends with "or" (e.g. color, minor)', () => {
+    const { code, errors } = parseAndTranspile(`
+live_loop :test do
+  color = :minor
+  x = 5
+  sleep 1
+end
+`)
+    expect(errors).toHaveLength(0)
+    // These must be separate statements, not joined into "minor x = 5"
+    expect(code).toContain('"minor"')
+    expect(code).toContain('const x = 5')
+  })
+
   it('joins lines ending with backslash', () => {
     const { code, errors } = parseAndTranspile(`
 live_loop :test do

@@ -143,7 +143,7 @@ export function transpileRubyToJS(ruby: string): string {
       if (t.endsWith('\\')) {
         ln = t.slice(0, -1).trimEnd() + ' ' + rawLines[j + 1].trim()
         j++
-      } else if (t.endsWith(',') || /(?:&&|\|\||[+*\/%]|and|or)$/.test(t)) {
+      } else if (t.endsWith(',') || /(?:&&|\|\||[+*\/%]|\band\b|\bor\b)$/.test(t)) {
         ln = t + ' ' + rawLines[j + 1].trim()
         j++
       } else {
