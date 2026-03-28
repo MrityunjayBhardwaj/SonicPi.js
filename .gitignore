@@ -30,3 +30,6 @@ playwright-report/
 .vscode/
 .idea/
 .vercel
+
+# Browser diagnostic captures (internal observation tool)
+.captures/
