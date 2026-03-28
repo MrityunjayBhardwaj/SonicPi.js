@@ -876,5 +876,78 @@ end`)
       expect(steps[0].tag).toBe('sample')
       expect(steps[0].name).toBe('bd_haus')
     })
+
+    it('use_transpose shifts play notes', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  use_transpose 12
+  play 60
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      const playStep = steps.find((s: any) => s.tag === 'play')
+      expect(playStep).toBeDefined()
+      expect(playStep!.note).toBe(72)
+    })
+
+    it('use_synth_defaults merges into play opts', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  use_synth_defaults release: 0.5, cutoff: 80
+  play 60
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('play')
+      expect(steps[0].opts.release).toBe(0.5)
+      expect(steps[0].opts.cutoff).toBe(80)
+    })
+
+    it('tick_reset_all clears tick counters', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  tick
+  tick
+  tick_reset_all
+  play (ring 60, 64, 67).tick
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      // After reset, tick starts from 0 again → note 60
+      expect(steps[0].tag).toBe('play')
+      expect(steps[0].note).toBe(60)
+    })
+
+    it('factor? checks divisibility', () => {
+      // factor_q(4, 2) → 4%2===0 → true
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  play 60 if factor?(4, 2)
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      const playSteps = steps.filter((s: any) => s.tag === 'play')
+      expect(playSteps.length).toBe(1)
+    })
+
+    it('bools creates boolean ring', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  pattern = bools(1, 0, 1, 0)
+  sample :bd_haus if pattern[0]
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      // bools(1,0,1,0)[0] = true → sample plays
+      expect(steps[0].tag).toBe('sample')
+    })
+
+    it('play_pattern_timed plays notes with timing', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  play_pattern_timed [60, 64, 67], [0.5]
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      // 3 notes with 2 sleeps between them
+      const playSteps = steps.filter((s: any) => s.tag === 'play')
+      const sleepSteps = steps.filter((s: any) => s.tag === 'sleep')
+      expect(playSteps.length).toBe(3)
+      expect(sleepSteps.length).toBeGreaterThanOrEqual(2)
+    })
   })
 })

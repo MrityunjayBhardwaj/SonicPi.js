@@ -34,6 +34,9 @@ export class ProgramBuilder {
   private nextRef: number = 1
   private _lastRef: number = 0
   private _budgetRemaining: number = DEFAULT_LOOP_BUDGET
+  private _transpose: number = 0
+  private _synthDefaults: Record<string, number> = {}
+  private _debug: boolean = true
 
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
     this.rng = new SeededRandom(seed)
@@ -63,12 +66,13 @@ export class ProgramBuilder {
   }
 
   private _pushPlayStep(noteVal: number | string, opts?: Record<string, unknown>): void {
-    const midi = typeof noteVal === 'string' ? noteToMidi(noteVal) : noteVal
+    const midi = (typeof noteVal === 'string' ? noteToMidi(noteVal) : noteVal) + this._transpose
     const freq = midiToFreq(midi)
     const synth = opts?.synth as string | undefined
     const srcLine = opts?._srcLine as number | undefined
     // Strip non-numeric keys before storing; remaining values are synthesis params (all numbers).
-    const cleanOpts = { ...opts } as Record<string, number>
+    // Merge synth defaults first, then overlay explicit opts
+    const cleanOpts = { ...this._synthDefaults, ...opts } as Record<string, number>
     delete (cleanOpts as Record<string, unknown>)._srcLine
     delete (cleanOpts as Record<string, unknown>).synth
     this._lastRef = this.nextRef++
@@ -268,6 +272,114 @@ export class ProgramBuilder {
 
   look(name: string = '__default', offset: number = 0): number {
     return (this.ticks.get(name) ?? 0) + offset
+  }
+
+  /** Reset a named tick counter (or the default counter). */
+  tick_reset(name: string = '__default'): void {
+    this.ticks.delete(name)
+  }
+
+  /** Reset ALL tick counters. */
+  tick_reset_all(): void {
+    this.ticks.clear()
+  }
+
+  // --- Transpose ---
+
+  /** Set transpose offset (semitones) for all subsequent play calls. */
+  use_transpose(semitones: number): this {
+    this._transpose = semitones
+    return this
+  }
+
+  /** Temporarily set transpose for a block, then restore. */
+  with_transpose(semitones: number, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._transpose
+    this._transpose = semitones
+    buildFn(this)
+    this._transpose = prev
+    return this
+  }
+
+  // --- Synth defaults ---
+
+  /** Set default synthesis parameters for all subsequent play calls. */
+  use_synth_defaults(opts: Record<string, number>): this {
+    this._synthDefaults = { ...opts }
+    return this
+  }
+
+  // --- BPM block ---
+
+  /** Temporarily set BPM for a block. Sleeps inside are scaled. */
+  with_bpm(bpm: number, buildFn: (b: ProgramBuilder) => void): this {
+    this.steps.push({ tag: 'useBpm', bpm })
+    buildFn(this)
+    return this
+  }
+
+  /** Temporarily set synth for a block, then restore. */
+  with_synth(name: string, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this.currentSynth
+    this.currentSynth = name
+    this.steps.push({ tag: 'useSynth', name })
+    buildFn(this)
+    this.currentSynth = prev
+    this.steps.push({ tag: 'useSynth', name: prev })
+    return this
+  }
+
+  // --- Debug ---
+
+  /** Enable/disable debug output. In browser, this is a no-op flag. */
+  use_debug(enabled: boolean): this {
+    this._debug = enabled
+    return this
+  }
+
+  // --- Utility functions ---
+
+  /**
+   * Returns true if `val` is divisible by `factor`.
+   * Sonic Pi's `factor?(val, factor)` → `val % factor === 0`
+   */
+  factor_q(val: number, factor: number): boolean {
+    return val % factor === 0
+  }
+
+  /**
+   * Create a ring of booleans from 0/1 values.
+   * `bools(1,0,1,0)` → Ring([true, false, true, false])
+   */
+  bools(...values: number[]): Ring<boolean> {
+    return new Ring(values.map(v => v !== 0))
+  }
+
+  /**
+   * Play a sequence of notes with timed intervals.
+   * `play_pattern_timed [:c4, :e4, :g4], [0.5, 0.25]`
+   */
+  play_pattern_timed(
+    notes: (number | string)[],
+    times: number | number[],
+    opts?: Record<string, unknown>
+  ): this {
+    const timeArr = Array.isArray(times) ? times : [times]
+    for (let i = 0; i < notes.length; i++) {
+      this.play(notes[i], opts)
+      if (i < notes.length - 1) {
+        this.sleep(timeArr[i % timeArr.length])
+      }
+    }
+    return this
+  }
+
+  /**
+   * Get the duration of a sample in beats. Stub: returns 1.
+   * Real implementation needs SuperSonic bridge access.
+   */
+  sample_duration(_name: string, _opts?: Record<string, unknown>): number {
+    return 1
   }
 
   // --- Data constructors (pure, no side effects) ---

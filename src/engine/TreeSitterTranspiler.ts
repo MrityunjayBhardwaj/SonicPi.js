@@ -248,8 +248,16 @@ const BUILDER_METHODS = new Set([
   'puts', 'print',
   // Random (resolved eagerly)
   'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in',
-  // Tick (resolved at build time)
-  'tick', 'look',
+  // Tick
+  'tick', 'look', 'tick_reset', 'tick_reset_all',
+  // Transpose
+  'use_transpose', 'with_transpose',
+  // Synth defaults / BPM / synth blocks
+  'use_synth_defaults', 'with_bpm', 'with_synth',
+  // Debug
+  'use_debug',
+  // Utility
+  'factor_q', 'bools', 'play_pattern_timed', 'sample_duration',
   // Data constructors
   'ring', 'knit', 'range', 'line', 'spread',
   'chord', 'scale', 'chord_invert', 'note', 'note_range',
@@ -280,17 +288,21 @@ const TOP_LEVEL_SCOPE = new Set([
 ])
 
 /**
- * Functions that don't exist anywhere yet but appear in Sonic Pi code.
- * Transpile them without `b.` prefix so they fall through to the
- * execution scope (where they'll be undefined → clear runtime error
- * rather than a misleading "b.X is not a function").
+ * Functions that don't exist on ProgramBuilder and have no runtime equivalent.
+ * Transpile without `b.` prefix — they're no-ops or produce clear errors.
  */
 const UNIMPLEMENTED_DSL = new Set([
-  'use_debug', 'bools', 'play_pattern_timed',
-  'tick_reset', 'tick_reset_all',
-  'use_transpose', 'with_transpose', 'with_bpm', 'with_synth',
-  'factor_q', 'use_synth_defaults',
   'load_samples', 'load_sample',
+])
+
+/**
+ * No-arg DSL functions that Ruby code calls without parentheses.
+ * When a bare identifier matches one of these, emit it as a function call.
+ * e.g., `tick` → `b.tick()`, `look` → `b.look()`, `stop` → `b.stop()`
+ */
+const BARE_CALLABLE = new Set([
+  'tick', 'look', 'stop', 'tick_reset_all',
+  'rand', 'rand_i',
 ])
 
 // Synth names that can be used as bare commands: `beep 60`
@@ -391,16 +403,26 @@ function transpileNode(node: any, ctx: TranspileContext): string {
       if (name === 'nil') return 'null'
       if (name === 'true') return 'true'
       if (name === 'false') return 'false'
-      // Bare identifier that matches a user-defined function → call it with b.
-      // Only do this when the identifier appears as a statement in a body
-      // (not as a parameter name, method name, LHS of assignment, etc.)
-      if (ctx.definedFunctions.has(name)) {
-        const parentType = node.parent?.type
-        if (parentType === 'body_statement' || parentType === 'program' ||
-            parentType === 'then' || parentType === 'block_body') {
-          return `${name}(b)`
-        }
+
+      // Only transform bare identifiers to calls in statement context
+      const parentType = node.parent?.type
+      const isStatement = parentType === 'body_statement' || parentType === 'program' ||
+                          parentType === 'then' || parentType === 'block_body'
+
+      // Bare identifier that matches a user-defined function → call it with b
+      if (isStatement && ctx.definedFunctions.has(name)) {
+        return `${name}(b)`
       }
+
+      // Bare identifier that matches a known no-arg DSL function.
+      // Ruby allows calling methods without parens: `tick` = `tick()`
+      // This applies in any context (statement, argument, etc.)
+      // because `tick`, `look`, `stop` are always function calls in Sonic Pi.
+      if (BARE_CALLABLE.has(name)) {
+        const prefix = ctx.insideLoop ? 'b.' : ''
+        return `${prefix}${name}()`
+      }
+
       return name
     }
 
@@ -806,7 +828,7 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     }
 
     // with_fx :name, opts do ... end
-    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm') {
+    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose') {
       return transpileWithBlock(methodName, argsNode, blockNode, ctx)
     }
 
@@ -885,10 +907,11 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return `${prefix}use_random_seed(${args})`
     }
 
-    // use_synth_defaults — emit as opts object
+    // use_synth_defaults — all args become a single opts object
     if (methodName === 'use_synth_defaults') {
       const args = argsNode ? transpileArgListAsOpts(argsNode, ctx) : '{}'
-      return `use_synth_defaults(${args})`
+      const prefix = ctx.insideLoop ? 'b.' : ''
+      return `${prefix}use_synth_defaults(${args})`
     }
 
     // load_samples / load_sample — no-op
@@ -918,11 +941,12 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return `${methodName}(b${args ? ', ' + args : ''})`
     }
 
-    // Methods ending with ? — rename to _q, no b. prefix (not on ProgramBuilder)
+    // Methods ending with ? — rename to _q, with b. prefix (on ProgramBuilder)
     if (methodName.endsWith('?')) {
       const cleanName = methodName.slice(0, -1) + '_q'
+      const prefix = ctx.insideLoop ? 'b.' : ''
       const args = argsNode ? transpileArgList(argsNode, ctx) : ''
-      return `${cleanName}(${args})`
+      return `${prefix}${cleanName}(${args})`
     }
 
     // --- Dispatch by which set the function belongs to ---
