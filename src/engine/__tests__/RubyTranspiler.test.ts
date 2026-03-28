@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { transpileRubyToJS, detectLanguage, autoTranspile } from '../RubyTranspiler'
+import { transpileRubyToJS, detectLanguage, autoTranspile, autoTranspileDetailed } from '../RubyTranspiler'
 
 /** Strip _srcLine from transpiler output for test comparison. */
 const strip = (s: string) => s
@@ -291,12 +291,13 @@ play :d4     # D4`
   })
 
   describe('autoTranspile', () => {
-    it('transpiles Ruby code', () => {
+    it('transpiles Ruby code and returns a string', () => {
       const code = `live_loop :test do
   play 60
   sleep 1
 end`
       const result = autoTranspile(code)
+      expect(typeof result).toBe('string')
       expect(strip(result)).toContain('live_loop("test"')
       expect(strip(result)).toContain('b.play(60)')
     })
@@ -308,6 +309,43 @@ end`
 })`
       const result = autoTranspile(code)
       expect(result).toBe(code)
+    })
+  })
+
+  describe('autoTranspileDetailed', () => {
+    it('passes through JS code with usedFallback: false', () => {
+      const code = `live_loop("test", (b) => {
+  b.play(60)
+  b.sleep(1)
+})`
+      const result = autoTranspileDetailed(code)
+      expect(result.code).toBe(code)
+      expect(result.usedFallback).toBe(false)
+    })
+
+    it('returns usedFallback: true when parser fails', () => {
+      // This code triggers a parser error that forces fallback
+      const code = `live_loop :test do
+  at [0, 0.5] do |t|
+    play 60
+    sleep 0.25
+  end
+  sleep 1
+end`
+      const result = autoTranspileDetailed(code)
+      expect(result.usedFallback).toBe(true)
+      expect(result.fallbackReason).toBeDefined()
+      expect(result.code).toBeTruthy()
+    })
+
+    it('returns usedFallback: false for clean Ruby code', () => {
+      const code = `live_loop :test do
+  play 60
+  sleep 1
+end`
+      const result = autoTranspileDetailed(code)
+      expect(result.usedFallback).toBe(false)
+      expect(result.fallbackReason).toBeUndefined()
     })
   })
 

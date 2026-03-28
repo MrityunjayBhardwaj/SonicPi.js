@@ -627,6 +627,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
 
     const indent = getIndent()
     output.push(`${indent}while (true) {`)
+    output.push(`${indent}  b.__checkBudget__()`)
     blockStack.push('block')
     parseBlock()
     blockStack.pop()
@@ -856,6 +857,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
 
       const indent = getIndent()
       output.push(`${indent}for (let ${varName} = 0; ${varName} < ${transpileExpr(count)}; ${varName}++) {`)
+      output.push(`${indent}  b.__checkBudget__()`)
       blockStack.push('block')
       parseBlock()
       blockStack.pop()
@@ -891,6 +893,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
 
       const indent = getIndent()
       output.push(`${indent}for (const ${varName} of ${transpileExpr(iterable)}) {`)
+      output.push(`${indent}  b.__checkBudget__()`)
       blockStack.push('block')
       parseBlock()
       blockStack.pop()
@@ -1095,6 +1098,9 @@ function addBuilderPrefixes(line: string, insideLoop: boolean): string {
     /(?<!\.)(?<!b\.)\b(rrand_i|rrand|rand_i|rand|choose|dice|one_in|ring|knit|range|line|spread|chord|scale|chord_invert|note_range|note|tick|look)\s*\(/g,
     'b.$1('
   )
+
+  // Bare rand / rand_i (no args, no parens) — Ruby treats as function call
+  result = result.replace(/(?<!\.)(?<!b\.)\b(rand_i|rand)\b(?!\s*[.()\w])/g, 'b.$1()')
 
   // Standalone tick/look without parens (not as method: notes.tick)
   result = result.replace(/(?<!\.)(?<!b\.)\btick\b(?!\s*[.(])/g, 'b.tick()')

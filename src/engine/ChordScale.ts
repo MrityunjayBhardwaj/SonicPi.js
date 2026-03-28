@@ -197,8 +197,12 @@ export function note_range(low: string | number, high: string | number): Ring<nu
   const lo = noteToMidi(low)
   const hi = noteToMidi(high)
   const notes: number[] = []
-  for (let n = lo; n <= hi; n++) {
+  const maxNotes = 10_000
+  for (let n = lo; n <= hi && notes.length < maxNotes; n++) {
     notes.push(n)
+  }
+  if (notes.length >= maxNotes) {
+    console.warn('[SonicPi] note_range capped at 10000 notes')
   }
   return new Ring(notes)
 }

@@ -4,8 +4,8 @@ import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioI
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
 import { transpile } from './Transpiler'
-import { createSandboxedExecutor, validateCode } from './Sandbox'
-import { autoTranspile } from './RubyTranspiler'
+import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbox'
+import { autoTranspileDetailed } from './RubyTranspiler'
 import { friendlyError, formatFriendlyError, type FriendlyError } from './FriendlyErrors'
 import { detectStratum, Stratum } from './Stratum'
 import { SoundEventStream } from './SoundEventStream'
@@ -172,8 +172,13 @@ export class SonicPiEngine {
       }
 
       // Transpile: Ruby DSL → JS builder chain
-      const jsCode = autoTranspile(code)
-      const { code: transpiledCode } = transpile(jsCode)
+      const transpileResult = autoTranspileDetailed(code)
+      if (transpileResult.usedFallback) {
+        const warnMsg = `[Warning] Parser fell back to regex transpiler: ${transpileResult.fallbackReason}`
+        if (this.printHandler) this.printHandler(warnMsg)
+        else console.warn('[SonicPi]', warnMsg)
+      }
+      const { code: transpiledCode } = transpile(transpileResult.code)
 
       // Top-level DSL state
       let defaultBpm = 60
@@ -204,13 +209,22 @@ export class SonicPiEngine {
         scheduler.stopLoop(name)
       }
 
+      // Scope handle — set when executor is created, used to isolate loop scopes
+      let scopeHandle: ScopeHandle | null = null
+
       const wrappedLiveLoop = (name: string, builderFn: (b: ProgramBuilder) => void) => {
         const trackBus = this.bridge?.allocateTrackBus(name) ?? 0
 
         // Store builder function for capture path
         this.loopBuilders.set(name, builderFn)
         if (!this.loopSeeds.has(name)) {
-          this.loopSeeds.set(name, 0)
+          // Seed derived from loop name — each loop gets a unique PRNG sequence
+          // (matches desktop Sonic Pi's per-loop deterministic seeding)
+          let hash = 0
+          for (let i = 0; i < name.length; i++) {
+            hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0
+          }
+          this.loopSeeds.set(name, Math.abs(hash))
         }
 
         // Create the async function that builds a Program each iteration
@@ -220,8 +234,14 @@ export class SonicPiEngine {
           this.loopSeeds.set(name, seed + 1)
 
           const builder = new ProgramBuilder(seed, this.loopTicks.get(name))
-          // Await in case builderFn is async (backward compat with old JS code)
-          await Promise.resolve(builderFn(builder))
+          // Enter per-loop scope so variable writes are isolated
+          scopeHandle?.enterScope(name)
+          try {
+            // Await in case builderFn is async (backward compat with old JS code)
+            await Promise.resolve(builderFn(builder))
+          } finally {
+            scopeHandle?.exitScope()
+          }
           // Persist tick state so ring.tick() / tick() advance across iterations
           this.loopTicks.set(name, builder.getTicks())
           const program = builder.build()
@@ -449,8 +469,9 @@ export class SonicPiEngine {
         else console.warn('[SonicPi]', warning)
       }
 
-      const executor = createSandboxedExecutor(transpiledCode, dslNames)
-      await executor(...dslValues)
+      const sandbox = createIsolatedExecutor(transpiledCode, dslNames)
+      scopeHandle = sandbox.scopeHandle
+      await sandbox.execute(...dslValues)
 
       if (isReEvaluate) {
         const oldLoops = scheduler.getRunningLoopNames()

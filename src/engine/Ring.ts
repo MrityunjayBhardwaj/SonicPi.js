@@ -148,10 +148,14 @@ export function knit<T>(...args: (T | number)[]): Ring<T> {
  */
 export function range(start: number, end: number, step: number = 1): Ring<number> {
   const result: number[] = []
+  const maxSize = 10_000
   if (step > 0) {
-    for (let i = start; i < end; i += step) result.push(i)
+    for (let i = start; i < end && result.length < maxSize; i += step) result.push(i)
   } else if (step < 0) {
-    for (let i = start; i > end; i += step) result.push(i)
+    for (let i = start; i > end && result.length < maxSize; i += step) result.push(i)
+  }
+  if (result.length >= maxSize) {
+    console.warn('[SonicPi] range() capped at 10000 elements')
   }
   return new Ring(result)
 }

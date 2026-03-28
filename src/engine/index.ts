@@ -49,7 +49,7 @@ export type { TaskState, SchedulerEvent, SleepEntry, SchedulerOptions } from './
 
 // Program (free monad) — needed to build custom interpreters
 export type { Step, Program, LoopProgram } from './Program'
-export { ProgramBuilder } from './ProgramBuilder'
+export { ProgramBuilder, InfiniteLoopError, DEFAULT_LOOP_BUDGET } from './ProgramBuilder'
 export { runProgram } from './interpreters/AudioInterpreter'
 export { queryProgram, queryLoopProgram, captureAll } from './interpreters/QueryInterpreter'
 
@@ -64,12 +64,12 @@ export { detectStratum, Stratum } from './Stratum'
 
 // Transpilation — for custom language front-ends
 export { transpile, createExecutor } from './Transpiler'
-export { transpileRubyToJS, detectLanguage, autoTranspile } from './RubyTranspiler'
+export { transpileRubyToJS, detectLanguage, autoTranspile, autoTranspileDetailed, type TranspileResult } from './RubyTranspiler'
 export { parseAndTranspile } from './Parser'
 export type { ParseError } from './Parser'
 
 // Sandbox — Proxy-based global blocking for user code execution
-export { createSandboxedExecutor, validateCode, BLOCKED_GLOBALS } from './Sandbox'
+export { createSandboxedExecutor, createIsolatedExecutor, validateCode, BLOCKED_GLOBALS, type ScopeHandle } from './Sandbox'
 
 // Seeded random — for deterministic generative patterns
 export { SeededRandom } from './SeededRandom'

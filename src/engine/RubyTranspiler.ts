@@ -249,6 +249,7 @@ export function transpileRubyToJS(ruby: string): string {
       const count = transpileExpression(timesMatch[1])
       const varName = timesMatch[2] ?? '_i'
       result.push(`${indent}for (let ${varName} = 0; ${varName} < ${count}; ${varName}++) {${inlineComment}`)
+      result.push(`${indent}  b.__checkBudget__()`)
       blockStack.push('block')
       i++
       continue
@@ -262,6 +263,7 @@ export function transpileRubyToJS(ruby: string): string {
       const iterable = transpileExpression(eachMatch[1])
       const varName = eachMatch[2] ?? '_item'
       result.push(`${indent}for (const ${varName} of ${iterable}) {${inlineComment}`)
+      result.push(`${indent}  b.__checkBudget__()`)
       blockStack.push('block')
       i++
       continue
@@ -420,6 +422,7 @@ export function transpileRubyToJS(ruby: string): string {
     // --- loop do ---
     if (code === 'loop do') {
       result.push(`${indent}while (true) {${inlineComment}`)
+      result.push(`${indent}  b.__checkBudget__()`)
       blockStack.push('block')
       i++
       continue
@@ -710,6 +713,8 @@ function transpileExpression(expr: string): string {
   result = result.replace(/\b(rrand_i|rrand|rand_i|rand|choose|dice|one_in)\s*\(/g, 'b.$1(')
   // Without parens: rrand 0, 1
   result = result.replace(/\b(rrand_i|rrand|rand_i|rand)\s+([^(].+)$/, 'b.$1($2)')
+  // Bare rand / rand_i (no args, no parens) — Ruby treats as function call
+  result = result.replace(/(?<!\.)(?<!\w)\b(rand_i|rand)\b(?!\s*[.()\w])/g, 'b.$1()')
 
   // Standalone tick/look (as function call, not method .tick())
   result = result.replace(/(?<!\.)(?<!\w)\btick\s*\(/g, 'b.tick(')
@@ -859,14 +864,30 @@ export function detectLanguage(code: string): 'ruby' | 'js' {
   return 'ruby'
 }
 
+/** Result of autoTranspile — includes fallback metadata for callers. */
+export interface TranspileResult {
+  code: string
+  usedFallback: boolean
+  fallbackReason?: string
+}
+
 /**
  * Auto-detect language and transpile if needed.
  * Uses the recursive descent parser as primary (handles nesting, b. prefix,
  * structured errors). Falls back to regex transpiler if parser reports errors.
- * Returns JS code ready for the engine.
+ * Returns the transpiled JS code string (backward compatible).
  */
 export function autoTranspile(code: string): string {
-  if (detectLanguage(code) === 'js') return code
+  return autoTranspileDetailed(code).code
+}
+
+/**
+ * Auto-detect language and transpile if needed, with detailed metadata.
+ * Returns `{ code, usedFallback, fallbackReason }` for callers that need
+ * to know whether the parser fell back to the regex transpiler.
+ */
+export function autoTranspileDetailed(code: string): TranspileResult {
+  if (detectLanguage(code) === 'js') return { code, usedFallback: false }
 
   // Wrap bare code in implicit live_loop BEFORE either transpiler
   code = wrapBareCode(code)
@@ -877,15 +898,16 @@ export function autoTranspile(code: string): string {
     // Validate the output creates a valid Function (catches bad JS generation)
     try {
       new Function(parsed)
-      return parsed
+      return { code: parsed, usedFallback: false }
     } catch {
       // Parser output is invalid JS — fall back
-      console.warn('[SonicPi] Parser produced invalid JS, falling back to regex transpiler')
+      const reason = 'Parser produced invalid JS'
+      console.warn(`[SonicPi] ${reason}, falling back to regex transpiler`)
+      return { code: transpileRubyToJS(code), usedFallback: true, fallbackReason: reason }
     }
   } else {
+    const reason = errors.map(e => e.message).join('; ')
     console.warn('[SonicPi] Parser reported errors, falling back to regex transpiler:', errors)
+    return { code: transpileRubyToJS(code), usedFallback: true, fallbackReason: reason }
   }
-
-  // Fallback: regex transpiler
-  return transpileRubyToJS(code)
 }

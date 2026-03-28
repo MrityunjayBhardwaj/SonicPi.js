@@ -15,6 +15,16 @@ import { ring, knit, range, line, Ring } from './Ring'
 import { spread } from './EuclideanRhythm'
 import { chord, scale, chord_invert, note, note_range } from './ChordScale'
 
+/** Default maximum iterations before a loop is considered infinite. */
+export const DEFAULT_LOOP_BUDGET = 100_000
+
+export class InfiniteLoopError extends Error {
+  constructor(message = 'Infinite loop detected — did you forget a sleep?') {
+    super(message)
+    this.name = 'InfiniteLoopError'
+  }
+}
+
 export class ProgramBuilder {
   private steps: Step[] = []
   private currentSynth = 'beep'
@@ -23,6 +33,7 @@ export class ProgramBuilder {
   private densityFactor: number = 1
   private nextRef: number = 1
   private _lastRef: number = 0
+  private _budgetRemaining: number = DEFAULT_LOOP_BUDGET
 
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
     this.rng = new SeededRandom(seed)
@@ -72,7 +83,19 @@ export class ProgramBuilder {
 
   sleep(beats: number): this {
     this.steps.push({ tag: 'sleep', beats: beats / this.densityFactor })
+    // Reset budget on every sleep — loops with sleep are not infinite
+    this._budgetRemaining = DEFAULT_LOOP_BUDGET
     return this
+  }
+
+  /**
+   * Decrement loop iteration budget. Throws InfiniteLoopError when budget
+   * is exhausted. Injected by the transpiler at loop back-edges.
+   */
+  __checkBudget__(): void {
+    if (--this._budgetRemaining <= 0) {
+      throw new InfiniteLoopError()
+    }
   }
 
   sample(name: string, opts?: Record<string, unknown>): this {
