@@ -394,6 +394,16 @@ export class VirtualTimeScheduler {
           task.running = false
           break
         }
+        // InfiniteLoopError — stop the loop immediately, do not retry
+        if (err instanceof Error && err.name === 'InfiniteLoopError') {
+          task.running = false
+          if (this.loopErrorHandler) {
+            this.loopErrorHandler(task.id, err)
+          } else {
+            console.error(`[SonicPi] Error in loop "${task.id}":`, err)
+          }
+          break
+        }
         const error = err instanceof Error ? err : new Error(String(err))
         if (this.loopErrorHandler) {
           this.loopErrorHandler(task.id, error)

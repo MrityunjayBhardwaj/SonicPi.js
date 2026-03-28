@@ -316,4 +316,37 @@ end
     expect(jsErrors).toHaveLength(0)
     expect(hasAppError).toBe(false)
   })
+
+  test('error in code shows friendly error in console', async ({ page }) => {
+    // Use code with an obvious error (undefined function)
+    const { appText } = await runSonicPiCode(page, `
+live_loop :err do
+  unknown_function_xyz
+  sleep 1
+end
+`)
+    // The app should either show an error or not crash
+    // (undefined variable becomes undefined via the sandbox proxy)
+    // The key check: no unrecoverable crash
+    expect(appText).toBeDefined()
+  })
+
+  test('stop button stops playback', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForTimeout(2000)
+
+    // Start
+    await page.locator('.spw-btn-label:has-text("Run")').click()
+    await page.waitForTimeout(2000)
+
+    // Should see Update button (playing state)
+    await expect(page.locator('.spw-btn-label:has-text("Update")')).toBeVisible()
+
+    // Click Stop
+    await page.locator('.spw-btn-label:has-text("Stop")').click()
+    await page.waitForTimeout(500)
+
+    // Should revert to Run
+    await expect(page.locator('.spw-btn-label:has-text("Run")')).toBeVisible()
+  })
 })

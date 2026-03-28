@@ -350,4 +350,35 @@ live_loop("drums", (b) => {
     engine.dispose()
     expect((engine as any).globalStore.size).toBe(0)
   })
+
+  it('infinite loop (no sleep) reports error and does not hang', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+
+    const errors: Error[] = []
+    engine.setRuntimeErrorHandler((err) => errors.push(err))
+
+    const result = await engine.evaluate(`
+loop do
+  play :c4
+end
+`)
+    // The evaluate itself should not hang or throw
+    expect(result.error).toBeUndefined()
+
+    // Start the scheduler and tick to let the loop run
+    engine.play()
+    const scheduler = (engine as any).scheduler
+    scheduler.tick(100)
+    await new Promise(r => setTimeout(r, 100))
+
+    // The loop should have been caught by the budget guard
+    expect(errors.length).toBeGreaterThanOrEqual(1)
+    const hasInfiniteLoopError = errors.some(e =>
+      e.name === 'InfiniteLoopError' || e.message.includes('Infinite loop')
+    )
+    expect(hasInfiniteLoopError).toBe(true)
+
+    engine.dispose()
+  })
 })

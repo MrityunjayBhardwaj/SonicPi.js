@@ -94,8 +94,8 @@ async function runCode(rubyCode: string): Promise<{ error?: Error; events: strin
   }
 
   try {
-    const jsCode = autoTranspile(rubyCode)
-    const { code: transpiledCode } = transpile(jsCode)
+    const transpiled = autoTranspile(rubyCode)
+    const { code: transpiledCode } = transpile(transpiled)
 
     const dslNames = [
       'live_loop', 'use_bpm', 'use_synth',

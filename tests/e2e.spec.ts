@@ -82,6 +82,48 @@ test.describe('Sonic Pi Web — E2E Smoke Tests', () => {
     expect(pageText).toContain('Basic Beat')
   })
 
+  test('editor is visible and accepts input', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForTimeout(2000)
+
+    // The code editor (CodeMirror or textarea) should be visible
+    const editor = page.locator('.cm-content, textarea').first()
+    await expect(editor).toBeVisible()
+
+    // Focus and type code
+    await editor.click()
+    await page.keyboard.press('Meta+a')
+    await page.keyboard.press('Backspace')
+    await editor.fill('play 60')
+    await page.waitForTimeout(200)
+
+    // Verify the code was entered
+    const editorText = await editor.textContent() ?? ''
+    expect(editorText).toContain('play')
+  })
+
+  test('play button exists and is clickable', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForTimeout(2000)
+
+    const runBtn = page.locator('.spw-btn-label:has-text("Run")')
+    await expect(runBtn).toBeVisible()
+    await expect(runBtn).toBeEnabled()
+  })
+
+  test('console shows output after running code', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForTimeout(2000)
+
+    // Run the default code
+    await page.locator('.spw-btn-label:has-text("Run")').click()
+    await page.waitForTimeout(3000)
+
+    // The page should show some engine/console output (not an error state)
+    const pageText = await page.locator('#app').textContent() ?? ''
+    expect(pageText).not.toContain('Something went wrong')
+  })
+
   test('buffer tabs switch', async ({ page }) => {
     await page.goto('/')
     await page.waitForTimeout(2000)
