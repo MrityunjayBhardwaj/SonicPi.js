@@ -1,14 +1,20 @@
 /**
- * TreeSitterTranspiler — catamorphism over the Ruby grammar.
+ * TreeSitterTranspiler — partial fold over the Ruby CST.
  *
- * Replaces the regex-based Ruby→JS transpiler with a proper AST fold.
+ * Replaces the regex-based Ruby→JS transpiler with a tree-sitter AST walk.
  * Uses web-tree-sitter to parse Ruby into a concrete syntax tree, then
- * walks every node via an exhaustive switch — guaranteeing at compile
- * time that every syntactic construct is explicitly handled.
+ * walks named nodes via a switch — explicit handlers for ~60 semantically
+ * meaningful node types, recursive traversal for structural wrappers,
+ * and error flagging for unrecognized leaf nodes.
  *
- * Mathematical foundation: this is a catamorphism (fold) over the initial
- * algebra of the Ruby grammar — the same structure as QueryInterpreter's
- * fold_Q from the thesis (§2.4).
+ * Not a true catamorphism (which would require exhaustive coverage of all
+ * ~150 named node types in the Ruby grammar). This is a partial fold over
+ * the Sonic Pi subset, following the same pattern as Semgrep and ast-grep:
+ * handle what matters, recurse through structure, flag the rest.
+ *
+ * Variable assignment uses bare assignment (no let/const) so the Sandbox
+ * Proxy's set trap captures writes into scope-isolated storage — matching
+ * Ruby's mutable variable semantics and Opal/CoffeeScript's approach.
  */
 
 // ---------------------------------------------------------------------------
@@ -221,40 +227,70 @@ interface TranspileContext {
   insideLoop: boolean
   definedFunctions: Set<string>
   indent: string
+  /** Current node's source line (1-based) for _srcLine injection */
+  srcLine?: number
 }
 
 // ---------------------------------------------------------------------------
-// DSL functions that get the b. prefix inside loops
+// DSL functions — split by where they actually exist
 // ---------------------------------------------------------------------------
 
-const DSL_FUNCTIONS = new Set([
+/**
+ * Functions that exist as methods on ProgramBuilder.
+ * Inside a loop, these get the `b.` prefix.
+ */
+const BUILDER_METHODS = new Set([
+  // Core
   'play', 'sleep', 'sample', 'sync', 'cue',
   'use_synth', 'use_bpm', 'use_random_seed',
-  'use_synth_defaults', 'use_debug',
+  'control', 'stop', 'live_audio',
+  'with_fx', 'in_thread', 'at',
+  'puts', 'print',
+  // Random (resolved eagerly)
+  'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in',
+  // Tick (resolved at build time)
+  'tick', 'look',
+  // Data constructors
   'ring', 'knit', 'range', 'line', 'spread',
   'chord', 'scale', 'chord_invert', 'note', 'note_range',
-  'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in',
-  'tick', 'look',
-  'puts', 'print',
-  'with_fx', 'with_synth', 'with_bpm',
-  'in_thread', 'at', 'time_warp', 'density',
-  'control', 'stop', 'live_audio',
-  'sample_duration', 'bools',
-  'play_pattern_timed',
-  'set', 'get',
-  'tick_reset', 'tick_reset_all',
-  'load_samples', 'load_sample',
-  'use_transpose', 'with_transpose',
-  'factor_q',
-  'play_pattern_timed',
-  'sample_duration',
-  'use_synth_defaults',
-  'use_debug',
+  // Budget
+  '__checkBudget__',
 ])
 
-// DSL methods that are always top-level (never get b. prefix)
-const TOP_LEVEL_ONLY = new Set([
+/**
+ * Functions that exist ONLY in the top-level execution scope
+ * (injected by SonicPiEngine.evaluate), NOT on ProgramBuilder.
+ * Inside a loop, these must NOT get the `b.` prefix —
+ * they're captured from the enclosing scope via the Proxy.
+ */
+const TOP_LEVEL_SCOPE = new Set([
   'live_loop', 'stop_loop', 'define',
+  'use_bpm', 'use_synth', 'use_random_seed',
+  'in_thread', 'at', 'density',
+  'with_fx',
+  // Global store
+  'set', 'get',
+  // Sample catalog
+  'sample_duration', 'sample_names', 'sample_groups', 'sample_loaded',
+  // Output
+  'puts', 'stop',
+  // Data constructors (also on builder, but available at top level)
+  'ring', 'knit', 'range', 'line', 'spread',
+  'chord', 'scale', 'chord_invert', 'note', 'note_range',
+])
+
+/**
+ * Functions that don't exist anywhere yet but appear in Sonic Pi code.
+ * Transpile them without `b.` prefix so they fall through to the
+ * execution scope (where they'll be undefined → clear runtime error
+ * rather than a misleading "b.X is not a function").
+ */
+const UNIMPLEMENTED_DSL = new Set([
+  'use_debug', 'bools', 'play_pattern_timed',
+  'tick_reset', 'tick_reset_all',
+  'use_transpose', 'with_transpose', 'with_bpm', 'with_synth',
+  'factor_q', 'use_synth_defaults',
+  'load_samples', 'load_sample',
 ])
 
 // Synth names that can be used as bare commands: `beep 60`
@@ -355,6 +391,16 @@ function transpileNode(node: any, ctx: TranspileContext): string {
       if (name === 'nil') return 'null'
       if (name === 'true') return 'true'
       if (name === 'false') return 'false'
+      // Bare identifier that matches a user-defined function → call it with b.
+      // Only do this when the identifier appears as a statement in a body
+      // (not as a parameter name, method name, LHS of assignment, etc.)
+      if (ctx.definedFunctions.has(name)) {
+        const parentType = node.parent?.type
+        if (parentType === 'body_statement' || parentType === 'program' ||
+            parentType === 'then' || parentType === 'block_body') {
+          return `${name}(b)`
+        }
+      }
       return name
     }
 
@@ -380,10 +426,14 @@ function transpileNode(node: any, ctx: TranspileContext): string {
 
       // If RHS is b.play or b.sample, capture lastRef
       if (ctx.insideLoop && /^b\.(play|sample)\(/.test(rhsStr)) {
-        return `${rhsStr}; const ${lhsStr} = b.lastRef`
+        return `${rhsStr}; ${lhsStr} = b.lastRef`
       }
 
-      return `const ${lhsStr} = ${rhsStr}`
+      // Bare assignment (no let/const/var) — the Sandbox's Proxy `set` trap
+      // captures it into scope-isolated storage. This matches Ruby semantics:
+      // variables are mutable and re-assignable. Using `const` or `let` would
+      // create a lexical binding invisible to the Proxy, breaking scope isolation.
+      return `${lhsStr} = ${rhsStr}`
     }
 
     case 'operator_assignment': {
@@ -627,13 +677,20 @@ function transpileNode(node: any, ctx: TranspileContext): string {
       return `/* PARSE ERROR: ${node.text.slice(0, 30)} */`
     }
 
-    // ---- Catch-all for node types we pass through ----
+    // ---- Structural wrapper nodes — recurse into children ----
+    // These are CST nodes that exist for grouping but carry no semantic
+    // content for transpilation (e.g., `then`, `body_statement` variants).
+    // A partial fold over named nodes — handle semantically meaningful
+    // types explicitly above, recurse through structural wrappers here.
     default: {
-      // For unrecognized nodes, try to transpile children
       if (node.namedChildCount > 0) {
         return transpileChildren(node, ctx)
       }
-      // Leaf node — emit text
+      // Leaf node we don't recognize — likely raw Ruby leaking through.
+      // Don't silently emit it as JS; flag it so the caller can fall back.
+      if (node.type !== 'empty_statement' && node.text.trim()) {
+        ctx.errors.push(`Unhandled node type '${node.type}' at line ${node.startPosition.row + 1}: ${node.text.slice(0, 40)}`)
+      }
       return node.text
     }
   }
@@ -643,7 +700,10 @@ function transpileNode(node: any, ctx: TranspileContext): string {
 // Program root handler — wraps bare DSL calls in an implicit live_loop
 // ---------------------------------------------------------------------------
 
-const BARE_DSL_CALLS = new Set(['play', 'sleep', 'sample'])
+const BARE_DSL_CALLS = new Set([
+  'play', 'sleep', 'sample', 'cue', 'sync',
+  'puts', 'print', 'control', 'synth',
+])
 const TOP_LEVEL_SETTINGS = new Set(['use_bpm', 'use_synth', 'use_random_seed', 'use_debug'])
 
 function transpileProgram(node: any, ctx: TranspileContext): string {
@@ -825,18 +885,10 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return `${prefix}use_random_seed(${args})`
     }
 
-    // use_debug false
-    if (methodName === 'use_debug') {
-      const args = argsNode ? transpileArgList(argsNode, ctx) : 'false'
-      const prefix = ctx.insideLoop ? 'b.' : ''
-      return `${prefix}use_debug(${args})`
-    }
-
-    // use_synth_defaults
+    // use_synth_defaults — emit as opts object
     if (methodName === 'use_synth_defaults') {
       const args = argsNode ? transpileArgListAsOpts(argsNode, ctx) : '{}'
-      const prefix = ctx.insideLoop ? 'b.' : ''
-      return `${prefix}use_synth_defaults(${args})`
+      return `use_synth_defaults(${args})`
     }
 
     // load_samples / load_sample — no-op
@@ -847,13 +899,6 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     // osc_send — no-op with warning
     if (methodName === 'osc_send') {
       return '/* osc_send: not available in browser */'
-    }
-
-    // play, sleep, sample, etc. — DSL functions
-    if (DSL_FUNCTIONS.has(methodName) && !TOP_LEVEL_ONLY.has(methodName)) {
-      const prefix = ctx.insideLoop ? 'b.' : ''
-      const args = argsNode ? transpileArgList(argsNode, ctx) : ''
-      return `${prefix}${methodName}(${args})`
     }
 
     // synth command: `synth :name, opts`
@@ -873,36 +918,37 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return `${methodName}(b${args ? ', ' + args : ''})`
     }
 
-    // puts / print
-    if (methodName === 'puts' || methodName === 'print') {
-      const args = argsNode ? transpileArgList(argsNode, ctx) : ''
-      const prefix = ctx.insideLoop ? 'b.' : ''
-      return `${prefix}puts(${args})`
-    }
-
-    // tick_reset_all
-    if (methodName === 'tick_reset_all') {
-      return `b.tick_reset_all()`
-    }
-
-    // tick_reset
-    if (methodName === 'tick_reset') {
-      return `b.tick_reset()`
-    }
-
-    // Methods ending with ? — rename to _q and add b. prefix
+    // Methods ending with ? — rename to _q, no b. prefix (not on ProgramBuilder)
     if (methodName.endsWith('?')) {
       const cleanName = methodName.slice(0, -1) + '_q'
       const args = argsNode ? transpileArgList(argsNode, ctx) : ''
-      const prefix = ctx.insideLoop ? 'b.' : ''
-      return `${prefix}${cleanName}(${args})`
+      return `${cleanName}(${args})`
     }
 
-    // use_transpose
-    if (methodName === 'use_transpose') {
-      const args = argsNode ? transpileArgList(argsNode, ctx) : ''
+    // --- Dispatch by which set the function belongs to ---
+
+    // Functions that exist on ProgramBuilder → b.method() inside loops
+    if (BUILDER_METHODS.has(methodName)) {
       const prefix = ctx.insideLoop ? 'b.' : ''
-      return `${prefix}use_transpose(${args})`
+      // Inject _srcLine for play/sample for friendly error source mapping
+      const needsSrcLine = methodName === 'play' || methodName === 'sample'
+      const nodeCtx = { ...ctx, srcLine: node.startPosition.row + 1 }
+      const args = argsNode ? transpileArgList(argsNode, nodeCtx, needsSrcLine) : ''
+      return `${prefix}${methodName}(${args})`
+    }
+
+    // Functions that exist only at top-level scope → never b. prefix
+    // (captured from enclosing scope via the Proxy)
+    if (TOP_LEVEL_SCOPE.has(methodName)) {
+      const args = argsNode ? transpileArgList(argsNode, ctx) : ''
+      return `${methodName}(${args})`
+    }
+
+    // Unimplemented DSL functions → emit without b. prefix
+    // (will be undefined at runtime — clear error message)
+    if (UNIMPLEMENTED_DSL.has(methodName)) {
+      const args = argsNode ? transpileArgList(argsNode, ctx) : ''
+      return `${methodName}(${args})`
     }
 
     // Generic: unknown bare function call — emit as-is
@@ -1516,7 +1562,7 @@ function transpileBlockBody(blockNode: any, ctx: TranspileContext): string {
 // Argument list handling
 // ---------------------------------------------------------------------------
 
-function transpileArgList(node: any, ctx: TranspileContext): string {
+function transpileArgList(node: any, ctx: TranspileContext, injectSrcLine = false): string {
   const args = node.namedChildren
   const positional: string[] = []
   const kwargs: string[] = []
@@ -1534,6 +1580,11 @@ function transpileArgList(node: any, ctx: TranspileContext): string {
     } else {
       positional.push(transpileNode(arg, ctx))
     }
+  }
+
+  // Inject _srcLine for source mapping (play/sample calls)
+  if (injectSrcLine && ctx.srcLine !== undefined) {
+    kwargs.push(`_srcLine: ${ctx.srcLine}`)
   }
 
   if (kwargs.length > 0) {

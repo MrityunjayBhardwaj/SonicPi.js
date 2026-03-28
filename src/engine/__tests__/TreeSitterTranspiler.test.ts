@@ -6,6 +6,11 @@
 
 import { describe, it, expect, beforeAll } from 'vitest'
 import { initTreeSitter, treeSitterTranspile, isTreeSitterReady } from '../TreeSitterTranspiler'
+import { ProgramBuilder } from '../ProgramBuilder'
+import { ring } from '../Ring'
+import { spread } from '../EuclideanRhythm'
+import { chord, scale, chord_invert, note, note_range } from '../ChordScale'
+import { noteToMidi, midiToFreq, noteToFreq } from '../NoteToFreq'
 // Resolve WASM paths for Node.js test environment
 const base = new URL('../../..', import.meta.url).pathname
 const tsWasm = base + 'node_modules/web-tree-sitter/tree-sitter.wasm'
@@ -33,7 +38,7 @@ end`
       const result = treeSitterTranspile(ruby)
       expect(result.ok).toBe(true)
       expect(result.code).toContain('live_loop("drums"')
-      expect(result.code).toContain('b.sample("bd_haus")')
+      expect(result.code).toContain('b.sample("bd_haus"')
       expect(result.code).toContain('b.sleep(0.5)')
     })
 
@@ -178,7 +183,7 @@ end`)
 end`)
       expect(result.ok).toBe(true)
       expect(result.code).toContain('if (')
-      expect(result.code).toContain('b.sample("bd_haus")')
+      expect(result.code).toContain('b.sample("bd_haus"')
     })
 
     it('unless modifier', () => {
@@ -284,7 +289,7 @@ end`)
   sleep 1
 end`)
       expect(result.ok).toBe(true)
-      expect(result.code).toContain('const n = 60')
+      expect(result.code).toContain('n = 60')
     })
 
     it('binary operators', () => {
@@ -391,7 +396,7 @@ end`)
   sleep 1
 end`)
       expect(result.ok).toBe(true)
-      expect(result.code).toContain('b.use_synth_defaults(')
+      expect(result.code).toContain('use_synth_defaults(')
       expect(result.code).toContain('mod_phase: 0.125')
     })
 
@@ -683,5 +688,193 @@ end`,
         expect(() => new Function(result.code)).not.toThrow()
       })
     }
+  })
+
+  describe('Semantic execution (tier 2 — runs against ProgramBuilder)', () => {
+    /**
+     * Execute transpiled code against a real ProgramBuilder and return
+     * the program steps. This catches runtime crashes from calling
+     * non-existent methods, wrong argument shapes, etc.
+     */
+    function executeTranspiled(ruby: string): { steps: any[]; error?: string } {
+      const result = treeSitterTranspile(ruby)
+      if (!result.ok) return { steps: [], error: result.errors[0] }
+
+      try {
+        // Set up a minimal execution scope matching SonicPiEngine.evaluate()
+        // eslint-disable-next-line prefer-const -- assigned inside new Function callback
+        let capturedBuilderFn: ((b: ProgramBuilder) => void) | null = null as ((b: ProgramBuilder) => void) | null
+        const live_loop = (_name: string, fn: (b: ProgramBuilder) => void) => {
+          capturedBuilderFn = fn
+        }
+        const use_bpm = (_bpm: number) => {}
+        const use_synth = (_name: string) => {}
+        const use_random_seed = (_seed: number) => {}
+        const puts = (..._args: unknown[]) => {}
+        const stop = () => {}
+        const stop_loop = (_name: string) => {}
+        const set = (_k: string, _v: unknown) => {}
+        const get = new Proxy({}, { get: () => null })
+        const in_thread = (fn: (b: ProgramBuilder) => void) => fn(new ProgramBuilder())
+        const at = (_t: number[], _v: unknown, _fn: any) => {}
+        const density = (_n: number, _fn: any) => {}
+        const with_fx = (_name: string, ...args: any[]) => {
+          const fn = args[args.length - 1]
+          if (typeof fn === 'function') fn(new ProgramBuilder())
+        }
+        const sample_duration = () => 1
+        const sample_names = () => []
+        const sample_groups = () => []
+        const sample_loaded = () => false
+
+        // Execute the transpiled code in the scope
+        const fn = new Function(
+          'live_loop', 'use_bpm', 'use_synth', 'use_random_seed',
+          'puts', 'stop', 'stop_loop', 'set', 'get',
+          'in_thread', 'at', 'density', 'with_fx',
+          'ring', 'spread', 'chord', 'scale', 'chord_invert', 'note', 'note_range',
+          'noteToMidi', 'midiToFreq', 'noteToFreq',
+          'sample_duration', 'sample_names', 'sample_groups', 'sample_loaded',
+          result.code,
+        )
+        fn(
+          live_loop, use_bpm, use_synth, use_random_seed,
+          puts, stop, stop_loop, set, get,
+          in_thread, at, density, with_fx,
+          ring, spread, chord, scale, chord_invert, note, note_range,
+          noteToMidi, midiToFreq, noteToFreq,
+          sample_duration, sample_names, sample_groups, sample_loaded,
+        )
+
+        if (!capturedBuilderFn) return { steps: [], error: 'No live_loop captured' }
+
+        const builder = new ProgramBuilder(42)
+        capturedBuilderFn(builder)
+        return { steps: builder.build() }
+      } catch (e: any) {
+        return { steps: [], error: e.message }
+      }
+    }
+
+    it('play 60 produces a play step with correct MIDI note', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  play 60
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps.length).toBe(2)
+      expect(steps[0].tag).toBe('play')
+      expect(steps[0].note).toBe(60)
+      expect(steps[1].tag).toBe('sleep')
+    })
+
+    it('sample :bd_haus produces a sample step', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  sample :bd_haus
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('sample')
+      expect(steps[0].name).toBe('bd_haus')
+    })
+
+    it('play with opts passes through correctly', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  play 60, release: 0.3, amp: 0.8
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('play')
+      expect(steps[0].opts.release).toBe(0.3)
+      expect(steps[0].opts.amp).toBe(0.8)
+    })
+
+    it('use_synth changes the synth', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  use_synth :prophet
+  play 60
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('useSynth')
+      expect(steps[0].name).toBe('prophet')
+      expect(steps[1].tag).toBe('play')
+    })
+
+    it('ring and tick produce correct values', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  play (ring 60, 64, 67).tick
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('play')
+      expect(steps[0].note).toBe(60) // first tick → index 0
+    })
+
+    it('variable reassignment works (bare assignment, not const)', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  x = 60
+  x = x + 12
+  play x
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('play')
+      expect(steps[0].note).toBe(72)
+    })
+
+    it('with_fx produces an fx step with body', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  with_fx :reverb, room: 0.8 do
+    play 60
+    sleep 1
+  end
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('fx')
+      expect(steps[0].name).toBe('reverb')
+      expect(steps[0].opts.room).toBe(0.8)
+      expect(steps[0].body.length).toBeGreaterThan(0)
+    })
+
+    it('N.times loop produces repeated steps', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  3.times do
+    play 60
+    sleep 0.25
+  end
+end`)
+      expect(error).toBeUndefined()
+      // 3 iterations × (play + sleep) = 6 steps
+      const playSteps = steps.filter((s: any) => s.tag === 'play')
+      expect(playSteps.length).toBe(3)
+    })
+
+    it('cue and sync produce correct steps', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  cue :beat
+  sync :bass
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('cue')
+      expect(steps[0].name).toBe('beat')
+      expect(steps[1].tag).toBe('sync')
+      expect(steps[1].name).toBe('bass')
+    })
+
+    it('define creates callable function with b injection', () => {
+      const { steps, error } = executeTranspiled(`define :hit do
+  sample :bd_haus
+end
+
+live_loop :t do
+  hit
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('sample')
+      expect(steps[0].name).toBe('bd_haus')
+    })
   })
 })
