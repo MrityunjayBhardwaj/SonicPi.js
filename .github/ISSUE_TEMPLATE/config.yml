@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or Discussion
+    url: https://github.com/MrityunjayBhardwaj/SonicPi.js/discussions
+    about: Ask questions and share ideas in Discussions
+  - name: Sonic Pi Desktop Issues
+    url: https://github.com/sonic-pi-net/sonic-pi/issues
+    about: For issues with desktop Sonic Pi (not this project)

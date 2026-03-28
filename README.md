@@ -3,6 +3,8 @@
 **Browser-native live coding music environment powered by SuperCollider synthesis.**
 
 <!-- badges -->
+[![CI](https://github.com/MrityunjayBhardwaj/SonicPi.js/actions/workflows/deploy.yml/badge.svg)](https://github.com/MrityunjayBhardwaj/SonicPi.js/actions)
+[![npm](https://img.shields.io/npm/v/@mjayb/sonicpijs)](https://www.npmjs.com/package/@mjayb/sonicpijs)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
 **[Try it at sonicpi.cc](https://sonicpi.cc)**

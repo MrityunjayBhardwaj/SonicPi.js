@@ -1,0 +1,36 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case. What are you trying to do that you can't?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should this work? Include code examples if relevant.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else have you tried or considered?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - DSL / language support
+        - Audio / synthesis
+        - Editor / UI
+        - Scheduling / timing
+        - Security / sandbox
+        - Documentation
+        - Other

@@ -1,0 +1,34 @@
+name: DSL Compatibility Gap
+description: Sonic Pi code that doesn't work in the browser
+labels: ["area: transpiler"]
+body:
+  - type: textarea
+    id: code
+    attributes:
+      label: Sonic Pi code
+      description: Paste the code that works in desktop Sonic Pi but fails in SonicPi.js.
+      render: ruby
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: What happens
+      description: Error message, unexpected behavior, or silence?
+    validations:
+      required: true
+
+  - type: textarea
+    id: desktop
+    attributes:
+      label: What desktop Sonic Pi does
+      description: Describe the expected behavior from desktop.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Desktop Sonic Pi version
+      placeholder: "e.g., 4.5.1"
