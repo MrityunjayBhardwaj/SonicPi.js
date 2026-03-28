@@ -14,12 +14,19 @@ These must be fixed before community launch. They are correctness or safety issu
 ### ~~Verify DSL Compatibility~~ DONE (82% on real community code — motivates tree-sitter)
 
 ### Tree-sitter Ruby Transpiler (#21)
-- [ ] Replace regex transpiler with `web-tree-sitter` + `tree-sitter-ruby` AST walker
-- [ ] Walk AST and emit JS for Sonic Pi subset (~30-40 node types)
-- [ ] Inject execution budget at AST loop nodes (replaces regex injection)
-- [ ] Cover all 20 unsupported constructs found in community stress tests
+- [ ] Install web-tree-sitter + tree-sitter-ruby WASM
+- [ ] Define Sonic Pi AST as TypeScript discriminated union (~40-50 node types from ~150)
+- [ ] Implement transpiler as catamorphism — exhaustive switch with `never` default
+- [ ] Compile-time completeness: TypeScript enforces every node type is handled
+- [ ] Budget injection at AST loop nodes (replaces regex injection)
+- [ ] Cover all 20 unsupported constructs from community stress tests
 - [ ] Target: all 10 community programs transpile, overall ≥95%
 - [ ] Preserve regex transpiler as last-resort fallback with warning
+- [ ] Incremental parsing for hot-swap (<0.1ms re-parse on edit)
+
+Architecture: the transpiler is a catamorphism (fold) over the initial algebra of the
+Ruby grammar — the same mathematical structure used by our QueryInterpreter (see thesis §2.4).
+Exhaustive pattern matching provides provable syntactic completeness.
 
 ---
 
@@ -130,6 +137,6 @@ These make the project look maintained and trustworthy to developers evaluating 
 - CodeMirror 6 editor, scope visualization, console
 - 10 built-in examples, CLI launcher
 - Content Security Policy documentation
-- 406 tests passing
+- 489 tests passing (479 unit + Playwright E2E)
 
 </details>
