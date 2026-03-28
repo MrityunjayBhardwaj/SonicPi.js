@@ -10,7 +10,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { autoTranspile } from '../RubyTranspiler'
 import { initTreeSitter, isTreeSitterReady, treeSitterTranspile } from '../TreeSitterTranspiler'
-import { resolve } from 'path'
 
 interface TestCase {
   name: string
@@ -1200,8 +1199,9 @@ describe('Real-world Sonic Pi compatibility matrix', () => {
 // -----------------------------------------------------------------------
 
 describe('Tree-sitter compatibility matrix', () => {
-  const tsWasm = resolve(__dirname, '../../../node_modules/web-tree-sitter/tree-sitter.wasm')
-  const rubyWasm = resolve(__dirname, '../../../node_modules/tree-sitter-wasms/out/tree-sitter-ruby.wasm')
+  const base = new URL('../../..', import.meta.url).pathname
+  const tsWasm = base + 'node_modules/web-tree-sitter/tree-sitter.wasm'
+  const rubyWasm = base + 'node_modules/tree-sitter-wasms/out/tree-sitter-ruby.wasm'
 
   beforeAll(async () => {
     await initTreeSitter({ treeSitterWasmUrl: tsWasm, rubyWasmUrl: rubyWasm })

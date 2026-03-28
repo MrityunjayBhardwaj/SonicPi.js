@@ -6,11 +6,10 @@
 
 import { describe, it, expect, beforeAll } from 'vitest'
 import { initTreeSitter, treeSitterTranspile, isTreeSitterReady } from '../TreeSitterTranspiler'
-import { resolve } from 'path'
-
-// Resolve WASM paths for Node.js test environment (plain file paths, not URLs)
-const tsWasm = resolve(__dirname, '../../../node_modules/web-tree-sitter/tree-sitter.wasm')
-const rubyWasm = resolve(__dirname, '../../../node_modules/tree-sitter-wasms/out/tree-sitter-ruby.wasm')
+// Resolve WASM paths for Node.js test environment
+const base = new URL('../../..', import.meta.url).pathname
+const tsWasm = base + 'node_modules/web-tree-sitter/tree-sitter.wasm'
+const rubyWasm = base + 'node_modules/tree-sitter-wasms/out/tree-sitter-ruby.wasm'
 
 /** Strip whitespace variations for test comparison. */
 const normalize = (s: string) => s.replace(/\s+/g, ' ').trim()

@@ -46,7 +46,7 @@ async function _doInit(opts?: {
   rubyWasmUrl?: string
 }): Promise<boolean> {
   try {
-    const mod = await import('web-tree-sitter')
+    const mod: any = await import('web-tree-sitter')
     // web-tree-sitter <0.22 exports a default function (the Parser class)
     // web-tree-sitter >=0.22 exports named { Parser, Language }
     const TSParser = mod.Parser ?? mod.default ?? mod
@@ -487,7 +487,7 @@ function transpileNode(node: any, ctx: TranspileContext): string {
     // ---- Blocks ----
     case 'do_block':
     case 'block': {
-      return transpileBlock(node, ctx)
+      return transpileBlockBody(node, ctx)
     }
 
     case 'block_parameters': {
