@@ -59,6 +59,8 @@ end
     // Tree-sitter handles this correctly — no fallback warning expected
     expect(appText).not.toContain('Syntax error')
     expect(appText).not.toContain('not a function')
+    expect(appText).not.toContain('Error in loop')
+    expect(appText).not.toContain("isn't available")
   })
 
   test('scope isolation: rand works and loops get independent values', async ({ page }) => {

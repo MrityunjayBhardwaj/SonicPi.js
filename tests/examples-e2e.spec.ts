@@ -45,13 +45,16 @@ for (const name of EXAMPLES) {
     const hasUIError = appText.includes('not a function') ||
       appText.includes('not defined') ||
       appText.includes('Something went wrong') ||
-      appText.includes('Syntax error')
+      appText.includes('Syntax error') ||
+      appText.includes('Error in loop') ||
+      appText.includes("isn't available")
 
     if (hasUIError) {
       // Extract the actual error from the UI
       const errorLines = appText.split('\n').filter(l =>
         l.includes('not a function') || l.includes('not defined') ||
-        l.includes('Something went wrong') || l.includes('Syntax error')
+        l.includes('Something went wrong') || l.includes('Syntax error') ||
+        l.includes('Error in loop') || l.includes("isn't available")
       )
       console.log(`[${name}] UI ERROR:`, errorLines.join(' | '))
     }

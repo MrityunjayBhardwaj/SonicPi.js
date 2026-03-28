@@ -47,6 +47,9 @@ test.describe('Sonic Pi Web — E2E Smoke Tests', () => {
     const pageText = await page.locator('#app').textContent() ?? ''
     expect(pageText).not.toContain('Something went wrong')
     expect(pageText).not.toContain('missing )')
+    expect(pageText).not.toContain('not a function')
+    expect(pageText).not.toContain('Error in loop')
+    expect(pageText).not.toContain("isn't available")
   })
 
   test('Stop works after Run', async ({ page }) => {
@@ -122,6 +125,9 @@ test.describe('Sonic Pi Web — E2E Smoke Tests', () => {
     // The page should show some engine/console output (not an error state)
     const pageText = await page.locator('#app').textContent() ?? ''
     expect(pageText).not.toContain('Something went wrong')
+    expect(pageText).not.toContain('not a function')
+    expect(pageText).not.toContain('Error in loop')
+    expect(pageText).not.toContain("isn't available")
   })
 
   test('buffer tabs switch', async ({ page }) => {

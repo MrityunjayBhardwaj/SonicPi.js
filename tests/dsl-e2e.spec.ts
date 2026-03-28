@@ -43,7 +43,9 @@ async function runSonicPiCode(page: Page, code: string) {
   const hasAppError = appText.includes('not a function') ||
     appText.includes('not defined') ||
     appText.includes('Something went wrong') ||
-    appText.includes('Syntax error')
+    appText.includes('Syntax error') ||
+    appText.includes('Error in loop') ||
+    appText.includes("isn't available")
 
   // Stop — use Escape key (more reliable than button locator)
   await page.keyboard.press('Escape')
