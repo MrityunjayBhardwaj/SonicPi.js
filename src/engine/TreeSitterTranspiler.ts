@@ -51,6 +51,29 @@ async function _doInit(opts?: {
   treeSitterWasmUrl?: string
   rubyWasmUrl?: string
 }): Promise<boolean> {
+  // Emscripten's abort() throws globally even when we catch the promise.
+  // Install a temporary error suppressor so it doesn't leak to window.onerror.
+  const isBrowser = typeof window !== 'undefined'
+  let prevOnError: typeof window.onerror | null = null
+  let rejectHandler: ((e: PromiseRejectionEvent) => void) | null = null
+  if (isBrowser) {
+    prevOnError = window.onerror
+    window.onerror = (msg) => {
+      if (typeof msg === 'string' && (msg.includes('Aborted') || msg.includes('_abort'))) {
+        return true // suppress — we handle it via the promise rejection
+      }
+      return prevOnError ? (prevOnError as any)(...arguments) : false
+    }
+    // Also suppress unhandled promise rejections from Emscripten abort
+    rejectHandler = (e: PromiseRejectionEvent) => {
+      const reason = String(e.reason ?? '')
+      if (reason.includes('Aborted') || reason.includes('_abort') || reason.includes('LinkError')) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('unhandledrejection', rejectHandler)
+  }
+
   try {
     const mod: any = await import('web-tree-sitter')
     // web-tree-sitter <0.22 exports a default function (the Parser class)
@@ -84,6 +107,15 @@ async function _doInit(opts?: {
     console.warn('[TreeSitter] Init failed, regex fallback will be used:', err)
     _initPromise = null // allow retry
     return false
+  } finally {
+    // Restore original error handlers
+    if (isBrowser) {
+      // Delay restore to catch any async Emscripten abort throws
+      setTimeout(() => {
+        window.onerror = prevOnError
+        if (rejectHandler) window.removeEventListener('unhandledrejection', rejectHandler)
+      }, 200)
+    }
   }
 }
 

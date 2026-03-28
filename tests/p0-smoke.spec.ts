@@ -46,7 +46,7 @@ end
     expect(hasInfiniteLoopError).toBe(true)
   })
 
-  test('parser fallback warning is visible to user', async ({ page }) => {
+  test('tree-sitter transpiler handles at-block without fallback', async ({ page }) => {
     const appText = await runAndCapture(page, `
 live_loop :test do
   at [1, 2] do |t|
@@ -56,7 +56,9 @@ live_loop :test do
 end
 `)
 
-    expect(appText).toContain('Parser fell back')
+    // Tree-sitter handles this correctly — no fallback warning expected
+    expect(appText).not.toContain('Syntax error')
+    expect(appText).not.toContain('not a function')
   })
 
   test('scope isolation: rand works and loops get independent values', async ({ page }) => {
