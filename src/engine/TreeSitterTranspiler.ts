@@ -1595,12 +1595,15 @@ function transpileArgList(node: any, ctx: TranspileContext, injectSrcLine = fals
     if (arg.type === 'pair') {
       const key = arg.namedChildren[0]
       const val = arg.namedChildren[1]
-      const keyName = key.type === 'hash_key_symbol'
-        ? key.text.replace(/:$/, '')
-        : key.type === 'simple_symbol'
-        ? key.text.slice(1)
-        : transpileNode(key, ctx)
-      kwargs.push(`${keyName}: ${transpileNode(val, ctx)}`)
+      if (key.type === 'hash_key_symbol') {
+        kwargs.push(`${key.text.replace(/:$/, '')}: ${transpileNode(val, ctx)}`)
+      } else if (key.type === 'simple_symbol') {
+        kwargs.push(`${key.text.slice(1)}: ${transpileNode(val, ctx)}`)
+      } else {
+        // Computed key: opt => value → [opt]: value
+        // (opt.to_s+"_slide").to_sym => dt → [opt + "_slide"]: dt
+        kwargs.push(`[${transpileNode(key, ctx)}]: ${transpileNode(val, ctx)}`)
+      }
     } else {
       positional.push(transpileNode(arg, ctx))
     }
