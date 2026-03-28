@@ -1080,9 +1080,9 @@ function transpileReceiverMethodCall(
     return `${recStr}.at(b.look())`
   }
 
-  // .choose → .choose()
+  // .choose → b.choose(receiver) — works on both arrays and Rings
   if (method === 'choose') {
-    return `${recStr}.choose()`
+    return `b.choose(${recStr})`
   }
 
   // .reverse → .reverse()
@@ -1090,9 +1090,9 @@ function transpileReceiverMethodCall(
     return `${recStr}.reverse()`
   }
 
-  // .shuffle → .shuffle()
+  // .shuffle → b.shuffle(receiver) — works on both arrays and Rings
   if (method === 'shuffle') {
-    return `${recStr}.shuffle()`
+    return `b.shuffle(${recStr})`
   }
 
   // .mirror → .mirror()
@@ -1128,10 +1128,10 @@ function transpileReceiverMethodCall(
     return `${recStr}.slice(0, ${args})`
   }
 
-  // .pick(n) → .pick(n)
+  // .pick(n) → b.pick(receiver, n)
   if (method === 'pick') {
     const args = argsNode ? transpileArgList(argsNode, ctx) : ''
-    return `${recStr}.pick(${args})`
+    return `b.pick(${recStr}${args ? ', ' + args : ''})`
   }
 
   // .ring → .ring (for arrays becoming rings)

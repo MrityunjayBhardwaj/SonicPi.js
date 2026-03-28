@@ -104,10 +104,17 @@ test.describe('DJ_Dave Blockgame — full E2E', () => {
     expect(realErrors, 'No uncaught JS errors').toHaveLength(0)
 
     // ---- 2. No runtime errors in app console ----
-    expect(appText, 'No "not a function" error').not.toContain('not a function')
-    expect(appText, 'No "not defined" error').not.toContain('not defined')
-    expect(appText, 'No "Something went wrong"').not.toContain('Something went wrong')
-    expect(appText, 'No SyntaxError').not.toContain('SyntaxError')
+    const errorPatterns = [
+      'not a function', 'not defined', 'Something went wrong',
+      'SyntaxError', 'Error in loop', 'isn\'t available',
+    ]
+    for (const pattern of errorPatterns) {
+      if (appText.includes(pattern)) {
+        const idx = appText.indexOf(pattern)
+        console.error(`FOUND ERROR [${pattern}]:`, appText.slice(Math.max(0, idx - 100), idx + 200))
+      }
+      expect(appText, `No "${pattern}" in app`).not.toContain(pattern)
+    }
 
     // ---- 3. Audio engine initialized ----
     expect(appText).toContain('Audio engine ready')
