@@ -271,8 +271,42 @@ function diagnose(expected: DiagnosisResult['expected'], actual: DiagnosisResult
     findings.push(`MISSING NOTES: expected notes [${missingNotes.join(', ')}] but not produced`)
   }
 
+  // Check timing regularity (are events evenly spaced as code implies?)
+  if (actual.events.length >= 4) {
+    const times = actual.events.map(e => e.time)
+    const gaps: number[] = []
+    // Group by synth to check per-loop timing
+    const bySynth = new Map<string, number[]>()
+    for (const e of actual.events) {
+      const key = e.synth ?? 'unknown'
+      if (!bySynth.has(key)) bySynth.set(key, [])
+      bySynth.get(key)!.push(e.time)
+    }
+    for (const [synth, synthTimes] of bySynth) {
+      if (synthTimes.length < 3) continue
+      const synthGaps = []
+      for (let i = 1; i < synthTimes.length; i++) {
+        synthGaps.push(synthTimes[i] - synthTimes[i - 1])
+      }
+      const avgGap = synthGaps.reduce((a, b) => a + b, 0) / synthGaps.length
+      const maxDeviation = Math.max(...synthGaps.map(g => Math.abs(g - avgGap)))
+      if (maxDeviation > avgGap * 0.3) {
+        findings.push(`TIMING JITTER on '${synth}': avg gap ${avgGap.toFixed(3)}s, max deviation ${maxDeviation.toFixed(3)}s (${((maxDeviation / avgGap) * 100).toFixed(0)}%)`)
+      }
+    }
+  }
+
+  // Note about tick-based code
+  if (expected.events.length > 0) {
+    const uniqueExpectedNotes = new Set(expected.events.map(e => e.note).filter(n => n != null))
+    const uniqueActualNotes = new Set(actual.events.map(e => e.note).filter(n => n != null))
+    if (uniqueExpectedNotes.size === 1 && uniqueActualNotes.size > 1) {
+      findings.push(`NOTE: expected events show only one note value (tick resolves at build time, first iteration only). Actual events show ${uniqueActualNotes.size} distinct notes — this is correct for tick-cycling code.`)
+    }
+  }
+
   // If everything checks out
-  if (findings.length === 0) {
+  if (findings.filter(f => !f.startsWith('NOTE:')).length === 0) {
     findings.push('OK: actual output matches expected events')
   }
 
