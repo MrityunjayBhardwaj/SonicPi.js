@@ -512,4 +512,177 @@ end`,
       })
     }
   })
+
+  describe('Community programs (stress test)', () => {
+    const communityPrograms = [
+      {
+        name: 'Blockgame (excerpt)',
+        code: `use_bpm 130
+live_loop :met1 do
+  sleep 1
+end
+cmaster1 = 130
+define :pattern do |pattern|
+  return pattern.ring.at(b.tick()) == "x"
+end
+live_loop :kick, sync: :met1 do
+  a = 1.5
+  sample :bd_tek, amp: a, cutoff: cmaster1 if pattern("x--x--x---x--x--")
+  sleep 0.25
+end
+with_fx :echo, mix: 0.2 do
+  with_fx :reverb, mix: 0.2, room: 0.5 do
+    live_loop :clap, sync: :met1 do
+      a = 0.75
+      sleep 1
+      sample :drum_snare_hard, rate: 2.5, cutoff: cmaster1, amp: a
+      sleep 1
+    end
+  end
+end`,
+      },
+      {
+        name: 'Sonic Dreams (excerpt)',
+        code: `use_debug false
+define :ocean do |num, amp_mul=1|
+  num.times do
+    s = synth [:bnoise, :cnoise, :gnoise].choose, amp: rrand(0.5, 1.5) * amp_mul, attack: rrand(0, 1), sustain: rrand(0, 2), release: rrand(0, 5) + 0.5, cutoff: rrand(60, 100), pan: rrand(-1, 1)
+    control s, pan: rrand(-1, 1), cutoff: rrand(60, 110)
+    sleep rrand(0.5, 4)
+  end
+end
+uncomment do
+  use_random_seed 1000
+  with_bpm 45 do
+    with_fx :reverb do
+      with_fx :echo, delay: 0.5, decay: 4 do
+        in_thread do
+          use_random_seed 2
+          ocean 5
+          ocean 1, 0.5
+        end
+        sleep 10
+      end
+    end
+  end
+end`,
+      },
+      {
+        name: 'Cloud Beat (excerpt)',
+        code: `use_bpm 100
+live_loop :hiss_loop do
+  sample :vinyl_hiss, amp: 2
+  sleep sample_duration(:vinyl_hiss)
+end
+define :hihat do
+  use_synth :pnoise
+  with_fx :hpf, cutoff: 120 do
+    play release: 0.01, amp: 13
+  end
+end
+live_loop :hihat_loop do
+  divisors = ring(2, 4, 2, 2, 2, 2, 2, 6)
+  divisors.tick.times do
+    hihat
+    sleep 1.0 / divisors.look
+  end
+end
+define :bassdrum do |note1, duration, note2=note1|
+  use_synth :sine
+  with_fx :hpf, cutoff: 100 do
+    play note1 + 24, amp: 40, release: 0.01
+  end
+  with_fx :distortion, distort: 0.1, mix: 0.3 do
+    with_fx :lpf, cutoff: 26 do
+      with_fx :hpf, cutoff: 55 do
+        bass = play note1, amp: 85, release: duration, note_slide: duration
+        control bass, note: note2
+      end
+    end
+  end
+  sleep duration
+end
+live_loop :bassdrum_schleife do
+  bassdrum 36, 1.5
+  bassdrum 36, 1.5
+  bassdrum 36, 1.0
+end`,
+      },
+      {
+        name: 'Shufflit (excerpt)',
+        code: `use_debug false
+use_random_seed 667
+live_loop :travelling do
+  use_synth :beep
+  notes = scale(:e3, :minor_pentatonic, num_octaves: 1)
+  use_random_seed 679
+  tick_reset_all
+  with_fx :echo, phase: 0.125, mix: 0.4, reps: 16 do
+    sleep 0.25
+    play notes.choose, attack: 0, release: 0.1, amp: rrand(2, 2.5)
+  end
+end`,
+      },
+      {
+        name: 'Hip Hop Beat',
+        code: `use_bpm 90
+live_loop :biitti do
+  sample :bd_808, rate: 1, amp: 4
+  sleep 1
+  sample :elec_hi_snare, amp: 1
+  sleep 1
+end
+live_loop :ujellus do
+  with_fx :echo, phase: 1.5, mix: 0.5 do
+    use_synth :mod_beep
+    use_synth_defaults mod_phase: 0.125, pulse_width: 0.8, mod_wave: 2, attack: 1
+    play :G5
+    sleep 8
+  end
+end
+live_loop :hihat do
+  16.times do
+    sample :drum_cymbal_pedal, start: 0.05, finish: 0.4, rate: 3, amp: 0.5 + rrand(-0.1, 0.1)
+    sleep 0.125
+  end
+end`,
+      },
+      {
+        name: 'Tilburg 2 (excerpt)',
+        code: `use_debug false
+live_loop :low do
+  tick
+  synth :zawa, wave: 1, phase: 0.25, release: 5, note: (knit(:e1, 12, :c1, 4)).look, cutoff: (line(60, 120, steps: 6)).look
+  sleep 4
+end
+with_fx :reverb, room: 1 do
+  live_loop :lands do
+    use_synth :dsaw
+    use_random_seed 310003
+    ns = scale(:e2, :minor_pentatonic, num_octaves: 4).take(4)
+    16.times do
+      play ns.choose, detune: 12, release: 0.1, amp: 2, cutoff: rrand(70, 120)
+      sleep 0.125
+    end
+  end
+end
+live_loop :tijd do
+  sample :bd_haus, amp: 2.5, cutoff: 100
+  sleep 0.5
+end`,
+      },
+    ]
+
+    for (const prog of communityPrograms) {
+      it(`transpiles "${prog.name}" to valid JS`, () => {
+        const result = treeSitterTranspile(prog.code)
+        if (!result.ok) {
+          console.error(`[${prog.name}] Errors:`, result.errors)
+          console.error(`[${prog.name}] Output:\n${result.code}`)
+        }
+        expect(result.ok).toBe(true)
+        expect(() => new Function(result.code)).not.toThrow()
+      })
+    }
+  })
 })

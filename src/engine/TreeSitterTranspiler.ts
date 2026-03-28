@@ -100,9 +100,6 @@ export function treeSitterTranspile(ruby: string): TreeSitterTranspileResult {
     return { code: '', ok: false, errors: ['tree-sitter not initialized'] }
   }
 
-  // Wrap bare code in implicit live_loop (same logic as regex transpiler)
-  ruby = wrapBareCode(ruby)
-
   const tree = Parser.parse(ruby)
   const errors: string[] = []
   const ctx: TranspileContext = {
@@ -266,7 +263,7 @@ function transpileNode(node: any, ctx: TranspileContext): string {
   switch (type) {
     // ---- Root ----
     case 'program':
-      return transpileChildren(node, ctx)
+      return transpileProgram(node, ctx)
 
     // ---- Literals ----
     case 'integer':
@@ -618,6 +615,76 @@ function transpileNode(node: any, ctx: TranspileContext): string {
       return node.text
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Program root handler — wraps bare DSL calls in an implicit live_loop
+// ---------------------------------------------------------------------------
+
+const BARE_DSL_CALLS = new Set(['play', 'sleep', 'sample'])
+const TOP_LEVEL_SETTINGS = new Set(['use_bpm', 'use_synth', 'use_random_seed', 'use_debug'])
+
+function transpileProgram(node: any, ctx: TranspileContext): string {
+  const children = node.namedChildren
+
+  // Check if there are bare DSL calls at the top level
+  const hasBareCode = children.some((c: any) => {
+    if (c.type === 'call' || c.type === 'method_call') {
+      const method = c.childForFieldName('method')?.text ?? c.namedChildren[0]?.text
+      return BARE_DSL_CALLS.has(method)
+    }
+    return false
+  })
+
+  if (!hasBareCode) {
+    // No wrapping needed — transpile all children normally
+    return transpileChildren(node, ctx)
+  }
+
+  // Separate top-level settings from bare code
+  const topLevel: any[] = []
+  const bareCode: any[] = []
+  const blocks: any[] = []
+
+  for (const child of children) {
+    if (child.type === 'comment') {
+      bareCode.push(child)
+      continue
+    }
+    const method = (child.type === 'call' || child.type === 'method_call')
+      ? (child.childForFieldName('method')?.text ?? child.namedChildren[0]?.text)
+      : null
+
+    if (method && TOP_LEVEL_SETTINGS.has(method)) {
+      topLevel.push(child)
+    } else if (method && (method === 'live_loop' || method === 'define' || method === 'with_fx' ||
+                          method === 'in_thread' || method === 'uncomment' || method === 'comment')) {
+      blocks.push(child)
+    } else {
+      bareCode.push(child)
+    }
+  }
+
+  // Transpile top-level settings
+  const topJS = topLevel.map(c => transpileNode(c, ctx)).filter(Boolean)
+
+  // Transpile bare code inside an implicit live_loop
+  const bareCtx: TranspileContext = { ...ctx, insideLoop: true }
+  const bareJS = bareCode
+    .map(c => '  ' + transpileNode(c, bareCtx))
+    .filter(s => s.trim())
+
+  // Transpile block-level constructs
+  const blockJS = blocks.map(c => transpileNode(c, ctx)).filter(Boolean)
+
+  const parts: string[] = []
+  if (topJS.length > 0) parts.push(topJS.join('\n'))
+  if (bareJS.length > 0) {
+    parts.push(`live_loop("main", (b) => {\n${bareJS.join('\n')}\n})`)
+  }
+  if (blockJS.length > 0) parts.push(blockJS.join('\n'))
+
+  return parts.join('\n')
 }
 
 // ---------------------------------------------------------------------------
@@ -1189,13 +1256,35 @@ function transpileDensity(
 function transpileSynthCommand(argsNode: any, ctx: TranspileContext): string {
   if (!argsNode) return 'b.play()'
   const args = argsNode.namedChildren
-  // First arg is the synth name
-  const synthName = args[0] ? transpileNode(args[0], ctx) : '"beep"'
-  const rest = args.slice(1).map((a: any) => transpileNode(a, ctx))
-  if (rest.length > 0) {
-    return `b.play(${rest.join(', ')}, { synth: ${synthName} })`
+  // First arg is the synth name (symbol)
+  const synthNameNode = args[0]
+  const synthName = synthNameNode ? transpileNode(synthNameNode, ctx) : '"beep"'
+
+  // Separate positional and keyword args from the rest
+  const positional: string[] = []
+  const kwargs: string[] = [`synth: ${synthName}`]
+
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i]
+    if (arg.type === 'pair') {
+      const key = arg.namedChildren[0]
+      const val = arg.namedChildren[1]
+      const keyName = key.type === 'hash_key_symbol'
+        ? key.text.replace(/:$/, '')
+        : key.type === 'simple_symbol'
+        ? key.text.slice(1)
+        : transpileNode(key, ctx)
+      kwargs.push(`${keyName}: ${transpileNode(val, ctx)}`)
+    } else {
+      positional.push(transpileNode(arg, ctx))
+    }
   }
-  return `b.play({ synth: ${synthName} })`
+
+  const optsStr = `{ ${kwargs.join(', ')} }`
+  if (positional.length > 0) {
+    return `b.play(${positional.join(', ')}, ${optsStr})`
+  }
+  return `b.play(${optsStr})`
 }
 
 // ---------------------------------------------------------------------------
