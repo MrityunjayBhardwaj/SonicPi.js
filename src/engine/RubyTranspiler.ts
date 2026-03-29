@@ -203,8 +203,7 @@ export function transpileRubyToJS(ruby: string): string {
     if (liveLoopSyncMatch) {
       const name = liveLoopSyncMatch[1]
       const syncName = liveLoopSyncMatch[2]
-      result.push(`${indent}live_loop("${name}", (b) => {${inlineComment}`)
-      result.push(`${indent}  b.sync("${syncName}")`)
+      result.push(`${indent}live_loop("${name}", {sync: "${syncName}"}, (b) => {${inlineComment}`)
       blockStack.push('loop')
       i++
       continue

@@ -1256,12 +1256,11 @@ function transpileLiveLoop(
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
   const bodyStr = blockNode ? transpileBlockBody(blockNode, bodyCtx) : ''
 
-  let syncLine = ''
-  if (syncName) {
-    syncLine = `\n${ctx.indent}  b.sync("${syncName}")`
-  }
+  // sync: option — pass as registration option (one-time sync before first iteration),
+  // NOT as b.sync() inside the body (which would re-sync every iteration).
+  const optsArg = syncName ? `{sync: "${syncName}"}, ` : ''
 
-  return `live_loop("${name}", (b) => {${syncLine}\n${bodyStr}\n${ctx.indent}})`
+  return `live_loop("${name}", ${optsArg}(b) => {\n${bodyStr}\n${ctx.indent}})`
 }
 
 function transpileDefine(

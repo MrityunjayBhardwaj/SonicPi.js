@@ -27,8 +27,8 @@ end`
   sleep 1
 end`
       const js = transpileRubyToJS(ruby)
-      expect(strip(js)).toContain('live_loop("melody", (b) => {')
-      expect(strip(js)).toContain('b.sync("metro")')
+      expect(strip(js)).toContain('live_loop("melody", {sync: "metro"}, (b) => {')
+      expect(strip(js)).not.toContain('b.sync("metro")')
     })
   })
 

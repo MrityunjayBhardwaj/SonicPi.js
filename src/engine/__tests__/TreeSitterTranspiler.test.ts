@@ -371,8 +371,8 @@ end`)
   sleep 1
 end`)
       expect(result.ok).toBe(true)
-      expect(result.code).toContain('live_loop("kick"')
-      expect(result.code).toContain('b.sync("met1")')
+      expect(result.code).toContain('live_loop("kick", {sync: "met1"}')
+      expect(result.code).not.toContain('b.sync("met1")')
     })
 
     it('nested with_fx', () => {

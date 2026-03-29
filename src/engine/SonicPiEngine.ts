@@ -240,7 +240,16 @@ export class SonicPiEngine {
       // Scope handle — set when executor is created, used to isolate loop scopes
       let scopeHandle: ScopeHandle | null = null
 
-      const wrappedLiveLoop = (name: string, builderFn: (b: ProgramBuilder) => void) => {
+      const wrappedLiveLoop = (name: string, builderFnOrOpts: ((b: ProgramBuilder) => void) | Record<string, unknown>, maybeFn?: (b: ProgramBuilder) => void) => {
+        // Support both: live_loop("name", fn) and live_loop("name", {sync: "x"}, fn)
+        let builderFn: (b: ProgramBuilder) => void
+        let syncTarget: string | null = null
+        if (typeof builderFnOrOpts === 'function') {
+          builderFn = builderFnOrOpts
+        } else {
+          syncTarget = (builderFnOrOpts.sync as string) ?? null
+          builderFn = maybeFn!
+        }
         const trackBus = this.bridge?.allocateTrackBus(name) ?? 0
 
         // Store builder function for capture path
@@ -257,7 +266,14 @@ export class SonicPiEngine {
 
         // Create the async function that builds a Program each iteration
         // and runs it via AudioInterpreter
+        let didInitialSync = false
         const asyncFn = async () => {
+          // sync: option — wait for the cue ONCE before the first iteration only.
+          // Sonic Pi's live_loop :name, sync: :other syncs the start, not every loop.
+          if (syncTarget && !didInitialSync) {
+            didInitialSync = true
+            await scheduler.waitForSync(syncTarget, name)
+          }
           const seed = this.loopSeeds.get(name) ?? 0
           this.loopSeeds.set(name, seed + 1)
 
@@ -334,7 +350,16 @@ export class SonicPiEngine {
 
       // Patch wrappedLiveLoop to apply current top-level FX
       const originalWrappedLiveLoop = wrappedLiveLoop
-      const fxAwareWrappedLiveLoop = (name: string, builderFn: (b: ProgramBuilder) => void) => {
+      const fxAwareWrappedLiveLoop = (name: string, builderFnOrOpts: ((b: ProgramBuilder) => void) | Record<string, unknown>, maybeFn?: (b: ProgramBuilder) => void) => {
+        // Unpack overloaded args (same as wrappedLiveLoop)
+        let builderFn: (b: ProgramBuilder) => void
+        let opts: Record<string, unknown> | null = null
+        if (typeof builderFnOrOpts === 'function') {
+          builderFn = builderFnOrOpts
+        } else {
+          opts = builderFnOrOpts
+          builderFn = maybeFn!
+        }
         if (currentTopFx) {
           const fx = currentTopFx
           const wrappedBuilderFn = (b: ProgramBuilder) => {
@@ -343,9 +368,17 @@ export class SonicPiEngine {
               return inner
             })
           }
-          originalWrappedLiveLoop(name, wrappedBuilderFn)
+          if (opts) {
+            originalWrappedLiveLoop(name, opts, wrappedBuilderFn)
+          } else {
+            originalWrappedLiveLoop(name, wrappedBuilderFn)
+          }
         } else {
-          originalWrappedLiveLoop(name, builderFn)
+          if (opts) {
+            originalWrappedLiveLoop(name, opts, builderFn)
+          } else {
+            originalWrappedLiveLoop(name, builderFn)
+          }
         }
       }
 

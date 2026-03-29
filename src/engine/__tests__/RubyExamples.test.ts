@@ -34,10 +34,23 @@ async function runCode(rubyCode: string): Promise<{ error?: Error; events: strin
   let defaultSynth = 'beep'
   const loopSeeds = new Map<string, number>()
 
-  const wrappedLiveLoop = (name: string, builderFn: (b: ProgramBuilder) => void) => {
+  const wrappedLiveLoop = (name: string, builderFnOrOpts: ((b: ProgramBuilder) => void) | Record<string, unknown>, maybeFn?: (b: ProgramBuilder) => void) => {
+    let builderFn: (b: ProgramBuilder) => void
+    let syncTarget: string | null = null
+    if (typeof builderFnOrOpts === 'function') {
+      builderFn = builderFnOrOpts
+    } else {
+      syncTarget = (builderFnOrOpts.sync as string) ?? null
+      builderFn = maybeFn!
+    }
     loopSeeds.set(name, 0)
 
+    let didInitialSync = false
     const asyncFn = async () => {
+      if (syncTarget && !didInitialSync) {
+        didInitialSync = true
+        await scheduler.waitForSync(syncTarget, name)
+      }
       const seed = loopSeeds.get(name) ?? 0
       loopSeeds.set(name, seed + 1)
       const builder = new ProgramBuilder(seed)
