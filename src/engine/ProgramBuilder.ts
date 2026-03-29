@@ -67,7 +67,6 @@ export class ProgramBuilder {
 
   private _pushPlayStep(noteVal: number | string, opts?: Record<string, unknown>): void {
     const midi = (typeof noteVal === 'string' ? noteToMidi(noteVal) : noteVal) + this._transpose
-    const freq = midiToFreq(midi)
     const synth = opts?.synth as string | undefined
     const srcLine = opts?._srcLine as number | undefined
     // Strip non-numeric keys before storing; remaining values are synthesis params (all numbers).
@@ -79,7 +78,7 @@ export class ProgramBuilder {
     this.steps.push({
       tag: 'play',
       note: midi,
-      opts: { freq, ...cleanOpts },
+      opts: cleanOpts,
       synth: synth ?? this.currentSynth,
       srcLine,
     })

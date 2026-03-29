@@ -13,7 +13,7 @@ describe('ProgramBuilder', () => {
     const step = steps[0] as Extract<(typeof steps)[0], { tag: 'play' }>
     expect(step.note).toBe(60)
     expect(step.opts.amp).toBe(0.5)
-    expect(step.opts.freq).toBe(midiToFreq(60))
+    expect(step.opts.freq).toBeUndefined() // freq not stored — synthdefs convert note (MIDI) internally
     expect(step.synth).toBe('beep') // default synth
   })
 
