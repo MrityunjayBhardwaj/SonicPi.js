@@ -72,17 +72,14 @@ export function queryProgram(
         currentBpm = step.bpm
         break
 
-      case 'fx':
+      case 'fx': {
         // Walk the sub-program
         const fxEvents = queryProgram(step.body, begin, end, currentBpm, time)
         events.push(...fxEvents)
-        // Advance time by the sub-program's total duration
-        let fxDuration = 0
-        for (const s of step.body) {
-          if (s.tag === 'sleep') fxDuration += s.beats * beatDuration()
-        }
-        time += fxDuration
+        // Advance time by the sub-program's total duration (recursive, handles nested FX + BPM)
+        time += programDuration(step.body, currentBpm)
         break
+      }
 
       case 'thread': {
         // Thread starts at current time, runs in parallel
@@ -103,6 +100,22 @@ export function queryProgram(
 }
 
 /**
+ * Calculate total duration of a Program in seconds.
+ * Handles nested FX bodies and BPM changes recursively.
+ */
+function programDuration(program: Program, bpm: number): number {
+  let dur = 0
+  let currentBpm = bpm
+  for (const step of program) {
+    if (step.tag === 'sleep') dur += step.beats * (60 / currentBpm)
+    if (step.tag === 'useBpm') currentBpm = step.bpm
+    if (step.tag === 'fx') dur += programDuration(step.body, currentBpm)
+    // threads are parallel — don't add to parent duration
+  }
+  return dur
+}
+
+/**
  * Query a looping Program across a time range.
  * Tiles the program's duration to cover [begin, end).
  */
@@ -112,18 +125,7 @@ export function queryLoopProgram(
   end: number,
   bpm: number
 ): QueryEvent[] {
-  // Calculate one iteration's duration
-  let iterDuration = 0
-  const beatDuration = 60 / bpm
-  for (const step of program) {
-    if (step.tag === 'sleep') iterDuration += step.beats * beatDuration
-    if (step.tag === 'fx') {
-      for (const s of step.body) {
-        if (s.tag === 'sleep') iterDuration += s.beats * beatDuration
-      }
-    }
-  }
-
+  const iterDuration = programDuration(program, bpm)
   if (iterDuration <= 0) return [] // no sleep = infinite loop, can't tile
 
   const events: QueryEvent[] = []

@@ -164,6 +164,45 @@ describe('queryProgram — fx sub-programs', () => {
     // note 72 should be at t=1.0 (after the fx body's sleep)
     expect(events[3].time).toBe(1.0)
   })
+
+  it('nested fx durations are counted recursively', () => {
+    const b = new ProgramBuilder()
+    b.play(48) // t=0
+    b.with_fx('reverb', (outer) => {
+      outer.with_fx('delay', (inner) => {
+        inner.play(60)
+        inner.sleep(0.5)
+        return inner
+      })
+      outer.sleep(0.5) // total fx = 1.0s
+      return outer
+    })
+    b.play(72) // should be at t=1.0
+    const program = b.build()
+
+    const events = queryProgram(program, 0, 2, 60)
+    const note72 = events.find(e => e.params.note === 72)
+    expect(note72).toBeDefined()
+    expect(note72!.time).toBe(1.0)
+  })
+
+  it('bpm change inside fx affects duration calculation', () => {
+    const b = new ProgramBuilder()
+    b.play(48) // t=0
+    b.with_fx('reverb', (inner) => {
+      inner.use_bpm(120) // 1 beat = 0.5s
+      inner.play(60)
+      inner.sleep(1) // 0.5s at 120bpm
+      return inner
+    })
+    b.play(72) // should be at t=0.5
+    const program = b.build()
+
+    const events = queryProgram(program, 0, 2, 60)
+    const note72 = events.find(e => e.params.note === 72)
+    expect(note72).toBeDefined()
+    expect(note72!.time).toBe(0.5)
+  })
 })
 
 describe('queryLoopProgram', () => {
