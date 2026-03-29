@@ -87,8 +87,10 @@ export function queryProgram(
         // Walk the sub-program
         const fxEvents = queryProgram(step.body, begin, end, currentBpm, time)
         events.push(...fxEvents)
-        // Advance time by the sub-program's total duration (recursive, handles nested FX + BPM)
-        time += programDuration(step.body, currentBpm)
+        // Advance time and propagate BPM changes from FX body back to parent
+        const fxResult = programDurationAndBpm(step.body, currentBpm)
+        time += fxResult.duration
+        currentBpm = fxResult.finalBpm
         break
       }
 
@@ -111,19 +113,28 @@ export function queryProgram(
 }
 
 /**
- * Calculate total duration of a Program in seconds.
+ * Calculate total duration of a Program in seconds and track final BPM.
  * Handles nested FX bodies and BPM changes recursively.
  */
-function programDuration(program: Program, bpm: number): number {
+function programDurationAndBpm(program: Program, bpm: number): { duration: number; finalBpm: number } {
   let dur = 0
   let currentBpm = bpm
   for (const step of program) {
     if (step.tag === 'sleep') dur += step.beats * (60 / currentBpm)
     if (step.tag === 'useBpm') currentBpm = step.bpm
-    if (step.tag === 'fx') dur += programDuration(step.body, currentBpm)
+    if (step.tag === 'fx') {
+      const inner = programDurationAndBpm(step.body, currentBpm)
+      dur += inner.duration
+      currentBpm = inner.finalBpm
+    }
     // threads are parallel — don't add to parent duration
   }
-  return dur
+  return { duration: dur, finalBpm: currentBpm }
+}
+
+/** Convenience wrapper when only duration is needed. */
+function programDuration(program: Program, bpm: number): number {
+  return programDurationAndBpm(program, bpm).duration
 }
 
 /**

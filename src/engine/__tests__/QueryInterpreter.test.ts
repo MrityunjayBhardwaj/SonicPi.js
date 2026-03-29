@@ -204,6 +204,30 @@ describe('queryProgram — fx sub-programs', () => {
     expect(note72).toBeDefined()
     expect(note72!.time).toBe(0.5)
   })
+
+  it('bpm change inside fx propagates to code after fx block', () => {
+    const b = new ProgramBuilder()
+    // Start at 60 BPM (1 beat = 1s)
+    b.play(48) // t=0
+    b.with_fx('reverb', (inner) => {
+      inner.use_bpm(120) // switch to 120 BPM (1 beat = 0.5s)
+      inner.sleep(1) // 0.5s at 120bpm
+      return inner
+    })
+    // After FX: BPM should still be 120
+    b.play(60) // should be at t=0.5
+    b.sleep(1) // 0.5s at 120bpm (not 1s at 60bpm)
+    b.play(72) // should be at t=1.0
+    const program = b.build()
+
+    const events = queryProgram(program, 0, 3, 60)
+    const note60 = events.find(e => e.params.note === 60)
+    const note72 = events.find(e => e.params.note === 72)
+    expect(note60).toBeDefined()
+    expect(note60!.time).toBe(0.5)
+    expect(note72).toBeDefined()
+    expect(note72!.time).toBe(1.0) // 0.5 + 0.5 (120bpm sleep)
+  })
 })
 
 describe('queryLoopProgram', () => {
