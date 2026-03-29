@@ -101,8 +101,21 @@ export class Console {
     this.appendLine(entry)
   }
 
-  logEvent(type: string, detail: string): void {
-    this.log(`${detail}`, 'event')
+  logEvent(type: string, detail: string, audioTime?: number): void {
+    const entry: LogEntry = {
+      level: 'event',
+      text: detail,
+      time: Date.now(),
+      run: this.runCount,
+      beat: audioTime,
+    }
+    this.entries.push(entry)
+    if (this.entries.length > MAX_ENTRIES) {
+      this.entries = this.entries.slice(-MAX_ENTRIES)
+      this.rebuild()
+      return
+    }
+    this.appendLine(entry)
   }
 
   logError(title: string, message: string): void {
@@ -138,7 +151,8 @@ export class Console {
         color: #444; font-size: 0.65rem; min-width: 9ch;
         flex-shrink: 0;
       `
-      prefix.textContent = `{run:${entry.run}, t:${this.elapsed()}}`
+      const t = entry.beat != null ? entry.beat.toFixed(4) : this.elapsed()
+      prefix.textContent = `{run:${entry.run}, t:${t}}`
       line.appendChild(prefix)
     }
 

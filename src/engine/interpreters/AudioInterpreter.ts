@@ -110,11 +110,12 @@ export async function runProgram(
       case 'control': {
         const realNodeId = ctx.nodeRefMap.get(step.nodeRef)
         if (realNodeId && ctx.bridge) {
+          const audioTime = task.virtualTime + ctx.schedAheadTime
           const paramList: (string | number)[] = []
           for (const [k, v] of Object.entries(step.params)) {
             paramList.push(k, v)
           }
-          ctx.bridge.send?.('/n_set', realNodeId, ...paramList)
+          ctx.bridge.sendTimedControl(audioTime, realNodeId, paramList)
         }
         break
       }
@@ -136,7 +137,8 @@ export async function runProgram(
         const prevOutBus = task.outBus
         const newBus = ctx.bridge.allocateBus()
         try {
-          const fxNodeId = await ctx.bridge.applyFx(step.name, step.opts, newBus, prevOutBus)
+          const audioTime = task.virtualTime + ctx.schedAheadTime
+          const fxNodeId = await ctx.bridge.applyFx(step.name, audioTime, step.opts, newBus, prevOutBus)
           // Store FX node ID so control() can target it via nodeRefMap
           if (step.nodeRef && fxNodeId !== undefined) {
             ctx.nodeRefMap.set(step.nodeRef, fxNodeId)

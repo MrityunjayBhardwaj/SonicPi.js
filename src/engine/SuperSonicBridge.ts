@@ -6,10 +6,13 @@
  * FX, AnalyserNode tap, and cleanup.
  */
 
+import { audioTimeToNTP, encodeSingleBundle as fallbackEncodeSingleBundle } from './osc'
+
 // SuperSonic types — declared here since we load it at runtime via CDN
 interface SuperSonic {
   init(): Promise<void>
   send(address: string, ...args: (string | number)[]): void
+  sendOSC(data: Uint8Array, options?: Record<string, unknown>): void
   loadSynthDef(name: string): Promise<void>
   loadSynthDefs(names: string[]): Promise<void>
   loadSample(bufNum: number, path: string): Promise<void>
@@ -23,6 +26,12 @@ interface SuperSonic {
   audioContext: AudioContext
 }
 
+interface SuperSonicOSC {
+  encodeSingleBundle(timetag: number, address: string, args: (string | number)[]): Uint8Array
+  encodeBundle(timetag: number, messages: unknown[]): Uint8Array
+  encodeMessage(address: string, args: (string | number)[]): Uint8Array
+}
+
 interface SuperSonicConstructor {
   new (options: {
     baseURL: string
@@ -30,6 +39,7 @@ interface SuperSonicConstructor {
     synthdefBaseURL: string
     sampleBaseURL?: string
   }): SuperSonic
+  osc?: SuperSonicOSC
 }
 
 export interface SuperSonicBridgeOptions {
@@ -145,6 +155,34 @@ function translateSampleOpts(
   return result
 }
 
+/**
+ * Mirror amplitude envelope params to filter envelope params for synths that need it.
+ *
+ * Desktop Sonic Pi's synthinfo.rb defines symbolic defaults:
+ *   cutoff_attack => :attack, cutoff_release => :release, etc.
+ * The Ruby layer resolves these before sending to scsynth. We must do the same,
+ * otherwise the synthdef's fixed defaults (cutoff_release=1.0) override the user's intent.
+ *
+ * Currently only tb303 uses this pattern (confirmed in Sonic Pi source).
+ */
+function normalizeSynthParams(
+  synthName: string,
+  params: Record<string, number>,
+): Record<string, number> {
+  const name = synthName.replace(/^sonic-pi-/, '')
+  if (name !== 'tb303') return params
+
+  const p = { ...params }
+  // Mirror amplitude envelope → filter envelope (only if not explicitly set)
+  if (p.attack != null && p.cutoff_attack == null) p.cutoff_attack = p.attack
+  if (p.decay != null && p.cutoff_decay == null) p.cutoff_decay = p.decay
+  if (p.sustain != null && p.cutoff_sustain == null) p.cutoff_sustain = p.sustain
+  if (p.release != null && p.cutoff_release == null) p.cutoff_release = p.release
+  // tb303 Sonic Pi default: cutoff_min 30 (filter sweeps down to MIDI 30)
+  if (p.cutoff_min == null) p.cutoff_min = 30
+  return p
+}
+
 /** Max stereo track outputs (beyond master). Channels 0-1 = master, 2-3 = track 0, etc. */
 const MAX_TRACK_OUTPUTS = 6
 const NUM_OUTPUT_CHANNELS = 2 + MAX_TRACK_OUTPUTS * 2 // 14 channels total
@@ -173,6 +211,12 @@ export class SuperSonicBridge {
   private splitter: ChannelSplitterNode | null = null
   private masterMerger: ChannelMergerNode | null = null
   private masterGainNode: GainNode | null = null
+  /** SuperSonic.osc encoder (preferred) or fallback */
+  private oscEncoder: {
+    encodeSingleBundle(timetag: number, address: string, args: (string | number)[]): Uint8Array
+  } | null = null
+  /** SuperSonic constructor ref — needed for static osc access */
+  private SuperSonicClass: SuperSonicConstructor | null = null
 
   constructor(options: SuperSonicBridgeOptions = {}) {
     this.options = options
@@ -187,6 +231,9 @@ export class SuperSonicBridge {
         'SuperSonic not found. Pass it via options.SuperSonicClass or load via CDN.'
       )
     }
+    this.SuperSonicClass = SuperSonicClass
+    // Prefer SuperSonic's built-in OSC encoder; fall back to our minimal implementation
+    this.oscEncoder = SuperSonicClass.osc ?? { encodeSingleBundle: fallbackEncodeSingleBundle }
 
     // SuperSonic constructor options — URLs for workers, WASM, synthdefs, samples.
     // Workers and JS live in the main package; WASM in the core package.
@@ -263,6 +310,22 @@ export class SuperSonicBridge {
     this.masterGainNode.gain.setTargetAtTime(clamped, this.masterGainNode.context.currentTime, 0.02)
   }
 
+  /**
+   * Send an OSC message as a timestamped bundle.
+   * Converts audioTime (AudioContext seconds) → NTP, encodes the bundle,
+   * and sends via sonic.sendOSC() for sample-accurate scheduling.
+   */
+  private sendTimedBundle(
+    audioTime: number,
+    address: string,
+    args: (string | number)[],
+  ): void {
+    if (!this.sonic) return
+    const ntpTime = audioTimeToNTP(audioTime, this.sonic.audioContext.currentTime)
+    const bundle = this.oscEncoder!.encodeSingleBundle(ntpTime, address, args)
+    this.sonic.sendOSC(bundle)
+  }
+
   private async ensureSynthDefLoaded(name: string): Promise<void> {
     const fullName = name.startsWith('sonic-pi-') ? name : `sonic-pi-${name}`
     if (this.loadedSynthDefs.has(fullName)) return
@@ -309,13 +372,14 @@ export class SuperSonicBridge {
     const fullName = synthName.startsWith('sonic-pi-') ? synthName : `sonic-pi-${synthName}`
     await this.ensureSynthDefLoaded(fullName)
 
+    const normalized = normalizeSynthParams(synthName, params)
     const nodeId = this.sonic.nextNodeId()
     const paramList: (string | number)[] = []
-    for (const [key, value] of Object.entries(params)) {
+    for (const [key, value] of Object.entries(normalized)) {
       paramList.push(key, value)
     }
 
-    this.sonic.send('/s_new', fullName, nodeId, 0, 100, ...paramList)
+    this.sendTimedBundle(audioTime, '/s_new', [fullName, nodeId, 0, 100, ...paramList])
     return nodeId
   }
 
@@ -339,12 +403,13 @@ export class SuperSonicBridge {
       paramList.push(key, value)
     }
 
-    this.sonic.send('/s_new', 'sonic-pi-basic_stereo_player', nodeId, 0, 100, ...paramList)
+    this.sendTimedBundle(audioTime, '/s_new', ['sonic-pi-basic_stereo_player', nodeId, 0, 100, ...paramList])
     return nodeId
   }
 
   async applyFx(
     fxName: string,
+    audioTime: number,
     params: Record<string, number>,
     inBus: number,
     outBus: number = 0
@@ -360,7 +425,7 @@ export class SuperSonicBridge {
       paramList.push(key, value)
     }
 
-    this.sonic.send('/s_new', fullName, nodeId, 0, 101, ...paramList)
+    this.sendTimedBundle(audioTime, '/s_new', [fullName, nodeId, 0, 101, ...paramList])
     return nodeId
   }
 
@@ -478,7 +543,12 @@ export class SuperSonicBridge {
     this.sonic.send('/g_freeAll', 101)  // FX group
   }
 
-  /** Send raw OSC message to SuperSonic. */
+  /** Send a timestamped /n_set control message. */
+  sendTimedControl(audioTime: number, nodeId: number, params: (string | number)[]): void {
+    this.sendTimedBundle(audioTime, '/n_set', [nodeId, ...params])
+  }
+
+  /** Send raw OSC message to SuperSonic (immediate, no timestamp). */
   send(address: string, ...args: (string | number)[]): void {
     this.sonic?.send(address, ...args)
   }

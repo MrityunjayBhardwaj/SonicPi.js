@@ -23,7 +23,7 @@ function createMockBridge(): SuperSonicBridge & { calls: string[] } {
     calls,
     allocateBus() { const b = nextBus++; calls.push(`alloc:${b}`); return b },
     freeBus(n: number) { calls.push(`free:${n}`) },
-    async applyFx(name: string, params: Record<string, number>, inBus: number, outBus: number) {
+    async applyFx(name: string, _audioTime: number, params: Record<string, number>, inBus: number, outBus: number) {
       const id = nextNode++
       calls.push(`fx:${name}:in${inBus}:out${outBus}`)
       return id
@@ -37,6 +37,7 @@ function createMockBridge(): SuperSonicBridge & { calls: string[] } {
     },
     get audioContext() { return null as unknown as AudioContext },
     send(_addr: string, ..._args: (string | number)[]) {},
+    sendTimedControl(_time: number, _nodeId: number, _params: (string | number)[]) {},
   } as unknown as SuperSonicBridge & { calls: string[] }
 }
 

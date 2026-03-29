@@ -386,6 +386,9 @@ export class VirtualTimeScheduler {
     await this.scheduleSleep(task.id, 0)
 
     while (task.running) {
+      // Auto-cue: Sonic Pi fires cue(:loop_name) at the start of each iteration.
+      // This is how sync: :name works on other live_loops.
+      this.fireCue(task.id, task.id)
       try {
         await task.asyncFn()
       } catch (err) {
