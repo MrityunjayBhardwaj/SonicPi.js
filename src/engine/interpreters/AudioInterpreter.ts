@@ -49,7 +49,7 @@ export async function runProgram(
         const nodeRef = nextNodeRef++
 
         if (ctx.bridge) {
-          const params: Record<string, number> = { note: step.note, ...step.opts }
+          const params: Record<string, number> = { ...step.opts, note: step.note }
           ctx.bridge.triggerSynth(synth, audioTime, { ...params, out_bus: task.outBus })
             .then(realNodeId => ctx.nodeRefMap.set(nodeRef, realNodeId))
             .catch((err: Error) => {
