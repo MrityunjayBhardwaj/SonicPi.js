@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { queryProgram, queryLoopProgram, captureAll } from '../interpreters/QueryInterpreter'
+import { queryProgram, queryLoopProgram, captureAll, type ProgramFactory } from '../interpreters/QueryInterpreter'
 import { ProgramBuilder } from '../ProgramBuilder'
+import { ring } from '../Ring'
 import type { Program } from '../Program'
 import { detectStratum, Stratum } from '../Stratum'
 
@@ -215,6 +216,48 @@ describe('queryLoopProgram', () => {
     for (let i = 1; i < events.length; i++) {
       expect(events[i].time).toBeGreaterThanOrEqual(events[i - 1].time)
     }
+  })
+})
+
+describe('queryLoopProgram — ProgramFactory (tick advancement)', () => {
+  it('advances tick state across iterations via factory', () => {
+    // ring(:e2, :g2, :a2).tick should cycle 40→43→45→40→43→45
+    const factory: ProgramFactory = (ticks) => {
+      const b = new ProgramBuilder(0, ticks)
+      const notes = ring(40, 43, 45)
+      b.play(notes.at(b.tick()))
+      b.sleep(1)
+      return { program: b.build(), ticks: b.getTicks() }
+    }
+
+    // 6 beats at 60bpm → 6 iterations
+    const events = queryLoopProgram(factory, 0, 6, 60)
+    const notes = events.map(e => e.params.note)
+    expect(notes).toEqual([40, 43, 45, 40, 43, 45, 40])
+  })
+
+  it('static Program still works (backward compat)', () => {
+    const b = new ProgramBuilder()
+    b.play(60)
+    b.sleep(1)
+    const program = b.build()
+
+    const events = queryLoopProgram(program, 0, 3, 60)
+    expect(events.length).toBeGreaterThanOrEqual(3)
+    expect(events.every(e => e.params.note === 60)).toBe(true)
+  })
+
+  it('factory with single-element ring repeats same note', () => {
+    const factory: ProgramFactory = (ticks) => {
+      const b = new ProgramBuilder(0, ticks)
+      const notes = ring(60)
+      b.play(notes.at(b.tick()))
+      b.sleep(1)
+      return { program: b.build(), ticks: b.getTicks() }
+    }
+
+    const events = queryLoopProgram(factory, 0, 4, 60)
+    expect(events.every(e => e.params.note === 60)).toBe(true)
   })
 })
 

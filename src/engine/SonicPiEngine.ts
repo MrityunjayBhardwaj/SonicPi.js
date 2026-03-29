@@ -640,12 +640,14 @@ export class SonicPiEngine {
         async queryRange(begin: number, end: number): Promise<QueryEvent[]> {
           const events: QueryEvent[] = []
           for (const [name, builderFn] of loopBuilders) {
-            const builder = new ProgramBuilder(0)
-            builderFn(builder)
-            const program = builder.build()
             const task = scheduler?.getTask(name)
             const bpm = task?.bpm ?? 60
-            events.push(...queryLoopProgram(program, begin, end, bpm))
+            const factory = (ticks?: Map<string, number>) => {
+              const builder = new ProgramBuilder(0, ticks)
+              builderFn(builder)
+              return { program: builder.build(), ticks: builder.getTicks() }
+            }
+            events.push(...queryLoopProgram(factory, begin, end, bpm))
           }
           return events.sort((a, b) => a.time - b.time)
         },

@@ -52,6 +52,7 @@ export type { Step, Program, LoopProgram } from './Program'
 export { ProgramBuilder, InfiniteLoopError, DEFAULT_LOOP_BUDGET } from './ProgramBuilder'
 export { runProgram } from './interpreters/AudioInterpreter'
 export { queryProgram, queryLoopProgram, captureAll } from './interpreters/QueryInterpreter'
+export type { ProgramFactory } from './interpreters/QueryInterpreter'
 
 // Audio bridge — direct SuperSonic access
 export { SuperSonicBridge } from './SuperSonicBridge'

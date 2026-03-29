@@ -57,12 +57,10 @@ async function getExpectedEvents(code: string, duration: number): Promise<{
     return { events: [], loops: [], transpileErrors: tsResult.errors }
   }
 
-  // Execute transpiled code to capture builder functions
-  const loops: { name: string; builder: ProgramBuilder }[] = []
+  // Execute transpiled code to capture builder factory functions
+  const loops: { name: string; builderFn: (b: ProgramBuilder) => void }[] = []
   const live_loop = (name: string, fn: (b: ProgramBuilder) => void) => {
-    const b = new ProgramBuilder(42)
-    try { fn(b) } catch { /* stop signals etc */ }
-    loops.push({ name, builder: b })
+    loops.push({ name, builderFn: fn })
   }
   const use_bpm = () => {}
   const use_synth = () => {}
@@ -112,9 +110,13 @@ async function getExpectedEvents(code: string, duration: number): Promise<{
 
   for (const loop of loops) {
     loopNames.push(loop.name)
-    const program = loop.builder.build()
-    // Query multiple iterations by tiling
-    const events = queryLoopProgram(program, 0, beatsInDuration, bpm)
+    // Build a factory that advances tick state between iterations
+    const factory = (ticks?: Map<string, number>) => {
+      const b = new ProgramBuilder(42, ticks)
+      try { loop.builderFn(b) } catch { /* stop signals etc */ }
+      return { program: b.build(), ticks: b.getTicks() }
+    }
+    const events = queryLoopProgram(factory, 0, beatsInDuration, bpm)
     for (const e of events) {
       allEvents.push({
         time: e.time,

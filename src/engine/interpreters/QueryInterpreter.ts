@@ -9,6 +9,17 @@
  */
 
 import type { Program, Step } from '../Program'
+import type { ProgramBuilder } from '../ProgramBuilder'
+
+/**
+ * Factory that builds a fresh Program with advancing tick state.
+ * Called once per loop iteration — receives the previous iteration's tick
+ * snapshot and returns the new program + updated ticks.
+ */
+export type ProgramFactory = (ticks?: Map<string, number>) => {
+  program: Program
+  ticks: Map<string, number>
+}
 
 export interface QueryEvent {
   type: 'synth' | 'sample'
@@ -102,28 +113,48 @@ export function queryProgram(
   return events
 }
 
+/** Calculate one iteration's duration from a Program. */
+function programDuration(program: Program, bpm: number): number {
+  let dur = 0
+  const beatDuration = 60 / bpm
+  for (const step of program) {
+    if (step.tag === 'sleep') dur += step.beats * beatDuration
+    if (step.tag === 'fx') {
+      for (const s of step.body) {
+        if (s.tag === 'sleep') dur += s.beats * beatDuration
+      }
+    }
+  }
+  return dur
+}
+
 /**
  * Query a looping Program across a time range.
  * Tiles the program's duration to cover [begin, end).
+ *
+ * Accepts either a static Program (backward-compat, no tick advancement)
+ * or a ProgramFactory that rebuilds each iteration with advancing tick state.
  */
 export function queryLoopProgram(
-  program: Program,
+  input: Program | ProgramFactory,
   begin: number,
   end: number,
   bpm: number
 ): QueryEvent[] {
-  // Calculate one iteration's duration
-  let iterDuration = 0
-  const beatDuration = 60 / bpm
-  for (const step of program) {
-    if (step.tag === 'sleep') iterDuration += step.beats * beatDuration
-    if (step.tag === 'fx') {
-      for (const s of step.body) {
-        if (s.tag === 'sleep') iterDuration += s.beats * beatDuration
-      }
-    }
+  const isFactory = typeof input === 'function'
+
+  // Get the first program to measure iteration duration
+  let ticks: Map<string, number> | undefined
+  let firstProgram: Program
+  if (isFactory) {
+    const result = input(undefined)
+    firstProgram = result.program
+    ticks = result.ticks
+  } else {
+    firstProgram = input
   }
 
+  const iterDuration = programDuration(firstProgram, bpm)
   if (iterDuration <= 0) return [] // no sleep = infinite loop, can't tile
 
   const events: QueryEvent[] = []
@@ -132,6 +163,19 @@ export function queryLoopProgram(
 
   for (let i = firstIter; i <= lastIter; i++) {
     const iterStart = i * iterDuration
+
+    let program: Program
+    if (isFactory && i > firstIter) {
+      // Rebuild with advancing tick state for each subsequent iteration
+      const result = input(ticks)
+      program = result.program
+      ticks = result.ticks
+    } else if (isFactory && i === firstIter) {
+      program = firstProgram
+    } else {
+      program = firstProgram
+    }
+
     const iterEvents = queryProgram(program, begin, end, bpm, iterStart)
     events.push(...iterEvents)
   }
@@ -144,9 +188,9 @@ export function queryLoopProgram(
  * One-liner replacement for CaptureScheduler.
  */
 export function captureAll(
-  program: Program,
+  input: Program | ProgramFactory,
   duration: number,
   bpm: number
 ): QueryEvent[] {
-  return queryLoopProgram(program, 0, duration, bpm)
+  return queryLoopProgram(input, 0, duration, bpm)
 }
