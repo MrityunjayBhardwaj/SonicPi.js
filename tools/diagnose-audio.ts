@@ -64,7 +64,8 @@ async function getExpectedEvents(code: string, duration: number): Promise<{
   }
   let topLevelBpm = 60
   const use_bpm = (bpm: number) => { topLevelBpm = bpm }
-  const use_synth = () => {}
+  let topLevelSynth = 'beep'
+  const use_synth = (name: string) => { topLevelSynth = name }
   const use_random_seed = () => {}
   const puts = () => {}
   const stop = () => {}
@@ -103,21 +104,22 @@ async function getExpectedEvents(code: string, duration: number): Promise<{
     return { events: [], loops: [], transpileErrors: [`Execution error: ${e.message}`] }
   }
 
-  // Query each loop for events in the time range
+  // Query each loop for events in seconds (queryLoopProgram works in seconds, not beats)
   const bpm = topLevelBpm
-  const beatsInDuration = (duration / 1000) * (bpm / 60)
+  const durationSec = duration / 1000
   const allEvents: ExpectedEvent[] = []
   const loopNames: string[] = []
 
   for (const loop of loops) {
     loopNames.push(loop.name)
-    // Build a factory that advances tick state between iterations
+    // Build a factory that advances tick/seed state between iterations
     const factory = (ticks?: Map<string, number>, iteration?: number) => {
       const b = new ProgramBuilder(iteration ?? 0, ticks)
+      b.use_synth(topLevelSynth)
       try { loop.builderFn(b) } catch { /* stop signals etc */ }
       return { program: b.build(), ticks: b.getTicks() }
     }
-    const events = queryLoopProgram(factory, 0, beatsInDuration, bpm)
+    const events = queryLoopProgram(factory, 0, durationSec, bpm)
     for (const e of events) {
       allEvents.push({
         time: e.time,
