@@ -261,8 +261,8 @@ describe('queryLoopProgram', () => {
 describe('queryLoopProgram — ProgramFactory (tick advancement)', () => {
   it('advances tick state across iterations via factory', () => {
     // ring(:e2, :g2, :a2).tick should cycle 40→43→45→40→43→45
-    const factory: ProgramFactory = (ticks) => {
-      const b = new ProgramBuilder(0, ticks)
+    const factory: ProgramFactory = (ticks, iteration) => {
+      const b = new ProgramBuilder(iteration ?? 0, ticks)
       const notes = ring(40, 43, 45)
       b.play(notes.at(b.tick()))
       b.sleep(1)
@@ -287,8 +287,8 @@ describe('queryLoopProgram — ProgramFactory (tick advancement)', () => {
   })
 
   it('factory with single-element ring repeats same note', () => {
-    const factory: ProgramFactory = (ticks) => {
-      const b = new ProgramBuilder(0, ticks)
+    const factory: ProgramFactory = (ticks, iteration) => {
+      const b = new ProgramBuilder(iteration ?? 0, ticks)
       const notes = ring(60)
       b.play(notes.at(b.tick()))
       b.sleep(1)
@@ -297,6 +297,21 @@ describe('queryLoopProgram — ProgramFactory (tick advancement)', () => {
 
     const events = queryLoopProgram(factory, 0, 4, 60)
     expect(events.every(e => e.params.note === 60)).toBe(true)
+  })
+
+  it('seeded random produces different values across iterations', () => {
+    const factory: ProgramFactory = (ticks, iteration) => {
+      const b = new ProgramBuilder(iteration ?? 0, ticks)
+      b.play(b.rrand_i(60, 72))
+      b.sleep(1)
+      return { program: b.build(), ticks: b.getTicks() }
+    }
+
+    const events = queryLoopProgram(factory, 0, 4, 60)
+    const notes = events.map(e => e.params.note)
+    // With different seeds per iteration, not all notes should be identical
+    const unique = new Set(notes)
+    expect(unique.size).toBeGreaterThan(1)
   })
 })
 

@@ -9,14 +9,13 @@
  */
 
 import type { Program, Step } from '../Program'
-import type { ProgramBuilder } from '../ProgramBuilder'
 
 /**
- * Factory that builds a fresh Program with advancing tick state.
+ * Factory that builds a fresh Program with advancing tick/seed state.
  * Called once per loop iteration — receives the previous iteration's tick
- * snapshot and returns the new program + updated ticks.
+ * snapshot and iteration index, returns the new program + updated ticks.
  */
-export type ProgramFactory = (ticks?: Map<string, number>) => {
+export type ProgramFactory = (ticks?: Map<string, number>, iteration?: number) => {
   program: Program
   ticks: Map<string, number>
 }
@@ -146,7 +145,7 @@ export function queryLoopProgram(
   let ticks: Map<string, number> | undefined
   let firstProgram: Program
   if (isFactory) {
-    const result = input(undefined)
+    const result = input(undefined, 0)
     firstProgram = result.program
     ticks = result.ticks
   } else {
@@ -165,12 +164,9 @@ export function queryLoopProgram(
 
     let program: Program
     if (isFactory && i > firstIter) {
-      // Rebuild with advancing tick state for each subsequent iteration
-      const result = input(ticks)
+      const result = input(ticks, i)
       program = result.program
       ticks = result.ticks
-    } else if (isFactory && i === firstIter) {
-      program = firstProgram
     } else {
       program = firstProgram
     }

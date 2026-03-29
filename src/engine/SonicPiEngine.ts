@@ -642,8 +642,8 @@ export class SonicPiEngine {
           for (const [name, builderFn] of loopBuilders) {
             const task = scheduler?.getTask(name)
             const bpm = task?.bpm ?? 60
-            const factory = (ticks?: Map<string, number>) => {
-              const builder = new ProgramBuilder(0, ticks)
+            const factory = (ticks?: Map<string, number>, iteration?: number) => {
+              const builder = new ProgramBuilder(iteration ?? 0, ticks)
               builderFn(builder)
               return { program: builder.build(), ticks: builder.getTicks() }
             }

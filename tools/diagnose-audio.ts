@@ -62,7 +62,8 @@ async function getExpectedEvents(code: string, duration: number): Promise<{
   const live_loop = (name: string, fn: (b: ProgramBuilder) => void) => {
     loops.push({ name, builderFn: fn })
   }
-  const use_bpm = () => {}
+  let topLevelBpm = 60
+  const use_bpm = (bpm: number) => { topLevelBpm = bpm }
   const use_synth = () => {}
   const use_random_seed = () => {}
   const puts = () => {}
@@ -103,7 +104,7 @@ async function getExpectedEvents(code: string, duration: number): Promise<{
   }
 
   // Query each loop for events in the time range
-  const bpm = 60
+  const bpm = topLevelBpm
   const beatsInDuration = (duration / 1000) * (bpm / 60)
   const allEvents: ExpectedEvent[] = []
   const loopNames: string[] = []
@@ -111,8 +112,8 @@ async function getExpectedEvents(code: string, duration: number): Promise<{
   for (const loop of loops) {
     loopNames.push(loop.name)
     // Build a factory that advances tick state between iterations
-    const factory = (ticks?: Map<string, number>) => {
-      const b = new ProgramBuilder(42, ticks)
+    const factory = (ticks?: Map<string, number>, iteration?: number) => {
+      const b = new ProgramBuilder(iteration ?? 0, ticks)
       try { loop.builderFn(b) } catch { /* stop signals etc */ }
       return { program: b.build(), ticks: b.getTicks() }
     }
