@@ -140,7 +140,10 @@ describe('sync/cue', () => {
     expect(w2Play!.audioTime).toBe(101)
   })
 
-  it('sync resolves immediately if cue already fired', async () => {
+  it('sync waits for fresh cue, does not resolve from stale cueMap', async () => {
+    // In Sonic Pi, sync always waits for a FRESH cue — never resolves from stale ones.
+    // This prevents synced loops from starting at vt=0 when the sync target's
+    // auto-cue fires before the synced loop calls waitForSync.
     const scheduler = new VirtualTimeScheduler({
       getAudioTime: () => 0,
       schedAheadTime: 100,
@@ -165,7 +168,15 @@ describe('sync/cue', () => {
     scheduler.tick(100)
     await flushMicrotasks()
 
-    expect(syncedTime).toBe(2.5)
+    // sync should NOT have resolved yet — cue was stale
+    expect(syncedTime).toBe(-1)
+
+    // Now fire a fresh cue — this should wake the synced loop
+    scheduler.getTask('source')!.virtualTime = 5.0
+    scheduler.fireCue('ready', 'source')
+    await flushMicrotasks()
+
+    expect(syncedTime).toBe(5.0)
   })
 
   it('cue passes arguments to sync', async () => {
