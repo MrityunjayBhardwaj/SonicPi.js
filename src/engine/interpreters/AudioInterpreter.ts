@@ -74,7 +74,12 @@ export async function runProgram(
       case 'sample': {
         const audioTime = task.virtualTime + ctx.schedAheadTime
         if (ctx.bridge) {
-          ctx.bridge.playSample(step.name, audioTime, step.opts, currentBpm)
+          // Merge out_bus from task — samples inside with_fx must write to the FX bus,
+          // not the default bus 0. Without this, samples bypass FX entirely.
+          const sampleOpts = task.outBus !== 0
+            ? { ...step.opts, out_bus: task.outBus }
+            : step.opts
+          ctx.bridge.playSample(step.name, audioTime, sampleOpts, currentBpm)
             .catch((err: Error) => {
               ctx.printHandler?.(`Sample '${step.name}' failed: ${err.message}`)
             })

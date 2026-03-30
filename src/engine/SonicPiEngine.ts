@@ -326,7 +326,9 @@ export class SonicPiEngine {
       // Top-level with_fx: wraps live_loops inside it with FX context.
       // The callback receives a dummy builder — live_loops define their own.
       // FX is applied by wrapping each live_loop's builder function.
-      let currentTopFx: { name: string; opts: Record<string, number> } | null = null
+      // Stack of top-level FX — nested with_fx accumulates, innermost is last.
+      // When a live_loop is registered, ALL stacked FX wrap its builder.
+      const topFxStack: Array<{ name: string; opts: Record<string, number> }> = []
 
       const topLevelWithFx = (
         fxName: string,
@@ -342,19 +344,18 @@ export class SonicPiEngine {
           opts = optsOrFn
           fn = maybeFn!
         }
-        const prevFx = currentTopFx
-        currentTopFx = { name: fxName, opts }
+        topFxStack.push({ name: fxName, opts })
         try {
           fn(null) // execute callback to register live_loops
         } finally {
-          currentTopFx = prevFx
+          topFxStack.pop()
         }
       }
 
-      // Patch wrappedLiveLoop to apply current top-level FX
+      // Patch wrappedLiveLoop to apply ALL stacked top-level FX.
+      // Nested with_fx :echo do; with_fx :reverb do; live_loop ... wraps with both.
       const originalWrappedLiveLoop = wrappedLiveLoop
       const fxAwareWrappedLiveLoop = (name: string, builderFnOrOpts: ((b: ProgramBuilder) => void) | Record<string, unknown>, maybeFn?: (b: ProgramBuilder) => void) => {
-        // Unpack overloaded args (same as wrappedLiveLoop)
         let builderFn: (b: ProgramBuilder) => void
         let opts: Record<string, unknown> | null = null
         if (typeof builderFnOrOpts === 'function') {
@@ -363,13 +364,21 @@ export class SonicPiEngine {
           opts = builderFnOrOpts
           builderFn = maybeFn!
         }
-        if (currentTopFx) {
-          const fx = currentTopFx
-          const wrappedBuilderFn = (b: ProgramBuilder) => {
-            b.with_fx(fx.name, fx.opts, (inner) => {
-              builderFn(inner)
-              return inner
-            })
+        if (topFxStack.length > 0) {
+          // Wrap builder with ALL stacked FX (outermost first)
+          const fxChain = [...topFxStack]
+          let wrappedBuilderFn = builderFn
+          // Apply from innermost to outermost so nesting is correct:
+          // with_fx(:echo) { with_fx(:reverb) { body } }
+          for (let i = fxChain.length - 1; i >= 0; i--) {
+            const fx = fxChain[i]
+            const inner = wrappedBuilderFn
+            wrappedBuilderFn = (b: ProgramBuilder) => {
+              b.with_fx(fx.name, fx.opts, (fxb) => {
+                inner(fxb)
+                return fxb
+              })
+            }
           }
           if (opts) {
             originalWrappedLiveLoop(name, opts, wrappedBuilderFn)
