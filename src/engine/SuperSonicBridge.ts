@@ -136,7 +136,6 @@ function translateSampleOpts(
       case 'sustain':
       case 'decay':
       case 'release':
-      case 'cutoff':
       case 'lpf':
       case 'hpf':
       case 'res':
@@ -144,6 +143,14 @@ function translateSampleOpts(
       case 'finish':
       case 'loop':
         result[key] = value
+        break
+
+      // Sonic Pi aliases: basic_stereo_player uses 'lpf'/'hpf', not 'cutoff'/'hpf'
+      case 'cutoff':
+        result['lpf'] = value
+        break
+      case 'cutoff_slide':
+        result['lpf_slide'] = value
         break
 
       default:
@@ -211,8 +218,8 @@ export class SuperSonicBridge {
   private splitter: ChannelSplitterNode | null = null
   private masterMerger: ChannelMergerNode | null = null
   private masterGainNode: GainNode | null = null
-  /** Hard limiter on master output — matches Sonic Pi's safe-mode limiter. */
-  private limiterNode: DynamicsCompressorNode | null = null
+  /** scsynth mixer node ID — for controlling master volume via /n_set */
+  private mixerNodeId = 0
   /** SuperSonic.osc encoder (preferred) or fallback */
   private oscEncoder: {
     encodeSingleBundle(timetag: number, address: string, args: (string | number)[]): Uint8Array
@@ -268,9 +275,23 @@ export class SuperSonicBridge {
       this.loadedSynthDefs.add(name)
     }
 
-    // Create scsynth group structure (same as Sonic Pi)
-    this.sonic.send('/g_new', 100, 0, 0) // synths group at head
-    this.sonic.send('/g_new', 101, 1, 0) // FX group at tail
+    // Create scsynth group structure matching Sonic Pi's studio.rb:
+    //   STUDIO-MIXER (head of root) → STUDIO-FX (before mixer) → STUDIO-SYNTHS (before FX)
+    // Execution order: synths → FX → mixer (head-to-tail, depth-first)
+    const mixerGroupId = this.sonic.nextNodeId()
+    this.sonic.send('/g_new', mixerGroupId, 0, 0)  // mixer group at head of root
+    this.sonic.send('/g_new', 101, 2, mixerGroupId) // FX group before mixer
+    this.sonic.send('/g_new', 100, 2, 101)          // synths group before FX
+
+    // Load and create the master mixer synth — same synthdef as desktop Sonic Pi.
+    // Signal chain: bus 0 → pre_amp → HPF → LPF → Limiter.ar(0.99, 0.01) → LeakDC → amp → ReplaceOut
+    await this.sonic.loadSynthDef('sonic-pi-mixer')
+    this.mixerNodeId = this.sonic.nextNodeId()
+    this.sonic.send('/s_new', 'sonic-pi-mixer', this.mixerNodeId, 0, mixerGroupId,
+      'in_bus', 0,
+      'amp', 6,          // Sonic Pi default: amp=6 at trigger time
+      'pre_amp', 0.2,    // Sonic Pi default: set_volume!(1) → pre_amp = 1 * 0.2
+    )
     await this.sonic.sync()
 
     // Multi-channel audio routing:
@@ -291,26 +312,19 @@ export class SuperSonicBridge {
       this.splitter.connect(this.masterMerger, ch + 1, 1) // right
     }
 
-    // Master gain control (default 0.8 to match UI slider)
+    // Master gain control — volume is now handled by the scsynth mixer synthdef
+    // (pre_amp * amp = 0.2 * 6 = 1.2 effective gain + Limiter.ar at 0.99).
+    // Web Audio gain is just for the UI volume slider (default 1.0, no additional scaling).
     this.masterGainNode = audioCtx.createGain()
-    this.masterGainNode.gain.value = 0.8
+    this.masterGainNode.gain.value = 1.0
 
-    // Hard limiter — matches Sonic Pi's safe-mode limiter on the master bus.
-    // Without this, overlapping synths/samples easily clip the output.
-    this.limiterNode = audioCtx.createDynamicsCompressor()
-    this.limiterNode.threshold.value = -6   // start limiting at -6 dB
-    this.limiterNode.knee.value = 3         // soft knee for natural sound
-    this.limiterNode.ratio.value = 20       // near-infinite ratio = hard limit
-    this.limiterNode.attack.value = 0.003   // fast attack catches transients
-    this.limiterNode.release.value = 0.25   // moderate release avoids pumping
-
-    // Master analyser taps the mixed stereo → limiter → gain → speakers
+    // Master analyser taps the mixed stereo → gain → speakers
+    // No DynamicsCompressor needed — Limiter.ar inside scsynth handles clipping prevention.
     this.analyserNode = audioCtx.createAnalyser()
     this.analyserNode.fftSize = 2048
     this.analyserNode.smoothingTimeConstant = 0.8
     this.masterMerger.connect(this.analyserNode)
-    this.analyserNode.connect(this.limiterNode)
-    this.limiterNode.connect(this.masterGainNode)
+    this.analyserNode.connect(this.masterGainNode)
     this.masterGainNode.connect(audioCtx.destination)
   }
 
@@ -322,11 +336,15 @@ export class SuperSonicBridge {
     return this.analyserNode
   }
 
-  /** Set master volume (0-1). Uses exponential ramp for smooth transitions. */
+  /** Set master volume (0-1). Controls both scsynth mixer pre_amp and Web Audio gain. */
   setMasterVolume(volume: number): void {
-    if (!this.masterGainNode) return
     const clamped = Math.max(0, Math.min(1, volume))
-    this.masterGainNode.gain.setTargetAtTime(clamped, this.masterGainNode.context.currentTime, 0.02)
+    // Sonic Pi: set_volume!(vol) → pre_amp = vol * 0.2 (with amp=6, effective gain = vol * 1.2)
+    this.sonic?.send('/n_set', this.mixerNodeId, 'pre_amp', clamped * 0.2)
+    // Web Audio gain as backup (for UI slider feedback)
+    if (this.masterGainNode) {
+      this.masterGainNode.gain.setTargetAtTime(clamped, this.masterGainNode.context.currentTime, 0.02)
+    }
   }
 
   /**
@@ -443,7 +461,16 @@ export class SuperSonicBridge {
       paramList.push(key, value)
     }
 
-    this.queueMessage(audioTime, '/s_new', ['sonic-pi-basic_stereo_player', nodeId, 0, 100, ...paramList])
+    // Select synthdef: basic_stereo_player for simple opts, stereo_player for complex.
+    // Sonic Pi uses stereo_player when pitch, compress, norm, window_size, start, or finish are present.
+    const complexKeys = ['pitch', 'compress', 'norm', 'window_size', 'start', 'finish']
+    const needsComplexPlayer = opts && complexKeys.some(k => k in opts)
+    const playerName = needsComplexPlayer ? 'sonic-pi-stereo_player' : 'sonic-pi-basic_stereo_player'
+    if (needsComplexPlayer) {
+      await this.ensureSynthDefLoaded(playerName)
+    }
+
+    this.queueMessage(audioTime, '/s_new', [playerName, nodeId, 0, 100, ...paramList])
     return nodeId
   }
 
@@ -615,10 +642,6 @@ export class SuperSonicBridge {
     // Stop all live audio streams
     for (const name of this.liveAudioStreams.keys()) {
       this.stopLiveAudio(name)
-    }
-    if (this.limiterNode) {
-      this.limiterNode.disconnect()
-      this.limiterNode = null
     }
     if (this.masterGainNode) {
       this.masterGainNode.disconnect()

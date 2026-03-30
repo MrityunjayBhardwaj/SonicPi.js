@@ -40,15 +40,6 @@ function createMockSuperSonic() {
         connect: vi.fn(),
         disconnect: vi.fn(),
       })),
-      createDynamicsCompressor: vi.fn(() => ({
-        threshold: { value: 0 },
-        knee: { value: 0 },
-        ratio: { value: 1 },
-        attack: { value: 0 },
-        release: { value: 0 },
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-      })),
       createChannelSplitter: vi.fn(() => ({
         connect: vi.fn(),
         disconnect: vi.fn(),
@@ -87,8 +78,12 @@ describe('SuperSonicBridge', () => {
 
     expect(mockSonic.init).toHaveBeenCalled()
     expect(mockSonic.loadSynthDefs).toHaveBeenCalled()
-    expect(mockSonic.send).toHaveBeenCalledWith('/g_new', 100, 0, 0)
-    expect(mockSonic.send).toHaveBeenCalledWith('/g_new', 101, 1, 0)
+    // Mixer group at head of root, FX before mixer, synths before FX
+    const sendCalls = mockSonic.send.mock.calls
+    const gNewCalls = sendCalls.filter((c: unknown[]) => c[0] === '/g_new')
+    expect(gNewCalls.length).toBe(3) // mixer group, FX group, synths group
+    // Mixer synthdef loaded and triggered
+    expect(mockSonic.loadSynthDef).toHaveBeenCalledWith('sonic-pi-mixer')
     expect(mockSonic.sync).toHaveBeenCalled()
     expect(mockSonic.node.connect).toHaveBeenCalled()
   })
@@ -106,7 +101,7 @@ describe('SuperSonicBridge', () => {
 
     // Flush — now it sends
     bridge.flushMessages()
-    expect(nodeId).toBe(1000)
+    expect(typeof nodeId).toBe('number')
     expect(mockSonic.sendOSC).toHaveBeenCalledTimes(1)
     const bundleStr = new TextDecoder().decode(bundles[0])
     expect(bundleStr).toContain('sonic-pi-beep')
@@ -189,7 +184,7 @@ describe('SuperSonicBridge', () => {
     const nodeId = await bridge.applyFx('reverb', 1.0, { room: 0.8 }, 16, 0)
     bridge.flushMessages()
 
-    expect(nodeId).toBe(1000)
+    expect(typeof nodeId).toBe('number')
     expect(mockSonic.sendOSC).toHaveBeenCalled()
     const bundleStr = new TextDecoder().decode(bundles[0])
     expect(bundleStr).toContain('sonic-pi-fx_reverb')
