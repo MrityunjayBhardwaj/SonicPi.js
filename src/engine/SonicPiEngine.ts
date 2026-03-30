@@ -64,6 +64,8 @@ export class SonicPiEngine {
   private loopSeeds = new Map<string, number>()
   /** Per-loop tick counters — persisted across iterations so ring.tick() advances correctly */
   private loopTicks = new Map<string, Map<string, number>>()
+  /** Tracks which loops have completed their initial sync — persists across hot-swaps. */
+  private loopSynced = new Set<string>()
   /**
    * MIDI I/O bridge — exposed for shell-level device management (listing devices,
    * opening ports, registering event handlers). Not intended for direct note
@@ -266,12 +268,13 @@ export class SonicPiEngine {
 
         // Create the async function that builds a Program each iteration
         // and runs it via AudioInterpreter
-        let didInitialSync = false
         const asyncFn = async () => {
           // sync: option — wait for the cue ONCE before the first iteration only.
-          // Sonic Pi's live_loop :name, sync: :other syncs the start, not every loop.
-          if (syncTarget && !didInitialSync) {
-            didInitialSync = true
+          // Uses engine-level loopSynced set so the flag persists across hot-swaps.
+          // Sonic Pi: sync: is passed to in_thread, called ONCE before loop starts.
+          // Thread keeps running on Update — define() replaces the fn, send() picks it up.
+          if (syncTarget && !this.loopSynced.has(name)) {
+            this.loopSynced.add(name)
             await scheduler.waitForSync(syncTarget, name)
           }
           const seed = this.loopSeeds.get(name) ?? 0
@@ -605,6 +608,7 @@ export class SonicPiEngine {
     this.loopBuilders.clear()
     this.loopSeeds.clear()
     this.loopTicks.clear()
+    this.loopSynced.clear()
     this.globalStore.clear()
   }
 

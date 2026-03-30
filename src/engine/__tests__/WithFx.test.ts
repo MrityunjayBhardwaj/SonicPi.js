@@ -87,6 +87,8 @@ describe('with_fx', () => {
     // FX bridge should have been called
     expect(bridge.calls).toContain('alloc:16')
     expect(bridge.calls).toContain('fx:reverb:in16:out0')
+    // Bus freeing is delayed by kill_delay (default 1s) — advance timers
+    await new Promise(r => setTimeout(r, 1100))
     expect(bridge.calls).toContain('free:16')
   })
 

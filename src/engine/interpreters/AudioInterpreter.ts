@@ -148,11 +148,17 @@ export async function runProgram(
           await runProgram(step.body, ctx)
         } finally {
           task.outBus = prevOutBus
-          ctx.bridge.freeBus(newBus)
-          // Free FX node after inner block completes — prevents zombie FX accumulation.
-          // Without this, every loop iteration creates a new reverb/echo/etc that lives forever.
+          // Free FX node after kill_delay — lets reverb/echo tails decay naturally.
+          // Sonic Pi uses a GC thread with Kernel.sleep(kill_delay) before group.kill(true).
+          // Default kill_delay: 1 second (matches Sonic Pi's default of 1 beat at 60 BPM).
+          const killDelay = (step.opts.kill_delay as number) ?? 1.0
           if (fxNodeId !== undefined) {
-            ctx.bridge.freeNode(fxNodeId)
+            setTimeout(() => {
+              ctx.bridge!.freeNode(fxNodeId!)
+              ctx.bridge!.freeBus(newBus)
+            }, killDelay * 1000)
+          } else {
+            ctx.bridge.freeBus(newBus)
           }
         }
         break
