@@ -149,6 +149,21 @@ describe('env_curve injection', () => {
     const p = normalizeSampleParams({ amp: 0.8 }, 60)
     expect(p.env_curve).toBeUndefined()
   })
+
+  it('injects pre_amp: 1 for envelope samples', () => {
+    const p = normalizeSampleParams({ attack: 0.1, release: 0.5 }, 60)
+    expect(p.pre_amp).toBe(1)
+  })
+
+  it('does NOT inject pre_amp for simple samples', () => {
+    const p = normalizeSampleParams({ amp: 0.8 }, 60)
+    expect(p.pre_amp).toBeUndefined()
+  })
+
+  it('preserves explicit pre_amp', () => {
+    const p = normalizeSampleParams({ attack: 0.1, pre_amp: 0.5 }, 60)
+    expect(p.pre_amp).toBe(0.5)
+  })
 })
 
 // ---------------------------------------------------------------------------

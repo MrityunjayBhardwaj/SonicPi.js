@@ -192,8 +192,11 @@ function injectSampleDefaults(params: Record<string, number>): Record<string, nu
   // only if ADSR params are present (indicating stereo_player will be used).
   const hasEnvelope = 'attack' in params || 'decay' in params ||
     'sustain' in params || 'release' in params
-  if (hasEnvelope && !('env_curve' in params)) {
-    return { ...params, env_curve: 2 }
+  if (hasEnvelope) {
+    const p = { ...params }
+    if (!('env_curve' in p)) p.env_curve = 2
+    if (!('pre_amp' in p)) p.pre_amp = 1
+    return p
   }
   return params
 }
