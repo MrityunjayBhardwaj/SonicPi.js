@@ -522,3 +522,113 @@ The missing `SoundLayer` would handle:
 4. **FX lifecycle** — container groups, synth tracking, kill_delay from synthinfo
 5. **Message batching** — queue during computation, flush on sleep (already partially done)
 6. **Top-level FX persistence** — create FX node once, route all iterations through it
+
+---
+
+## ADDENDUM: Deep Research Findings (Round 2)
+
+### NEW HIGH SEVERITY GAPS
+
+#### G_NEW.1: BPM scales ALL time parameters — WE DON'T
+Desktop Sonic Pi's `scale_time_args_to_bpm!` multiplies ALL time-based args by `60/BPM`:
+- attack, decay, sustain, release
+- ALL slide times (amp_slide, cutoff_slide, etc.)
+
+At `use_bpm 130`, `release: 1` becomes `release: 1 * (60/130) = 0.4615` seconds.
+
+**We pass raw beat values to scsynth which interprets them as seconds.**
+This means at BPM 130, our release is 1.0 seconds, theirs is 0.46 seconds.
+Every envelope is 2.17x longer than it should be at 130 BPM.
+
+This is likely the **biggest remaining audio discrepancy** — every note rings for over 2x too long,
+causing overlaps, smeared sound, and higher sustained RMS.
+
+#### G_NEW.2: Top-level FX persists forever (confirmed mechanism)
+The GC thread's cleanup is blocked by `subthread.join()` on the live_loop thread,
+which runs forever. The FX node lives until the job is killed.
+
+We recreate the FX node every loop iteration via `fxAwareWrappedLiveLoop`.
+This creates hundreds of FX nodes per minute, each with a kill_delay timeout.
+
+The fix: for top-level `with_fx` wrapping `live_loop`, create the FX node ONCE
+at registration time and pass the bus/group to the loop thread.
+
+#### G_NEW.3: Inner synths placed in FX group, not main synths group
+`current_group` thread-local is set to `fx_synth_group` inside `with_fx`.
+ALL play/sample calls inside the block are added to the FX's synth group.
+
+We add all synths to group 100 regardless of FX context. This means:
+- Synths can't be atomically killed with the FX group
+- Execution order within the FX chain isn't guaranteed (works by accident because 100 < 101)
+
+#### G_NEW.4: `decay_level: :sustain_level` resolution for 37 synths
+Every synth with ADSR has `decay_level: :sustain_level` in arg_defaults.
+This means if user sets `sustain_level: 0.5` but not `decay_level`,
+`decay_level` resolves to 0.5. We don't resolve Symbol references at all.
+
+Affected: beep, saw, pulse, square, tri, dsaw, fm, prophet, tb303, supersaw,
+hoover, zawa, dark_ambience, growl, hollow, tech_saws, rhodey, and 20+ more.
+
+### NEW MEDIUM SEVERITY GAPS
+
+#### G_NEW.5: Note transposition chain missing
+Every note should go through: note() → +transpose → +octave*12 → +cents/100 → +pitch → tuning.
+We only do note() conversion. `use_transpose`, `use_octave`, `use_cent_tuning` are not applied.
+
+#### G_NEW.6: `cutoff→lpf` aliasing for sc808_snare and sc808_clap
+These drum synths also need the alias. We only handle it for sample players.
+
+#### G_NEW.7: Per-FX kill_delay values
+| FX | kill_delay |
+|----|-----------|
+| reverb | min(room*10 + 1, 11) seconds |
+| echo | decay value |
+| chorus | decay value |
+| ping_pong | log(0.01)/log(feedback) * phase |
+| gverb | release value |
+| record/sound_out | 0 |
+| everything else | 1 second |
+
+We use 1s for all FX.
+
+#### G_NEW.8: `on:` parameter not stripped
+Sonic Pi deletes `on:` from args before sending to scsynth (`should_trigger?` mutates args_h).
+We pass it through — unrecognized by scsynth.
+
+#### G_NEW.9: Sample thread-local defaults separate from synth defaults
+Sonic Pi has TWO default systems:
+- `use_synth_defaults` → `:sonic_pi_mod_sound_synth_defaults` → merged into `play`
+- `use_sample_defaults` → `:sonic_pi_mod_sound_sample_defaults` → merged into `sample`
+
+We use a single `_synthDefaults` in ProgramBuilder for both.
+
+#### G_NEW.10: `slide:` propagation
+If user passes `slide: 0.5`, Sonic Pi copies it to every `*_slide` param the synth supports.
+We don't propagate the global `slide:` to individual slide params.
+
+#### G_NEW.11: `calculate_sustain!` from `duration:`
+If user passes `duration: 2`, Sonic Pi computes `sustain = duration - attack - decay - release`.
+We don't support the `duration:` parameter.
+
+#### G_NEW.12: `rand_buf` injection for specific synths
+WinwoodLead, Rhodey, Gabberkick, FXSlicer, FXWobble, FXPanSlicer need `rand_buf` parameter.
+Without it, their internal noise generators may not produce correct output.
+
+### COMPLETE PRIORITY RANKING (all gaps)
+
+| Priority | Gap | Impact |
+|----------|-----|--------|
+| **P0** | G_NEW.1: BPM doesn't scale time params | Every envelope 2x+ too long at non-60 BPM |
+| **P0** | G_NEW.2: Top-level FX recreated per iteration | Hundreds of zombie FX nodes |
+| **P0** | G_NEW.4: No Symbol resolution (decay_level etc.) | Wrong envelope shape for 37 synths |
+| **P1** | G_NEW.3: Inner synths not in FX group | Can't atomically kill, wrong scope |
+| **P1** | G_NEW.5: No note transposition | use_transpose/use_octave broken |
+| **P1** | G_NEW.7: Per-FX kill_delay | Reverb tails cut short or too long |
+| **P1** | G2.3: normalizeSynthParams only TB303 | Parameter aliasing for other synths |
+| **P1** | G_NEW.6: sc808 cutoff→lpf | 808 drum filter broken |
+| **P2** | G_NEW.8: on: param not stripped | Unrecognized param sent to scsynth |
+| **P2** | G_NEW.9: Sample defaults separate | use_sample_defaults doesn't work |
+| **P2** | G_NEW.10: slide: propagation | Global slide doesn't apply to individual params |
+| **P2** | G_NEW.11: duration: → sustain calc | duration: parameter doesn't work |
+| **P2** | G_NEW.12: rand_buf injection | Specific synths may produce wrong noise |
+| **P2** | G4.2: sched_ahead_time 0.1 vs 0.5 | May miss deadlines under load |
