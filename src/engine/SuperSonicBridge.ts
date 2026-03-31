@@ -7,6 +7,7 @@
  */
 
 import { audioTimeToNTP, encodeSingleBundle as fallbackEncodeSingleBundle, encodeBundle as fallbackEncodeBundle } from './osc'
+import { normalizeSampleParams, selectSamplePlayer } from './SoundLayer'
 
 // SuperSonic types — declared here since we load it at runtime via CDN
 interface SuperSonic {
@@ -162,33 +163,6 @@ function translateSampleOpts(
   return result
 }
 
-/**
- * Mirror amplitude envelope params to filter envelope params for synths that need it.
- *
- * Desktop Sonic Pi's synthinfo.rb defines symbolic defaults:
- *   cutoff_attack => :attack, cutoff_release => :release, etc.
- * The Ruby layer resolves these before sending to scsynth. We must do the same,
- * otherwise the synthdef's fixed defaults (cutoff_release=1.0) override the user's intent.
- *
- * Currently only tb303 uses this pattern (confirmed in Sonic Pi source).
- */
-function normalizeSynthParams(
-  synthName: string,
-  params: Record<string, number>,
-): Record<string, number> {
-  const name = synthName.replace(/^sonic-pi-/, '')
-  if (name !== 'tb303') return params
-
-  const p = { ...params }
-  // Mirror amplitude envelope → filter envelope (only if not explicitly set)
-  if (p.attack != null && p.cutoff_attack == null) p.cutoff_attack = p.attack
-  if (p.decay != null && p.cutoff_decay == null) p.cutoff_decay = p.decay
-  if (p.sustain != null && p.cutoff_sustain == null) p.cutoff_sustain = p.sustain
-  if (p.release != null && p.cutoff_release == null) p.cutoff_release = p.release
-  // tb303 Sonic Pi default: cutoff_min 30 (filter sweeps down to MIDI 30)
-  if (p.cutoff_min == null) p.cutoff_min = 30
-  return p
-}
 
 /** Max stereo track outputs (beyond master). Channels 0-1 = master, 2-3 = track 0, etc. */
 const MAX_TRACK_OUTPUTS = 6
@@ -434,10 +408,9 @@ export class SuperSonicBridge {
     const fullName = synthName.startsWith('sonic-pi-') ? synthName : `sonic-pi-${synthName}`
     await this.ensureSynthDefLoaded(fullName)
 
-    const normalized = normalizeSynthParams(synthName, params)
     const nodeId = this.sonic.nextNodeId()
     const paramList: (string | number)[] = []
-    for (const [key, value] of Object.entries(normalized)) {
+    for (const [key, value] of Object.entries(params)) {
       paramList.push(key, value)
     }
 
@@ -458,19 +431,18 @@ export class SuperSonicBridge {
 
     // Duration is null on first play (async fetch in flight); exact from second play on.
     const duration = this.sampleDurations.get(sampleName) ?? null
-    const params = translateSampleOpts(opts, bpm ?? 60, duration)
+    const translated = translateSampleOpts(opts, bpm ?? 60, duration)
+    // SoundLayer: BPM-scale time params, inject env_curve for envelope samples, strip non-scsynth
+    const params = normalizeSampleParams(translated, bpm ?? 60)
 
     const paramList: (string | number)[] = ['buf', bufNum]
     for (const [key, value] of Object.entries(params)) {
       paramList.push(key, value)
     }
 
-    // Select synthdef: basic_stereo_player for simple opts, stereo_player for complex.
-    // Sonic Pi uses stereo_player when pitch, compress, norm, window_size, start, or finish are present.
-    const complexKeys = ['pitch', 'compress', 'norm', 'window_size', 'start', 'finish']
-    const needsComplexPlayer = opts && complexKeys.some(k => k in opts)
-    const playerName = needsComplexPlayer ? 'sonic-pi-stereo_player' : 'sonic-pi-basic_stereo_player'
-    if (needsComplexPlayer) {
+    // Select synthdef via SoundLayer (basic_stereo_player or stereo_player)
+    const playerName = selectSamplePlayer(opts)
+    if (playerName !== 'sonic-pi-basic_stereo_player') {
       await this.ensureSynthDefLoaded(playerName)
     }
 

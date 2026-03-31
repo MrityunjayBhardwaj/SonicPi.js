@@ -18,7 +18,7 @@ HOW: Transpiler outputs JS consumed by Sandbox. Observation targets: run transpi
 ### B2: AudioInterpreter ↔ SuperSonicBridge (FATALITY — 5 patterns cluster here)
 ORIGIN: SP8, SP9, SP10, SP11, SP12 all cluster at this boundary. 5 patterns exceeds the 3+ fatality threshold.
 WHY: This is the single highest-concentration error boundary. Parameter names change meaning across it (SP9). Time units change across it (SP10). Observation granularity drops across it — event log (our side) diverges from audio output (their side) (SP8). Compiled defaults diverge from documented defaults (SP12). FX lifecycle semantics differ (SP11). Without this boundary tracked as fatality-level, each bug is diagnosed from scratch instead of recognized as a structural class.
-HOW: Consolidation target: SoundLayer module. All parameter transformation consolidated into one module whose boundary matches the span of SV12 and SV13. Observation targets: for EVERY param change, verify the receiver's actual vocabulary and defaults.
+HOW: Consolidated into SoundLayer module (src/engine/SoundLayer.ts). All parameter transformation in one module. SuperSonicBridge is now pure OSC transport. Observation targets: for EVERY param change, verify the receiver's actual vocabulary and defaults.
 
 **Known silent-failure modes:** scsynth ignores unrecognized params without error. Compiled synthdef defaults differ from synthinfo.rb documentation. Missing params use compiled defaults, not Sonic Pi's intended defaults.
 **Observe THEIR side:** Capture WAV output and analyze. The event log is OUR side (inference). The audio is THEIR side (observation).
@@ -43,17 +43,19 @@ HOW: Observation targets: verify task.virtualTime is monotonic after hot-swap. V
 
 ## 2. Active Invariant Spans
 
-### SV12: BPM Scales Time Parameters — MISALIGNED
-**Span:** AudioInterpreter (reads currentBpm) + SuperSonicBridge (sends params) + SonicPiEngine (sets default BPM)
-**Current boundary:** BPM is read in AudioInterpreter, but time params are sent unscaled by SuperSonicBridge.
-**Where invariant says boundary should be:** Single module (SoundLayer) that receives raw params + BPM and outputs scaled params. The invariant's span = the module's boundary.
-**Status:** MISALIGNED → CONSOLIDATION PLANNED (SoundLayer phase)
+### SV12: BPM Scales Time Parameters — ALIGNED
+**Span:** SoundLayer (normalizePlayParams, normalizeSampleParams, normalizeControlParams)
+**Current boundary:** SoundLayer receives raw params + BPM, outputs scaled params. AudioInterpreter calls SoundLayer before passing to bridge.
+**Status:** ALIGNED — SoundLayer.scaleTimeParamsToBpm() scales TIME_PARAMS allowlist by 60/BPM.
 
-### SV13: Top-Level FX Persists Across Iterations — MISALIGNED
-**Span:** SonicPiEngine (registers loops with FX wrapping) + AudioInterpreter (creates FX per iteration)
-**Current boundary:** FX creation is in AudioInterpreter but persistence decision should be in SonicPiEngine.
-**Where invariant says boundary should be:** FX creation for top-level wrapping at registration time (SonicPiEngine), not at iteration time (AudioInterpreter).
-**Status:** MISALIGNED → CONSOLIDATION PLANNED (SoundLayer phase, task 4)
+### SV13: Top-Level FX Persists Across Iterations — ALIGNED
+**Span:** SonicPiEngine (pendingFxChains + persistentFx state)
+**Current boundary:** FX chain captured at registration. Nodes created on first iteration via persistentFx. Cleared on stop/re-evaluate.
+**Status:** ALIGNED — FX nodes persist across iterations. No zombie accumulation.
+
+### SV14: Symbol References Resolve Before Normalization — ALIGNED
+**Span:** SoundLayer (resolveSymbolDefaults, first step after strip)
+**Status:** ALIGNED — decay_level: :sustain_level resolved before BPM scaling.
 
 ### SV9: Message Batching — ALIGNED
 **Span:** AudioInterpreter (calls flushMessages on sleep) + SuperSonicBridge (maintains queue, encodes bundle)
@@ -100,7 +102,7 @@ HOW: Observation targets: verify task.virtualTime is monotonic after hot-swap. V
 | Assertion level | Tool | Status |
 |----------------|------|--------|
 | Logic (correct transforms) | Vitest — 638+ tests | EXISTS |
-| Data flow (param pipeline) | Unit tests for SoundLayer | TO BUILD |
+| Data flow (param pipeline) | Unit tests for SoundLayer (40 tests) | EXISTS |
 | Integration (engine E2E) | `tools/capture.ts` — Chromium + events | EXISTS |
 | System boundary (both sides) | WAV analysis in capture tool | EXISTS |
 | Runtime output (actual audio) | WAV frequency/RMS analysis | EXISTS |
@@ -126,9 +128,11 @@ HOW: Observation targets: verify task.virtualTime is monotonic after hot-swap. V
 - B4 (engine↔scheduler): 2 patterns (SP1, SP4). One more → fatality.
 - B1 (transpiler↔engine): 1 pattern (SP7). Currently safe.
 
-### Planned Interventions
-- **SoundLayer module** resolves B2 fatality + SV12 span mismatch + SV13 span mismatch.
-- **After SoundLayer:** re-run fatality test. B2 should drop below threshold. SK4 crossing count should reduce by 1 (SoundLayer absorbs one boundary).
+### Completed Interventions
+- **SoundLayer module** (src/engine/SoundLayer.ts) resolves B2 fatality + SV12 span mismatch + SV13 span mismatch.
+- B2 patterns SP9/SP10/SP12 addressed by normalizePlayParams pipeline (aliasing, BPM scaling, env_curve injection).
+- SP11 addressed by persistentFx in SonicPiEngine (top-level FX created once, not per iteration).
+- SK4 crossing count reduced by 1 — SoundLayer absorbs the normalization boundary.
 
 ---
 

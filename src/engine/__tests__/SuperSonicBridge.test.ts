@@ -190,14 +190,20 @@ describe('SuperSonicBridge', () => {
     expect(bundleStr).toContain('sonic-pi-fx_reverb')
   })
 
-  it('tb303 mirrors release to cutoff_release', async () => {
+  it('tb303 passes pre-normalized params through', async () => {
+    // tb303 munging is now in SoundLayer (normalizePlayParams), not bridge.
+    // Bridge receives already-normalized params from AudioInterpreter.
     const { mockSonic, bundles } = createMockSuperSonic()
     ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
 
     const bridge = new SuperSonicBridge()
     await bridge.init()
 
-    await bridge.triggerSynth('tb303', 1.0, { note: 40, release: 0.3, cutoff: 60 })
+    // Simulate what AudioInterpreter sends after SoundLayer normalization
+    await bridge.triggerSynth('tb303', 1.0, {
+      note: 40, release: 0.3, cutoff: 60,
+      cutoff_release: 0.3, cutoff_min: 30, env_curve: 2,
+    })
     bridge.flushMessages()
 
     const bundleStr = new TextDecoder().decode(bundles[0])

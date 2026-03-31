@@ -66,6 +66,10 @@ export class SonicPiEngine {
   private loopTicks = new Map<string, Map<string, number>>()
   /** Tracks which loops have completed their initial sync — persists across hot-swaps. */
   private loopSynced = new Set<string>()
+  /** Persistent top-level FX state — created once, reused across iterations. Cleared on stop/re-evaluate. */
+  private persistentFx = new Map<string, { buses: number[]; groups: number[]; outBus: number }>()
+  /** FX chains captured from top-level with_fx — keyed by loop name. */
+  private pendingFxChains = new Map<string, Array<{ name: string; opts: Record<string, number> }>>()
   /**
    * MIDI I/O bridge — exposed for shell-level device management (listing devices,
    * opening ports, registering event handlers). Not intended for direct note
@@ -277,6 +281,41 @@ export class SonicPiEngine {
             this.loopSynced.add(name)
             await scheduler.waitForSync(syncTarget, name)
           }
+
+          const task = scheduler.getTask(name)
+          if (!task) return
+
+          // Persistent top-level FX: create FX nodes on first iteration only.
+          // Matches desktop Sonic Pi where with_fx wrapping live_loop creates FX once
+          // and the GC thread's subthread.join blocks forever (FX persists until Stop).
+          const fxChain = this.pendingFxChains.get(name)
+          if (fxChain && fxChain.length > 0 && !this.persistentFx.has(name) && this.bridge) {
+            const audioTime = task.virtualTime + this.schedAheadTime
+            let currentOutBus = task.outBus
+            const buses: number[] = []
+            const groups: number[] = []
+
+            // Create FX chain: outermost first
+            // Signal flow: synth → innermost FX bus → ... → outermost FX → output
+            for (const fx of fxChain) {
+              const bus = this.bridge.allocateBus()
+              const groupId = this.bridge.createFxGroup()
+              await this.bridge.applyFx(fx.name, audioTime, fx.opts, bus, currentOutBus)
+              this.bridge.flushMessages()
+              buses.push(bus)
+              groups.push(groupId)
+              currentOutBus = bus
+            }
+
+            this.persistentFx.set(name, { buses, groups, outBus: currentOutBus })
+          }
+
+          // Apply persistent FX bus — synths write to FX input bus
+          const fxState = this.persistentFx.get(name)
+          if (fxState) {
+            task.outBus = fxState.outBus
+          }
+
           const seed = this.loopSeeds.get(name) ?? 0
           this.loopSeeds.set(name, seed + 1)
 
@@ -352,8 +391,10 @@ export class SonicPiEngine {
         }
       }
 
-      // Patch wrappedLiveLoop to apply ALL stacked top-level FX.
-      // Nested with_fx :echo do; with_fx :reverb do; live_loop ... wraps with both.
+      // Patch wrappedLiveLoop to handle top-level FX.
+      // Instead of wrapping the builder with b.with_fx() (which creates FX per iteration),
+      // capture the FX chain and create persistent FX nodes on first iteration only.
+      // Matches desktop Sonic Pi: top-level with_fx creates FX once, GC blocked by subthread.join.
       const originalWrappedLiveLoop = wrappedLiveLoop
       const fxAwareWrappedLiveLoop = (name: string, builderFnOrOpts: ((b: ProgramBuilder) => void) | Record<string, unknown>, maybeFn?: (b: ProgramBuilder) => void) => {
         let builderFn: (b: ProgramBuilder) => void
@@ -365,25 +406,14 @@ export class SonicPiEngine {
           builderFn = maybeFn!
         }
         if (topFxStack.length > 0) {
-          // Wrap builder with ALL stacked FX (outermost first)
+          // Capture FX chain — nodes created on first iteration, not per iteration
           const fxChain = [...topFxStack]
-          let wrappedBuilderFn = builderFn
-          // Apply from innermost to outermost so nesting is correct:
-          // with_fx(:echo) { with_fx(:reverb) { body } }
-          for (let i = fxChain.length - 1; i >= 0; i--) {
-            const fx = fxChain[i]
-            const inner = wrappedBuilderFn
-            wrappedBuilderFn = (b: ProgramBuilder) => {
-              b.with_fx(fx.name, fx.opts, (fxb) => {
-                inner(fxb)
-                return fxb
-              })
-            }
-          }
+          this.pendingFxChains.set(name, fxChain)
+          // Register with ORIGINAL builder (no FX wrapping)
           if (opts) {
-            originalWrappedLiveLoop(name, opts, wrappedBuilderFn)
+            originalWrappedLiveLoop(name, opts, builderFn)
           } else {
-            originalWrappedLiveLoop(name, wrappedBuilderFn)
+            originalWrappedLiveLoop(name, builderFn)
           }
         } else {
           if (opts) {
@@ -563,6 +593,9 @@ export class SonicPiEngine {
         if (this.bridge) {
           this.bridge.freeAllNodes()
           this.nodeRefMap.clear()
+          // Clear persistent FX — freeAllNodes killed the FX nodes in group 101.
+          // They will be recreated on the next iteration of each loop.
+          this.persistentFx.clear()
         }
 
         // Commit: hot-swap same-named, stop removed, start new
@@ -619,6 +652,8 @@ export class SonicPiEngine {
     this.loopTicks.clear()
     this.loopSynced.clear()
     this.globalStore.clear()
+    this.persistentFx.clear()
+    this.pendingFxChains.clear()
   }
 
   dispose(): void {

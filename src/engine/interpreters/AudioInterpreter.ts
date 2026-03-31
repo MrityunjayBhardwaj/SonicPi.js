@@ -7,6 +7,7 @@
  */
 
 import type { Program } from '../Program'
+import { normalizePlayParams, normalizeControlParams } from '../SoundLayer'
 
 /** Visual duration used for note events in the sound event stream (seconds). */
 const NOTE_EVENT_VISUAL_DURATION = 0.25
@@ -49,7 +50,8 @@ export async function runProgram(
         const nodeRef = nextNodeRef++
 
         if (ctx.bridge) {
-          const params: Record<string, number> = { ...step.opts, note: step.note }
+          const rawParams: Record<string, number> = { ...step.opts, note: step.note }
+          const params = normalizePlayParams(synth, rawParams, currentBpm)
           ctx.bridge.triggerSynth(synth, audioTime, { ...params, out_bus: task.outBus })
             .then(realNodeId => ctx.nodeRefMap.set(nodeRef, realNodeId))
             .catch((err: Error) => {
@@ -120,8 +122,9 @@ export async function runProgram(
         const realNodeId = ctx.nodeRefMap.get(step.nodeRef)
         if (realNodeId && ctx.bridge) {
           const audioTime = task.virtualTime + ctx.schedAheadTime
+          const normalized = normalizeControlParams(step.params, currentBpm)
           const paramList: (string | number)[] = []
-          for (const [k, v] of Object.entries(step.params)) {
+          for (const [k, v] of Object.entries(normalized)) {
             paramList.push(k, v)
           }
           ctx.bridge.sendTimedControl(audioTime, realNodeId, paramList)

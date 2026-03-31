@@ -71,11 +71,18 @@
 **Causal status:** CAUSAL — matches Sonic Pi's `scale_time_args_to_bpm!`.
 **Breaks when:** Raw beat values are sent to scsynth as seconds.
 **Implication:** At BPM 130, `release: 1` (1 beat) becomes 0.4615 seconds, not 1.0 seconds. Without this, all envelopes are ~2x too long at typical BPMs.
-**Status:** NOT YET IMPLEMENTED — P0 gap G_NEW.1.
+**Status:** IMPLEMENTED — SoundLayer.scaleTimeParamsToBpm() in src/engine/SoundLayer.ts.
 
 ## SV13: Top-Level FX Persists Across Loop Iterations
 **Statement:** A `with_fx` block wrapping a `live_loop` at the top level creates the FX node ONCE. The node persists for the lifetime of the live_loop. It is NOT recreated per iteration.
 **Causal status:** STRUCTURAL — matches Sonic Pi's GC thread pattern where subthread.join blocks forever on the live_loop.
 **Breaks when:** FX is wrapped inside the loop body (recreated every iteration).
 **Implication:** One echo/reverb/etc. node, not hundreds. No FX zombie accumulation.
-**Status:** NOT YET IMPLEMENTED — P0 gap G_NEW.2.
+**Status:** IMPLEMENTED — persistentFx in SonicPiEngine creates FX on first iteration, reuses across subsequent.
+
+## SV14: Symbol References Resolve Before Normalization
+**Statement:** Symbolic defaults in synth params (e.g., `decay_level: :sustain_level`) resolve to their target param's value before BPM scaling or any other normalization.
+**Causal status:** CAUSAL — matches Sonic Pi's `normalise_args!` which resolves symbols before `scale_time_args_to_bpm!`.
+**Breaks when:** BPM scaling runs before symbol resolution (would scale a missing value instead of the resolved one).
+**Implication:** With `sustain_level: 0.5`, `decay_level` resolves to 0.5 (not the compiled default of 1.0). Order: resolve → inject defaults → alias → munge → BPM scale.
+**Status:** IMPLEMENTED — SoundLayer.resolveSymbolDefaults() in src/engine/SoundLayer.ts.
