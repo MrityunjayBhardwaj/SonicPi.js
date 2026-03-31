@@ -241,6 +241,47 @@ describe('tb303 munging', () => {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// duration: → sustain calculation
+// ---------------------------------------------------------------------------
+
+describe('calculate sustain from duration:', () => {
+  it('computes sustain = duration - attack - decay - release', () => {
+    const p = normalizePlayParams('beep', { duration: 4, attack: 0.5, decay: 0.5, release: 1 }, 60)
+    expect(p.sustain).toBe(2) // 4 - 0.5 - 0.5 - 1
+    expect(p.duration).toBeUndefined() // stripped
+  })
+
+  it('uses default release:1 when not set', () => {
+    const p = normalizePlayParams('beep', { duration: 2 }, 60)
+    // sustain = 2 - 0(attack) - 0(decay) - 1(default release) = 1
+    expect(p.sustain).toBe(1)
+  })
+
+  it('clamps sustain to 0 (not negative)', () => {
+    const p = normalizePlayParams('beep', { duration: 0.5, attack: 0.3, release: 0.5 }, 60)
+    expect(p.sustain).toBe(0) // 0.5 - 0.3 - 0 - 0.5 = -0.3 → clamped to 0
+  })
+
+  it('does not override explicit sustain', () => {
+    const p = normalizePlayParams('beep', { duration: 4, sustain: 0.5 }, 60)
+    expect(p.sustain).toBeCloseTo(0.5, 10) // explicit, not computed
+  })
+
+  it('computed sustain gets BPM-scaled', () => {
+    const p = normalizePlayParams('beep', { duration: 4, attack: 0, release: 0 }, 120)
+    // sustain = 4 - 0 - 0 - 0 = 4, then BPM-scaled: 4 * 60/120 = 2
+    // But wait: duration is in beats. calculateSustain runs BEFORE BPM scaling.
+    // So sustain = 4 (beats), then scaled to 4 * 60/120 = 2 (seconds). Correct.
+    expect(p.sustain).toBe(2)
+  })
+
+  it('works for samples', () => {
+    const p = normalizeSampleParams({ duration: 3, attack: 0.5, release: 0.5 }, 60)
+    expect(p.sustain).toBe(2) // 3 - 0.5 - 0 - 0.5
+  })
+})
+
+// ---------------------------------------------------------------------------
 // slide: propagation
 // ---------------------------------------------------------------------------
 

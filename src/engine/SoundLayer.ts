@@ -58,6 +58,7 @@ const SYMBOL_DEFAULTS: Array<[string, string]> = [
 const STRIP_PARAMS = new Set([
   'on',           // conditional trigger flag — should_trigger? mutates args_h
   'slide',        // global slide propagation (expanded before stripping)
+  'duration',     // converted to sustain by calculateSustain before stripping
   'beat_stretch', // handled by translateSampleOpts before this stage
   'pitch_stretch',
   'rpitch',
@@ -95,6 +96,7 @@ export function normalizePlayParams(
   bpm: number,
 ): Record<string, number> {
   let p = { ...params }
+  p = calculateSustain(p)
   p = expandSlideParam(p)
   p = stripNonScynthParams(p)
   p = resolveSymbolDefaults(p)
@@ -115,6 +117,7 @@ export function normalizeSampleParams(
   bpm: number,
 ): Record<string, number> {
   let p = { ...params }
+  p = calculateSustain(p)
   p = stripNonScynthParams(p)
   p = injectSampleDefaults(p)
   p = scaleTimeParamsToBpm(p, bpm)
@@ -154,6 +157,26 @@ export function normalizeFxParams(
 // ---------------------------------------------------------------------------
 // Internal pipeline steps
 // ---------------------------------------------------------------------------
+
+/**
+ * Step 0: Calculate sustain from duration: param.
+ * Sonic Pi: `play 60, duration: 2` → sustain = duration - attack - decay - release.
+ * Only applies if sustain is not explicitly set.
+ */
+function calculateSustain(params: Record<string, number>): Record<string, number> {
+  if (!('duration' in params)) return params
+  if ('sustain' in params) return params // explicit sustain wins
+
+  const duration = params.duration
+  const attack = params.attack ?? 0
+  const decay = params.decay ?? 0
+  const release = params.release ?? 1 // Sonic Pi default release is 1
+  const sustain = Math.max(0, duration - attack - decay - release)
+
+  const p = { ...params }
+  p.sustain = sustain
+  return p
+}
 
 /**
  * Step 0.5: Expand `slide:` to individual `*_slide` params.
