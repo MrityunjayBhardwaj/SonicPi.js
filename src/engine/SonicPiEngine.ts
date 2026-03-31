@@ -67,10 +67,12 @@ export class SonicPiEngine {
   private loopTicks = new Map<string, Map<string, number>>()
   /** Tracks which loops have completed their initial sync — persists across hot-swaps. */
   private loopSynced = new Set<string>()
-  /** Persistent top-level FX state — created once, reused across iterations. Cleared on stop/re-evaluate. */
+  /** Persistent top-level FX state — keyed by scope ID, shared across loops in same with_fx. */
   private persistentFx = new Map<string, { buses: number[]; groups: number[]; outBus: number }>()
-  /** FX chains captured from top-level with_fx — keyed by loop name. */
-  private pendingFxChains = new Map<string, Array<{ name: string; opts: Record<string, number> }>>()
+  /** Maps loop name → FX scope ID (loops under same with_fx share a scope). */
+  private loopFxScope = new Map<string, string>()
+  /** Maps FX scope ID → FX chain definition. */
+  private fxScopeChains = new Map<string, Array<{ name: string; opts: Record<string, number> }>>()
   /**
    * MIDI I/O bridge — exposed for shell-level device management (listing devices,
    * opening ports, registering event handlers). Not intended for direct note
@@ -287,35 +289,40 @@ export class SonicPiEngine {
           if (!task) return
 
           // Persistent top-level FX: create FX nodes on first iteration only.
-          // Matches desktop Sonic Pi where with_fx wrapping live_loop creates FX once
-          // and the GC thread's subthread.join blocks forever (FX persists until Stop).
-          const fxChain = this.pendingFxChains.get(name)
-          if (fxChain && fxChain.length > 0 && !this.persistentFx.has(name) && this.bridge) {
-            const audioTime = task.virtualTime + this.schedAheadTime
-            let currentOutBus = task.outBus
-            const buses: number[] = []
-            const groups: number[] = []
+          // Loops under the same with_fx scope share one FX chain (keyed by scope ID).
+          // First loop to iterate creates the nodes; others reuse the same bus.
+          const scopeId = this.loopFxScope.get(name)
+          if (scopeId && !this.persistentFx.has(scopeId) && this.bridge) {
+            const fxChain = this.fxScopeChains.get(scopeId)
+            if (fxChain && fxChain.length > 0) {
+              const audioTime = task.virtualTime + this.schedAheadTime
+              let currentOutBus = task.outBus
+              const buses: number[] = []
+              const groups: number[] = []
 
-            // Create FX chain: outermost first
-            // Signal flow: synth → innermost FX bus → ... → outermost FX → output
-            for (const fx of fxChain) {
-              const bus = this.bridge.allocateBus()
-              const groupId = this.bridge.createFxGroup()
-              const fxOpts = normalizeFxParams(fx.opts)
-              await this.bridge.applyFx(fx.name, audioTime, fxOpts, bus, currentOutBus)
-              this.bridge.flushMessages()
-              buses.push(bus)
-              groups.push(groupId)
-              currentOutBus = bus
+              // Create FX chain: outermost first
+              // Signal flow: synth → innermost FX bus → ... → outermost FX → output
+              for (const fx of fxChain) {
+                const bus = this.bridge.allocateBus()
+                const groupId = this.bridge.createFxGroup()
+                const fxOpts = normalizeFxParams(fx.opts)
+                await this.bridge.applyFx(fx.name, audioTime, fxOpts, bus, currentOutBus)
+                this.bridge.flushMessages()
+                buses.push(bus)
+                groups.push(groupId)
+                currentOutBus = bus
+              }
+
+              this.persistentFx.set(scopeId, { buses, groups, outBus: currentOutBus })
             }
-
-            this.persistentFx.set(name, { buses, groups, outBus: currentOutBus })
           }
 
-          // Apply persistent FX bus — synths write to FX input bus
-          const fxState = this.persistentFx.get(name)
-          if (fxState) {
-            task.outBus = fxState.outBus
+          // Apply persistent FX bus — synths write to shared FX input bus
+          if (scopeId) {
+            const fxState = this.persistentFx.get(scopeId)
+            if (fxState) {
+              task.outBus = fxState.outBus
+            }
           }
 
           const seed = this.loopSeeds.get(name) ?? 0
@@ -370,6 +377,9 @@ export class SonicPiEngine {
       // Stack of top-level FX — nested with_fx accumulates, innermost is last.
       // When a live_loop is registered, ALL stacked FX wrap its builder.
       const topFxStack: Array<{ name: string; opts: Record<string, number> }> = []
+      /** Current FX scope ID — set when entering a with_fx block, used by live_loops inside. */
+      let currentFxScopeId: string | null = null
+      let fxScopeCounter = 0
 
       const topLevelWithFx = (
         fxName: string,
@@ -386,10 +396,18 @@ export class SonicPiEngine {
           fn = maybeFn!
         }
         topFxStack.push({ name: fxName, opts })
+        // Generate scope ID for the outermost with_fx (nested ones reuse it)
+        const isOutermost = currentFxScopeId === null
+        if (isOutermost) {
+          currentFxScopeId = `__fxscope_${fxScopeCounter++}`
+        }
         try {
           fn(null) // execute callback to register live_loops
         } finally {
           topFxStack.pop()
+          if (isOutermost) {
+            currentFxScopeId = null
+          }
         }
       }
 
@@ -407,10 +425,13 @@ export class SonicPiEngine {
           opts = builderFnOrOpts
           builderFn = maybeFn!
         }
-        if (topFxStack.length > 0) {
-          // Capture FX chain — nodes created on first iteration, not per iteration
-          const fxChain = [...topFxStack]
-          this.pendingFxChains.set(name, fxChain)
+        if (topFxStack.length > 0 && currentFxScopeId) {
+          // Assign this loop to the current FX scope — loops under same with_fx share one scope
+          const scopeId = currentFxScopeId
+          this.loopFxScope.set(name, scopeId)
+          if (!this.fxScopeChains.has(scopeId)) {
+            this.fxScopeChains.set(scopeId, [...topFxStack])
+          }
           // Register with ORIGINAL builder (no FX wrapping)
           if (opts) {
             originalWrappedLiveLoop(name, opts, builderFn)
@@ -597,7 +618,10 @@ export class SonicPiEngine {
           this.nodeRefMap.clear()
           // Clear persistent FX — freeAllNodes killed the FX nodes in group 101.
           // They will be recreated on the next iteration of each loop.
+          // loopFxScope/fxScopeChains are repopulated by the DSL re-execution above.
           this.persistentFx.clear()
+          this.loopFxScope.clear()
+          this.fxScopeChains.clear()
         }
 
         // Commit: hot-swap same-named, stop removed, start new
@@ -655,7 +679,8 @@ export class SonicPiEngine {
     this.loopSynced.clear()
     this.globalStore.clear()
     this.persistentFx.clear()
-    this.pendingFxChains.clear()
+    this.loopFxScope.clear()
+    this.fxScopeChains.clear()
   }
 
   dispose(): void {
