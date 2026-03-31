@@ -52,6 +52,49 @@ export interface SuperSonicBridgeOptions {
   sampleBaseURL?: string
 }
 
+/**
+ * Format an OSC message as a human-readable trace string.
+ * Matches desktop Sonic Pi's trace style:
+ *   /s_new "sonic-pi-basic_stereo_player" 1003 0 100 {buf: 0, amp: 1.5, lpf: 130}
+ */
+function formatOscTrace(address: string, args: (string | number)[], audioTime: number): string {
+  if (address === '/s_new' && args.length >= 4) {
+    const synthName = args[0]
+    const nodeId = args[1]
+    const addAction = args[2]
+    const targetGroup = args[3]
+    // Remaining args are key-value pairs
+    const params: Record<string, string | number> = {}
+    for (let i = 4; i < args.length; i += 2) {
+      const key = args[i]
+      const val = args[i + 1]
+      if (key !== undefined && val !== undefined) {
+        params[String(key)] = val
+      }
+    }
+    const paramsStr = Object.entries(params)
+      .map(([k, v]) => `${k}: ${typeof v === 'number' ? Number(v.toFixed(4)) : v}`)
+      .join(', ')
+    return `[t:${audioTime.toFixed(4)}] ${address} "${synthName}" ${nodeId} ${addAction} ${targetGroup} {${paramsStr}}`
+  }
+  if (address === '/n_set' && args.length >= 1) {
+    const nodeId = args[0]
+    const params: Record<string, string | number> = {}
+    for (let i = 1; i < args.length; i += 2) {
+      const key = args[i]
+      const val = args[i + 1]
+      if (key !== undefined && val !== undefined) {
+        params[String(key)] = val
+      }
+    }
+    const paramsStr = Object.entries(params)
+      .map(([k, v]) => `${k}: ${typeof v === 'number' ? Number(v.toFixed(4)) : v}`)
+      .join(', ')
+    return `[t:${audioTime.toFixed(4)}] ${address} ${nodeId} {${paramsStr}}`
+  }
+  return `[t:${audioTime.toFixed(4)}] ${address} ${args.join(' ')}`
+}
+
 const COMMON_SYNTHDEFS = [
   'sonic-pi-beep',
   'sonic-pi-saw',
@@ -161,6 +204,8 @@ export class SuperSonicBridge {
   private masterGainNode: GainNode | null = null
   /** scsynth mixer node ID — for controlling master volume via /n_set */
   private mixerNodeId = 0
+  /** Optional callback for OSC trace logging — receives formatted trace strings like desktop Sonic Pi. */
+  private oscTraceHandler: ((msg: string) => void) | null = null
   /** SuperSonic.osc encoder (preferred) or fallback */
   private oscEncoder: {
     encodeSingleBundle(timetag: number, address: string, args: (string | number)[]): Uint8Array
@@ -296,6 +341,17 @@ export class SuperSonicBridge {
   }
 
   /**
+   * Enable OSC trace logging — callback receives formatted trace strings
+   * matching desktop Sonic Pi's output style.
+   *
+   * Example output:
+   *   /s_new "sonic-pi-basic_stereo_player" 1003 0 100 {buf: 0, amp: 1.5, lpf: 130, out_bus: 0}
+   */
+  setOscTraceHandler(handler: ((msg: string) => void) | null): void {
+    this.oscTraceHandler = handler
+  }
+
+  /**
    * Queue an OSC message for batched dispatch.
    * Sonic Pi's model: all play/sample calls between sleeps are collected,
    * then dispatched as ONE OSC bundle on sleep — sharing a single NTP timetag.
@@ -307,6 +363,11 @@ export class SuperSonicBridge {
   ): void {
     this.messageQueueAudioTime = audioTime
     this.messageQueue.push({ address, args })
+
+    // Trace logging — formatted like desktop Sonic Pi's trace output
+    if (this.oscTraceHandler) {
+      this.oscTraceHandler(formatOscTrace(address, args, audioTime))
+    }
   }
 
   /**

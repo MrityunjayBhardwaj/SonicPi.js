@@ -114,6 +114,11 @@ export class SonicPiEngine {
         if (this.pendingVolume !== null) {
           this.bridge!.setMasterVolume(this.pendingVolume)
         }
+        // Wire OSC trace logging — shows exactly what params are sent to scsynth,
+        // matching desktop Sonic Pi's trace format for easy comparison.
+        this.bridge!.setOscTraceHandler((msg) => {
+          if (this.printHandler) this.printHandler(msg)
+        })
       })
       .catch((err) => {
         console.warn('[SonicPi] SuperSonic init failed, running without audio:', err)
