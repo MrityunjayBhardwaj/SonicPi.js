@@ -128,6 +128,21 @@ export function normalizeControlParams(
   return p
 }
 
+/**
+ * Normalize FX params.
+ * Strip + resolve symbols. NO BPM scaling (Sonic Pi passes arg_bpm_scaling: false for FX).
+ * Matches desktop Sonic Pi's trigger_fx which calls normalise_and_resolve_synth_args
+ * with bpm_scaling disabled.
+ */
+export function normalizeFxParams(
+  params: Record<string, number>,
+): Record<string, number> {
+  let p = { ...params }
+  p = stripNonScynthParams(p)
+  p = resolveSymbolDefaults(p)
+  return p
+}
+
 // ---------------------------------------------------------------------------
 // Internal pipeline steps
 // ---------------------------------------------------------------------------

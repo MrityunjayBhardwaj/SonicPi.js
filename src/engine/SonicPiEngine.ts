@@ -3,6 +3,7 @@ import { ProgramBuilder } from './ProgramBuilder'
 import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioInterpreter'
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
+import { normalizeFxParams } from './SoundLayer'
 import { transpile } from './Transpiler'
 import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbox'
 import { autoTranspileDetailed } from './RubyTranspiler'
@@ -300,7 +301,8 @@ export class SonicPiEngine {
             for (const fx of fxChain) {
               const bus = this.bridge.allocateBus()
               const groupId = this.bridge.createFxGroup()
-              await this.bridge.applyFx(fx.name, audioTime, fx.opts, bus, currentOutBus)
+              const fxOpts = normalizeFxParams(fx.opts)
+              await this.bridge.applyFx(fx.name, audioTime, fxOpts, bus, currentOutBus)
               this.bridge.flushMessages()
               buses.push(bus)
               groups.push(groupId)

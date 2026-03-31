@@ -7,7 +7,7 @@
  */
 
 import type { Program } from '../Program'
-import { normalizePlayParams, normalizeControlParams } from '../SoundLayer'
+import { normalizePlayParams, normalizeControlParams, normalizeFxParams } from '../SoundLayer'
 
 /** Visual duration used for note events in the sound event stream (seconds). */
 const NOTE_EVENT_VISUAL_DURATION = 0.25
@@ -162,7 +162,8 @@ export async function runProgram(
         let fxNodeId: number | undefined
         try {
           const audioTime = task.virtualTime + ctx.schedAheadTime
-          fxNodeId = await ctx.bridge.applyFx(step.name, audioTime, step.opts, newBus, prevOutBus)
+          const fxOpts = normalizeFxParams(step.opts)
+          fxNodeId = await ctx.bridge.applyFx(step.name, audioTime, fxOpts, newBus, prevOutBus)
           if (step.nodeRef && fxNodeId !== undefined) {
             ctx.nodeRefMap.set(step.nodeRef, fxNodeId)
           }

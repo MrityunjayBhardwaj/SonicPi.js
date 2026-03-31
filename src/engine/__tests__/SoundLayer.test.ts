@@ -3,6 +3,7 @@ import {
   normalizePlayParams,
   normalizeSampleParams,
   normalizeControlParams,
+  normalizeFxParams,
   selectSamplePlayer,
 } from '../SoundLayer'
 
@@ -258,6 +259,35 @@ describe('normalizeControlParams', () => {
     const p = normalizeControlParams({ on: 1, amp: 0.5 }, 60)
     expect(p.on).toBeUndefined()
     expect(p.amp).toBe(0.5)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FX normalization
+// ---------------------------------------------------------------------------
+
+describe('normalizeFxParams', () => {
+  it('strips non-scsynth params', () => {
+    const p = normalizeFxParams({ room: 0.8, on: 1 })
+    expect(p.on).toBeUndefined()
+    expect(p.room).toBe(0.8)
+  })
+
+  it('resolves symbol defaults', () => {
+    const p = normalizeFxParams({ sustain_level: 0.5 })
+    expect(p.decay_level).toBe(0.5)
+  })
+
+  it('does NOT BPM-scale any params', () => {
+    const p = normalizeFxParams({ phase: 0.5, decay: 1, room: 0.8 })
+    expect(p.phase).toBe(0.5)  // NOT scaled
+    expect(p.decay).toBe(1)    // NOT scaled
+    expect(p.room).toBe(0.8)   // NOT scaled
+  })
+
+  it('does NOT inject env_curve', () => {
+    const p = normalizeFxParams({ room: 0.8 })
+    expect(p.env_curve).toBeUndefined()
   })
 })
 
