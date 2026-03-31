@@ -45,6 +45,9 @@ export async function runProgram(
 
     switch (step.tag) {
       case 'play': {
+        // Sonic Pi's should_trigger?: skip if on: is present and falsy
+        if ('on' in step.opts && !step.opts.on) break
+
         const audioTime = task.virtualTime + ctx.schedAheadTime
         const synth = step.synth ?? currentSynth
         const nodeRef = nextNodeRef++
@@ -74,6 +77,9 @@ export async function runProgram(
       }
 
       case 'sample': {
+        // Sonic Pi's should_trigger?: skip if on: is present and falsy
+        if (step.opts && 'on' in step.opts && !step.opts.on) break
+
         const audioTime = task.virtualTime + ctx.schedAheadTime
         if (ctx.bridge) {
           // Merge out_bus from task — samples inside with_fx must write to the FX bus,
