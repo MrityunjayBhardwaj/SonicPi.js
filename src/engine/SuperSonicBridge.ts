@@ -168,6 +168,7 @@ export class SuperSonicBridge {
     const mixerBus = this.allocateBus() // private bus — nothing writes to it, reads as silence
     this.mixerNodeId = this.sonic.nextNodeId()
     this.sonic.send('/s_new', 'sonic-pi-mixer', this.mixerNodeId, 0, mixerGroupId,
+      'out_bus', 0,        // explicit — don't rely on compiled default
       'in_bus', mixerBus,  // private bus (silence) — only out_bus=0 carries audio
       'amp', 6,            // Sonic Pi default: amp=6 at trigger time
       'pre_amp', 0.2,      // Sonic Pi default: set_volume!(1) → pre_amp = 1 * 0.2
