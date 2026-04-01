@@ -364,10 +364,10 @@ export class App {
       // Wire event stream for console logging
       const streaming = this.engine.components.streaming
       if (streaming && !this.eventStreamHandler) {
-        this.eventStreamHandler = ((event: { s: string | null; midiNote: number | null }) => {
+        this.eventStreamHandler = ((event: { s: string | null; midiNote: number | null; audioTime?: number }) => {
           const s = event.s ?? '?'
           const note = event.midiNote != null ? ` note:${event.midiNote}` : ''
-          this.console.logEvent('synth', `${s}${note}`)
+          this.console.logEvent('synth', `${s}${note}`, event.audioTime)
         }) as (event: unknown) => void
         streaming.eventStream.on(this.eventStreamHandler as never)
       }

@@ -15,8 +15,8 @@
  *   npx tsx tools/capture.ts --duration 15000          # run for 15 seconds
  */
 
-import { firefox, type Browser } from '@playwright/test'
-import { writeFileSync, readFileSync, mkdirSync } from 'fs'
+import { chromium, firefox, type Browser } from '@playwright/test'
+import { writeFileSync, readFileSync, mkdirSync, statSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -47,6 +47,10 @@ interface CaptureResult {
   screenshotBefore: string  // path
   screenshotAfter: string   // path
 
+  // Audio capture (WAV file)
+  audioPath: string | null
+  audioStats: { duration: number; peak: number; rms: number; clipping: number } | null
+
   // Derived
   errorSummary: string[]
   warningsSummary: string[]
@@ -63,7 +67,9 @@ async function captureRun(
   const ts = new Date().toISOString().replace(/[:.]/g, '-')
   const prefix = `${ts}_${safeName}`
 
-  const context = await browser.newContext()
+  const context = await browser.newContext({
+    acceptDownloads: true,
+  })
   const page = await context.newPage()
 
   const consoleLog: CaptureResult['console'] = []
@@ -116,12 +122,73 @@ async function captureRun(
   await editor.fill(code)
   await page.waitForTimeout(200)
 
-  // Click Run
+  // Click Run and wait for audio engine to be ready
   const runBtn = page.locator('.spw-btn-label:has-text("Run")')
   await runBtn.click()
+  // Wait for "Audio engine ready" in the app text
+  await page.waitForFunction(
+    () => document.querySelector('#app')?.textContent?.includes('Audio engine ready'),
+    { timeout: 10000 }
+  ).catch(() => {})
+  await page.waitForTimeout(500)
 
-  // Let it run
-  await page.waitForTimeout(duration)
+  // Start audio recording via Rec button (Chromium captures real audio)
+  let audioPath: string | null = null
+  const isChromium = browser.browserType().name() === 'chromium'
+  if (isChromium) {
+    // Intercept blob download — Recorder creates <a href="blob:..."> and clicks it
+    await page.evaluate(() => {
+      const origClick = HTMLAnchorElement.prototype.click
+      ;(window as any).__capturedWavBlob = null
+      HTMLAnchorElement.prototype.click = function () {
+        if (this.href?.startsWith('blob:') && this.download?.endsWith('.wav')) {
+          fetch(this.href).then(r => r.blob()).then(b => { (window as any).__capturedWavBlob = b })
+        } else {
+          origClick.call(this)
+        }
+      }
+    })
+
+    const recBtn = page.locator('button').filter({ hasText: 'Rec' }).first()
+    const hasRec = await recBtn.count()
+    if (hasRec > 0) {
+      await recBtn.click()
+      await page.waitForTimeout(duration - 1000)
+      // Stop recording — button now says "Save"
+      const saveBtn = page.locator('button').filter({ hasText: 'Save' }).first()
+      const hasSave = await saveBtn.count()
+      if (hasSave > 0) {
+        await saveBtn.click()
+      } else {
+        await recBtn.click()
+      }
+      await page.waitForTimeout(2000) // wait for blob to be captured
+
+      // Extract the captured WAV blob
+      const wavBase64 = await page.evaluate(async () => {
+        const blob = (window as any).__capturedWavBlob as Blob | null
+        if (!blob) return null
+        const buf = await blob.arrayBuffer()
+        const bytes = new Uint8Array(buf)
+        let binary = ''
+        const cs = 8192
+        for (let i = 0; i < bytes.length; i += cs) {
+          binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + cs, bytes.length)))
+        }
+        return btoa(binary)
+      })
+
+      if (wavBase64) {
+        audioPath = resolve(CAPTURES_DIR, `${prefix}_audio.wav`)
+        writeFileSync(audioPath, Buffer.from(wavBase64, 'base64'))
+      }
+    } else {
+      await page.waitForTimeout(duration - 1000)
+    }
+  } else {
+    // Firefox: just wait (no reliable audio capture in headless)
+    await page.waitForTimeout(duration)
+  }
 
   // Screenshot after running
   const afterPath = resolve(CAPTURES_DIR, `${prefix}_after.png`)
@@ -176,6 +243,40 @@ async function captureRun(
     }
   }
 
+  // Analyze captured audio if available
+  let audioStats: CaptureResult['audioStats'] = null
+  if (audioPath) {
+    try {
+      const wavBuf = readFileSync(audioPath)
+      // Parse WAV header: offset 24 = sampleRate, offset 34 = bitsPerSample
+      const sampleRate = wavBuf.readUInt32LE(24)
+      const bitsPerSample = wavBuf.readUInt16LE(34)
+      const numChannels = wavBuf.readUInt16LE(22)
+      const dataOffset = 44
+      const bytesPerSample = bitsPerSample / 8
+      const numSamples = Math.floor((wavBuf.length - dataOffset) / (numChannels * bytesPerSample))
+
+      let sumSq = 0
+      let peak = 0
+      let clipCount = 0
+      for (let i = 0; i < numSamples; i++) {
+        const off = dataOffset + i * numChannels * bytesPerSample
+        const val = wavBuf.readInt16LE(off) / 32768.0
+        sumSq += val * val
+        const a = Math.abs(val)
+        if (a > peak) peak = a
+        if (a > 0.95) clipCount++
+      }
+      const rms = Math.sqrt(sumSq / numSamples)
+      audioStats = {
+        duration: numSamples / sampleRate,
+        peak: Math.round(peak * 10000) / 10000,
+        rms: Math.round(rms * 10000) / 10000,
+        clipping: Math.round((clipCount / numSamples) * 10000) / 100,
+      }
+    } catch { /* WAV parse failed — skip stats */ }
+  }
+
   return {
     timestamp: new Date().toISOString(),
     code,
@@ -189,6 +290,8 @@ async function captureRun(
     appFullText,
     screenshotBefore: beforePath,
     screenshotAfter: afterPath,
+    audioPath,
+    audioStats,
     errorSummary,
     warningsSummary,
   }
@@ -237,6 +340,23 @@ function writeCaptureReport(result: CaptureResult, outputPath: string): void {
     }
   }
   lines.push('')
+
+  // Audio capture
+  if (result.audioPath) {
+    lines.push('## Audio Capture')
+    lines.push(`- **File:** \`${result.audioPath}\``)
+    if (result.audioStats) {
+      const s = result.audioStats
+      lines.push(`- **Duration:** ${s.duration.toFixed(2)}s`)
+      lines.push(`- **Peak:** ${s.peak}`)
+      lines.push(`- **RMS:** ${s.rms}`)
+      lines.push(`- **Clipping (>0.95):** ${s.clipping}%`)
+      if (s.clipping > 1) lines.push(`- ⚠ **High clipping** — limiter may not be active`)
+      if (s.rms > 0.3) lines.push(`- ⚠ **Loud output** — RMS ${s.rms} (original Sonic Pi ≈ 0.19)`)
+      if (s.peak < 0.01) lines.push(`- ⚠ **Silent output** — no audio captured`)
+    }
+    lines.push('')
+  }
 
   // App console (the real diagnostic gold)
   lines.push('## App Console Output')
@@ -321,8 +441,16 @@ end`
     name = 'default_test'
   }
 
-  console.log(`Launching browser...`)
-  const browser = await firefox.launch({ headless: true })
+  // Use Chromium headed by default — captures real audio via Rec button.
+  // Firefox fallback: --firefox flag for headless event-only capture.
+  const useFirefox = args.includes('--firefox')
+  console.log(`Launching ${useFirefox ? 'Firefox (headless)' : 'Chromium (headed, audio capture)'}...`)
+  const browser = useFirefox
+    ? await firefox.launch({ headless: true })
+    : await chromium.launch({
+        headless: false,
+        args: ['--autoplay-policy=no-user-gesture-required'],
+      })
 
   if (runAllExamples) {
     // Run each built-in example

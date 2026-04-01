@@ -291,17 +291,11 @@ export class VirtualTimeScheduler {
    * On resume, the task inherits the cue's virtual time (SV5).
    */
   waitForSync(name: string, taskId: string): Promise<unknown[]> {
-    // Check if cue already fired
-    const existing = this.cueMap.get(name)
-    if (existing) {
-      const task = this.tasks.get(taskId)
-      if (task) {
-        task.virtualTime = existing.time
-      }
-      return Promise.resolve(existing.args)
-    }
-
-    // Park this task until cue fires
+    // Always wait for a FRESH cue — never resolve from stale cueMap entries.
+    // In Sonic Pi, sync(:name) parks the thread until a NEW cue fires.
+    // get(:name) returns existing values; sync waits for the next one.
+    // Without this, loops synced to met1 start at vt=0 instead of waiting
+    // for met1's first beat (met1's auto-cue fires before synced loops run).
     return new Promise<unknown[]>((resolve) => {
       const waiters = this.syncWaiters.get(name) ?? []
       waiters.push({ taskId, resolve })
@@ -386,6 +380,11 @@ export class VirtualTimeScheduler {
     await this.scheduleSleep(task.id, 0)
 
     while (task.running) {
+      // Auto-cue: Sonic Pi fires cue(:loop_name) at the start of each iteration.
+      // This is how sync: :name works on other live_loops.
+      // Note: SonicPiEngine also fires a cue after each iteration (line ~290).
+      // Having it here ensures it works for raw scheduler usage too.
+      this.fireCue(task.id, task.id)
       try {
         await task.asyncFn()
       } catch (err) {

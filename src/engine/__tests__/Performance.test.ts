@@ -8,7 +8,7 @@ function makeAudioCtx(
   scheduler: VirtualTimeScheduler,
   taskId: string,
   eventStream: SoundEventStream,
-  nodeRefMap: Map<number, number>
+  nodeRefMap: Map<number, number>,
 ): AudioCtx {
   return {
     bridge: null,
@@ -17,6 +17,7 @@ function makeAudioCtx(
     eventStream,
     schedAheadTime: 200,
     nodeRefMap,
+    reusableFx: new Map(),
   }
 }
 

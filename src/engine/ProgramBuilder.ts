@@ -36,6 +36,7 @@ export class ProgramBuilder {
   private _budgetRemaining: number = DEFAULT_LOOP_BUDGET
   private _transpose: number = 0
   private _synthDefaults: Record<string, number> = {}
+  private _sampleDefaults: Record<string, number> = {}
   private _debug: boolean = true
 
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
@@ -103,8 +104,8 @@ export class ProgramBuilder {
 
   sample(name: string, opts?: Record<string, unknown>): this {
     const srcLine = opts?._srcLine as number | undefined
-    // Strip internal keys before storing; remaining values are sample playback params.
-    const cleanOpts = { ...opts } as Record<string, number>
+    // Merge sample defaults first, then overlay explicit opts
+    const cleanOpts = { ...this._sampleDefaults, ...opts } as Record<string, number>
     delete (cleanOpts as Record<string, unknown>)._srcLine
     this.steps.push({ tag: 'sample', name, opts: cleanOpts, srcLine })
     return this
@@ -308,6 +309,12 @@ export class ProgramBuilder {
   /** Set default synthesis parameters for all subsequent play calls. */
   use_synth_defaults(opts: Record<string, number>): this {
     this._synthDefaults = { ...opts }
+    return this
+  }
+
+  /** Set default sample parameters for all subsequent sample calls. */
+  use_sample_defaults(opts: Record<string, number>): this {
+    this._sampleDefaults = { ...opts }
     return this
   }
 

@@ -285,7 +285,7 @@ const BUILDER_METHODS = new Set([
   // Transpose
   'use_transpose', 'with_transpose',
   // Synth defaults / BPM / synth blocks
-  'use_synth_defaults', 'with_bpm', 'with_synth',
+  'use_synth_defaults', 'use_sample_defaults', 'with_bpm', 'with_synth',
   // Debug
   'use_debug',
   // Utility
@@ -939,11 +939,11 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return `${prefix}use_random_seed(${args})`
     }
 
-    // use_synth_defaults — all args become a single opts object
-    if (methodName === 'use_synth_defaults') {
+    // use_synth_defaults / use_sample_defaults — all args become a single opts object
+    if (methodName === 'use_synth_defaults' || methodName === 'use_sample_defaults') {
       const args = argsNode ? transpileArgListAsOpts(argsNode, ctx) : '{}'
       const prefix = ctx.insideLoop ? 'b.' : ''
-      return `${prefix}use_synth_defaults(${args})`
+      return `${prefix}${methodName}(${args})`
     }
 
     // load_samples / load_sample — no-op
@@ -1256,12 +1256,11 @@ function transpileLiveLoop(
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
   const bodyStr = blockNode ? transpileBlockBody(blockNode, bodyCtx) : ''
 
-  let syncLine = ''
-  if (syncName) {
-    syncLine = `\n${ctx.indent}  b.sync("${syncName}")`
-  }
+  // sync: option — pass as registration option (one-time sync before first iteration),
+  // NOT as b.sync() inside the body (which would re-sync every iteration).
+  const optsArg = syncName ? `{sync: "${syncName}"}, ` : ''
 
-  return `live_loop("${name}", (b) => {${syncLine}\n${bodyStr}\n${ctx.indent}})`
+  return `live_loop("${name}", ${optsArg}(b) => {\n${bodyStr}\n${ctx.indent}})`
 }
 
 function transpileDefine(

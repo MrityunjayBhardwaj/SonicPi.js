@@ -28,21 +28,34 @@ These affect how the app feels on first use. Fix before sharing widely.
 - [ ] Display estimated time remaining
 - [ ] Pre-warm AudioContext on first user interaction
 
-### Sample-Accurate Audio Scheduling
-Currently `SuperSonicBridge.triggerSynth()` calls `sonic.send()` which fires immediately —
-the `audioTime` parameter is computed but never used. Desktop Sonic Pi achieves zero-jitter
-playback via timestamped OSC bundles that scsynth executes at exact sample boundaries.
-SuperSonic supports this via `sonic.sendOSC(bytes)` with NTP timetags.
+### ~~Sample-Accurate Audio Scheduling~~ DONE (PR #40)
+OSC bundle timestamps with NTP timetags. Message batching per sleep. sonic-pi-mixer inside scsynth.
+FX group lifecycle. sync: first-iteration-only. Hot-swap preserves phase. cutoff→lpf aliasing.
+0% jitter confirmed via spectrogram. See `feat/osc-bundle-timestamps` branch.
 
-- [ ] Build OSC bundle encoder (binary format with NTP timetag header)
-- [ ] Convert `audioTime` (AudioContext seconds) → NTP epoch time
-- [ ] Replace `sonic.send()` with `sonic.sendOSC(bytes)` in `triggerSynth()`, `playSample()`, `applyFx()`
-- [ ] Verify SuperSonic creates AudioContext with `latencyHint: 'interactive'`
-- [ ] Expose `ctx.baseLatency + ctx.outputLatency` in console on init
-- [ ] Evaluate reducing `schedAheadTime` from 100ms to 50ms
-- [ ] Evaluate tightening tick interval from 25ms to 10ms
-- [ ] Measure before/after jitter with spectrogram tool (target: ±0ms like desktop Sonic Pi)
-- [ ] Document actual latency per platform in docs
+### SoundLayer — Match Desktop Sonic Pi Audio Pipeline (P0, NEXT)
+Root cause of remaining audio discrepancy: missing equivalent of Sonic Pi's `sound.rb` (4000 lines).
+Research complete — 27 gaps cataloged in `artifacts/ref/GAP_ANALYSIS_COMPLETE.md`.
+
+**4 P0 gaps (must fix):**
+- [ ] **BPM scales time params** — `scale_time_args_to_bpm!`: multiply attack/decay/sustain/release/slide by 60/BPM. At 130 BPM, release:1 = 0.46s not 1.0s. (#44 follow-up)
+- [ ] **Top-level FX persistence** — create FX node ONCE at registration, not per iteration. GC blocked by subthread.join. (#45 follow-up)
+- [ ] **Symbol resolution** — `decay_level: :sustain_level` for 37 synths. Generic normalise_args. (#47 follow-up)
+- [ ] **env_curve: 2** — send explicitly for all synths. Compiled default=1 (linear), Sonic Pi=2 (exponential). (new issue needed)
+
+**P1 gaps (should fix):**
+- [ ] Inner synths in FX group (not group 100)
+- [ ] Note transposition chain (use_transpose, use_octave, use_cent_tuning)
+- [ ] sc808 cutoff→lpf aliasing
+- [ ] Per-FX kill_delay (reverb: room*10+1, echo: decay, ping_pong: log formula)
+- [ ] FX t_minus_delta timing
+- [ ] Control delta staggering
+- [ ] spread rotate: strong-beat counting
+- [ ] Bus exhaustion graceful degradation
+
+**Reference docs:**
+- `artifacts/ref/GAP_ANALYSIS_COMPLETE.md` — full gap details with code references
+- `artifacts/ref/RESEARCH_SONIC_PI_DEEP_INTERNALS.md` — 14 sections covering all internals
 
 ### Tab Backgrounding
 - [ ] Detect `visibilitychange` event

@@ -1,15 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SuperSonicBridge } from '../SuperSonicBridge'
 
+/** Extract the OSC address string from a raw OSC bundle (starts after 16-byte header + 4-byte size). */
+function extractBundleAddress(bundle: Uint8Array): string {
+  // Bundle layout: "#bundle\0" (8) + timetag (8) + element size (4) + message...
+  const msgStart = 20
+  let end = msgStart
+  while (end < bundle.length && bundle[end] !== 0) end++
+  return new TextDecoder().decode(bundle.slice(msgStart, end))
+}
+
 // Mock SuperSonic constructor on globalThis
 function createMockSuperSonic() {
   const sent: Array<{ address: string; args: (string | number)[] }> = []
+  const bundles: Uint8Array[] = []
   let nodeIdCounter = 1000
 
   const mockSonic = {
     init: vi.fn().mockResolvedValue(undefined),
     send: vi.fn((address: string, ...args: (string | number)[]) => {
       sent.push({ address, args })
+    }),
+    sendOSC: vi.fn((data: Uint8Array) => {
+      bundles.push(new Uint8Array(data))
     }),
     loadSynthDef: vi.fn().mockResolvedValue(undefined),
     loadSynthDefs: vi.fn().mockResolvedValue(undefined),
@@ -43,12 +56,11 @@ function createMockSuperSonic() {
     },
   }
 
-  return { mockSonic, sent }
+  return { mockSonic, sent, bundles }
 }
 
 describe('SuperSonicBridge', () => {
   beforeEach(() => {
-    // Clean up global
     delete (globalThis as Record<string, unknown>).SuperSonic
   })
 
@@ -66,44 +78,69 @@ describe('SuperSonicBridge', () => {
 
     expect(mockSonic.init).toHaveBeenCalled()
     expect(mockSonic.loadSynthDefs).toHaveBeenCalled()
-    // Should have created synth + FX groups
-    expect(mockSonic.send).toHaveBeenCalledWith('/g_new', 100, 0, 0)
-    expect(mockSonic.send).toHaveBeenCalledWith('/g_new', 101, 1, 0)
+    // Mixer group at head of root, FX before mixer, synths before FX
+    const sendCalls = mockSonic.send.mock.calls
+    const gNewCalls = sendCalls.filter((c: unknown[]) => c[0] === '/g_new')
+    expect(gNewCalls.length).toBe(3) // mixer group, FX group, synths group
+    // Mixer synthdef loaded and triggered
+    expect(mockSonic.loadSynthDef).toHaveBeenCalledWith('sonic-pi-mixer')
     expect(mockSonic.sync).toHaveBeenCalled()
-    // Should have tapped AnalyserNode
     expect(mockSonic.node.connect).toHaveBeenCalled()
   })
 
-  it('triggerSynth sends /s_new OSC', async () => {
-    const { mockSonic, sent } = createMockSuperSonic()
+  it('triggerSynth queues message, flushMessages sends bundle', async () => {
+    const { mockSonic, bundles } = createMockSuperSonic()
     ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
 
     const bridge = new SuperSonicBridge()
     await bridge.init()
 
-    sent.length = 0 // clear init messages
     const nodeId = await bridge.triggerSynth('beep', 1.0, { note: 60, amp: 0.5 })
+    // Not sent yet — queued
+    expect(mockSonic.sendOSC).not.toHaveBeenCalled()
 
-    expect(nodeId).toBe(1000)
-    const sNewCall = sent.find(s => s.address === '/s_new')
-    expect(sNewCall).toBeDefined()
-    expect(sNewCall!.args[0]).toBe('sonic-pi-beep')
+    // Flush — now it sends
+    bridge.flushMessages()
+    expect(typeof nodeId).toBe('number')
+    expect(mockSonic.sendOSC).toHaveBeenCalledTimes(1)
+    const bundleStr = new TextDecoder().decode(bundles[0])
+    expect(bundleStr).toContain('sonic-pi-beep')
   })
 
-  it('playSample loads sample and triggers player', async () => {
-    const { mockSonic, sent } = createMockSuperSonic()
+  it('multiple events between flushes share one bundle', async () => {
+    const { mockSonic, bundles } = createMockSuperSonic()
     ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
 
     const bridge = new SuperSonicBridge()
     await bridge.init()
 
-    sent.length = 0
+    await bridge.triggerSynth('beep', 1.0, { note: 60 })
+    await bridge.triggerSynth('saw', 1.0, { note: 62 })
     await bridge.playSample('bd_haus', 1.0)
 
+    bridge.flushMessages()
+    // All 3 events in ONE sendOSC call
+    expect(mockSonic.sendOSC).toHaveBeenCalledTimes(1)
+    const bundleStr = new TextDecoder().decode(bundles[0])
+    expect(bundleStr).toContain('sonic-pi-beep')
+    expect(bundleStr).toContain('sonic-pi-saw')
+    expect(bundleStr).toContain('sonic-pi-basic_stereo_player')
+  })
+
+  it('playSample loads sample and queues message', async () => {
+    const { mockSonic, bundles } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    await bridge.playSample('bd_haus', 1.0)
+    bridge.flushMessages()
+
     expect(mockSonic.loadSample).toHaveBeenCalledWith(0, 'bd_haus.flac')
-    const sNewCall = sent.find(s => s.address === '/s_new')
-    expect(sNewCall).toBeDefined()
-    expect(sNewCall!.args[0]).toBe('sonic-pi-basic_stereo_player')
+    expect(mockSonic.sendOSC).toHaveBeenCalled()
+    const bundleStr = new TextDecoder().decode(bundles[0])
+    expect(bundleStr).toContain('sonic-pi-basic_stereo_player')
   })
 
   it('caches loaded SynthDefs', async () => {
@@ -113,10 +150,81 @@ describe('SuperSonicBridge', () => {
     const bridge = new SuperSonicBridge()
     await bridge.init()
 
-    // beep was pre-loaded, so loadSynthDef should not be called again
     mockSonic.loadSynthDef.mockClear()
     await bridge.triggerSynth('beep', 0, { note: 60 })
     expect(mockSonic.loadSynthDef).not.toHaveBeenCalled()
+  })
+
+  it('OSC bundle contains NTP timetag', async () => {
+    const { mockSonic, bundles } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    await bridge.triggerSynth('beep', 2.5, { note: 72 })
+    bridge.flushMessages()
+
+    const bundle = bundles[0]
+    const header = new TextDecoder().decode(bundle.slice(0, 7))
+    expect(header).toBe('#bundle')
+    expect(bundle[7]).toBe(0)
+    const dv = new DataView(bundle.buffer, bundle.byteOffset)
+    const ntpSecs = dv.getUint32(8, false)
+    expect(ntpSecs).toBeGreaterThan(2208988800)
+  })
+
+  it('applyFx queues message', async () => {
+    const { mockSonic, bundles } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    const nodeId = await bridge.applyFx('reverb', 1.0, { room: 0.8 }, 16, 0)
+    bridge.flushMessages()
+
+    expect(typeof nodeId).toBe('number')
+    expect(mockSonic.sendOSC).toHaveBeenCalled()
+    const bundleStr = new TextDecoder().decode(bundles[0])
+    expect(bundleStr).toContain('sonic-pi-fx_reverb')
+  })
+
+  it('tb303 passes pre-normalized params through', async () => {
+    // tb303 munging is now in SoundLayer (normalizePlayParams), not bridge.
+    // Bridge receives already-normalized params from AudioInterpreter.
+    const { mockSonic, bundles } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    // Simulate what AudioInterpreter sends after SoundLayer normalization
+    await bridge.triggerSynth('tb303', 1.0, {
+      note: 40, release: 0.3, cutoff: 60,
+      cutoff_release: 0.3, cutoff_min: 30, env_curve: 2,
+    })
+    bridge.flushMessages()
+
+    const bundleStr = new TextDecoder().decode(bundles[0])
+    expect(bundleStr).toContain('release')
+    expect(bundleStr).toContain('cutoff_release')
+    expect(bundleStr).toContain('cutoff_min')
+  })
+
+  it('beep synth not affected by tb303 normalization', async () => {
+    const { mockSonic, bundles } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    await bridge.triggerSynth('beep', 1.0, { note: 60, release: 0.3 })
+    bridge.flushMessages()
+
+    const bundleStr = new TextDecoder().decode(bundles[0])
+    expect(bundleStr).not.toContain('cutoff_release')
+    expect(bundleStr).not.toContain('cutoff_min')
   })
 
   it('dispose cleans up', async () => {

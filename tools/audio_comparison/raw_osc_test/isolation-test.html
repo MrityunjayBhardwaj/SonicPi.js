@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head><title>Raw OSC Isolation Test</title></head>
+<body>
+<pre id="log">Loading SuperSonic from CDN...</pre>
+<script type="module">
+const log = document.getElementById('log');
+function addLog(msg) {
+  log.textContent += '\n' + msg;
+  console.log('[RAW-OSC] ' + msg);
+}
+
+// ---- CDN URLs (same versions as our engine) ----
+const PKG_BASE = 'https://unpkg.com/supersonic-scsynth@latest/dist/';
+const CORE_BASE = 'https://unpkg.com/supersonic-scsynth-core@latest/';
+const SYNTHDEF_BASE = 'https://unpkg.com/supersonic-scsynth-synthdefs@latest/synthdefs/';
+const SAMPLE_BASE = 'https://unpkg.com/supersonic-scsynth-samples@latest/samples/';
+
+try {
+  // 1. Import SuperSonic
+  const mod = await import('https://unpkg.com/supersonic-scsynth@latest');
+  const SuperSonic = mod.SuperSonic ?? mod.default;
+  addLog('SuperSonic module loaded');
+
+  // 2. Create instance — 14 output channels matching our engine
+  const NUM_OUTPUT_CHANNELS = 14;
+  const sonic = new SuperSonic({
+    baseURL: PKG_BASE,
+    workerBaseURL: PKG_BASE + 'workers/',
+    wasmBaseURL: CORE_BASE + 'wasm/',
+    coreBaseURL: CORE_BASE,
+    synthdefBaseURL: SYNTHDEF_BASE,
+    sampleBaseURL: SAMPLE_BASE,
+    autoConnect: false,
+    scsynthOptions: { numOutputBusChannels: NUM_OUTPUT_CHANNELS },
+  });
+
+  await sonic.init();
+  addLog('scsynth WASM initialized (sampleRate=' + sonic.audioContext.sampleRate + ')');
+
+  // 3. Load synthdefs — ONLY basic_stereo_player + mixer
+  await sonic.loadSynthDef('sonic-pi-basic_stereo_player');
+  await sonic.loadSynthDef('sonic-pi-mixer');
+  addLog('Synthdefs loaded: basic_stereo_player, mixer');
+
+  // 4. Load bd_tek sample
+  const bufNum = 0;
+  await sonic.loadSample(bufNum, 'bd_tek.flac');
+  addLog('Sample loaded: bd_tek (buf=' + bufNum + ')');
+
+  await sonic.sync();
+  addLog('scsynth synced');
+
+  // 5. Create group structure — EXACTLY matching desktop Sonic Pi
+  //    Root(0) → mixerGroup(head) → fxGroup(before mixer) → synthGroup(before fx)
+  //    Execution order: synths → fx → mixer
+  const mixerGroupId = sonic.nextNodeId();
+  sonic.send('/g_new', mixerGroupId, 0, 0);   // mixer group at head of root
+  sonic.send('/g_new', 101, 2, mixerGroupId);  // FX group before mixer
+  sonic.send('/g_new', 100, 2, 101);           // synths group before FX
+  addLog('Group structure created: synths(100) → fx(101) → mixer(' + mixerGroupId + ')');
+
+  // 6. Create mixer with DESKTOP settings — NOT compensated
+  //    Desktop Sonic Pi: pre_amp=0.2, amp=6 (set_volume!(1) → vol * 0.2)
+  //    in_bus = private bus (silence), out_bus = 0
+  const mixerBus = NUM_OUTPUT_CHANNELS; // first private bus — nothing writes here
+  const mixerNodeId = sonic.nextNodeId();
+  sonic.send('/s_new', 'sonic-pi-mixer', mixerNodeId, 0, mixerGroupId,
+    'out_bus', 0,
+    'in_bus', mixerBus,
+    'amp', 6,
+    'pre_amp', 0.2,  // DESKTOP value — the whole point of this test
+  );
+  await sonic.sync();
+  addLog('Mixer created: pre_amp=0.2, amp=6 (desktop identical)');
+
+  // 7. Route audio — same as our engine but minimal
+  const audioCtx = sonic.audioContext;
+  const workletNode = sonic.node?.input ?? sonic.node;
+
+  const splitter = audioCtx.createChannelSplitter(NUM_OUTPUT_CHANNELS);
+  workletNode.connect(splitter);
+
+  const merger = audioCtx.createChannelMerger(2);
+  splitter.connect(merger, 0, 0);  // bus 0 left
+  splitter.connect(merger, 1, 1);  // bus 0 right
+
+  // NO additional gain — direct to destination
+  const gainNode = audioCtx.createGain();
+  gainNode.gain.value = 1.0;
+  merger.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  addLog('Audio routing: splitter → merger(bus 0 L+R) → gain(1.0) → destination');
+
+  // 8. Set up MediaRecorder to capture audio output
+  const destNode = audioCtx.createMediaStreamDestination();
+  gainNode.connect(destNode);
+  const recorder = new MediaRecorder(destNode.stream, { mimeType: 'audio/webm;codecs=opus' });
+  const chunks = [];
+  recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+  // Store results globally for Playwright to extract
+  window.__rawOscTestDone = false;
+  window.__rawOscTestAudio = null;
+
+  recorder.onstop = async () => {
+    const blob = new Blob(chunks, { type: 'audio/webm' });
+    // Convert to ArrayBuffer for extraction
+    const buf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const cs = 8192;
+    for (let i = 0; i < bytes.length; i += cs) {
+      binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + cs, bytes.length)));
+    }
+    window.__rawOscTestAudio = btoa(binary);
+    window.__rawOscTestDone = true;
+    addLog('Recording saved (' + Math.round(blob.size / 1024) + ' KB)');
+  };
+
+  // 9. Also set up WAV recording via ScriptProcessor for accurate level analysis
+  //    (WebM/Opus has its own normalization; raw PCM is what we need)
+  const BUFFER_SIZE = 4096;
+  const scriptNode = audioCtx.createScriptProcessor(BUFFER_SIZE, 2, 2);
+  const pcmChunks = [];
+  let pcmSampleCount = 0;
+  scriptNode.onaudioprocess = (e) => {
+    const left = e.inputBuffer.getChannelData(0);
+    const right = e.inputBuffer.getChannelData(1);
+    // Store interleaved float32
+    const interleaved = new Float32Array(left.length * 2);
+    for (let i = 0; i < left.length; i++) {
+      interleaved[i * 2] = left[i];
+      interleaved[i * 2 + 1] = right[i];
+    }
+    pcmChunks.push(interleaved);
+    pcmSampleCount += left.length;
+  };
+  gainNode.connect(scriptNode);
+  scriptNode.connect(audioCtx.destination); // must connect to keep it alive
+
+  addLog('WAV recorder ready (ScriptProcessor, float32 PCM)');
+
+  // 10. Play kick pattern: "x--x--x---x--x--" at 130 BPM
+  //     Each step = 0.25 beats = 0.25 * 60/130 seconds
+  const BPM = 130;
+  const STEP_SEC = 0.25 * 60 / BPM; // ~0.1154 seconds
+  const PATTERN = 'x--x--x---x--x--';
+  const LOOPS = 4; // play 4 loops of the pattern
+
+  // Start recording
+  recorder.start();
+  addLog('Recording started');
+
+  // Schedule kicks using setTimeout — simple, reliable, no OSC bundle timing issues.
+  // Each kick fires sonic.send() which goes to scsynth immediately.
+  // Timing precision: setTimeout has ~4ms jitter, but we're measuring LEVEL not timing.
+  const startDelay = 1000; // 1s lead time for recording to stabilize
+  let noteCount = 0;
+
+  for (let loop = 0; loop < LOOPS; loop++) {
+    for (let step = 0; step < PATTERN.length; step++) {
+      if (PATTERN[step] !== 'x') continue;
+
+      const delayMs = startDelay + (loop * PATTERN.length + step) * STEP_SEC * 1000;
+      const nodeId = sonic.nextNodeId();
+
+      setTimeout(() => {
+        sonic.send('/s_new',
+          'sonic-pi-basic_stereo_player', nodeId, 0, 100,
+          'buf', bufNum,
+          'amp', 1.5,
+          'lpf', 130,
+          'out_bus', 0,
+        );
+      }, delayMs);
+      noteCount++;
+    }
+  }
+
+  const totalDuration = LOOPS * PATTERN.length * STEP_SEC;
+  addLog('Scheduled ' + noteCount + ' kicks (' + LOOPS + ' loops of pattern)');
+  addLog('Pattern: ' + PATTERN + ' at ' + BPM + ' BPM');
+  addLog('Params: amp=1.5, lpf=130, out_bus=0 (desktop identical)');
+  addLog('Total playback: ' + totalDuration.toFixed(2) + 's + 1s lead');
+
+  // Let Playwright control when to stop via __rawOscTestStopSignal
+  window.__rawOscTestStopSignal = false;
+  window.__rawOscTestStopRecording = () => {
+    recorder.stop();
+    scriptNode.disconnect();
+
+    // Build WAV from PCM chunks
+    const totalSamples = pcmSampleCount;
+    const sampleRate = audioCtx.sampleRate;
+    const numChannels = 2;
+    const bitsPerSample = 16;
+    const dataSize = totalSamples * numChannels * (bitsPerSample / 8);
+    const wavSize = 44 + dataSize;
+    const wavBuf = new ArrayBuffer(wavSize);
+    const view = new DataView(wavBuf);
+
+    // WAV header
+    function writeString(offset, str) {
+      for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+    }
+    writeString(0, 'RIFF');
+    view.setUint32(4, wavSize - 8, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);           // PCM
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true);
+    view.setUint16(32, numChannels * (bitsPerSample / 8), true);
+    view.setUint16(34, bitsPerSample, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    // Write interleaved PCM samples (float32 → int16)
+    let offset = 44;
+    for (const chunk of pcmChunks) {
+      for (let i = 0; i < chunk.length; i++) {
+        const s = Math.max(-1, Math.min(1, chunk[i]));
+        view.setInt16(offset, s < 0 ? s * 32768 : s * 32767, true);
+        offset += 2;
+      }
+    }
+
+    // Convert to base64
+    const wavBytes = new Uint8Array(wavBuf);
+    let binary = '';
+    const cs = 8192;
+    for (let i = 0; i < wavBytes.length; i += cs) {
+      binary += String.fromCharCode(...wavBytes.subarray(i, Math.min(i + cs, wavBytes.length)));
+    }
+    window.__rawOscTestWav = btoa(binary);
+    addLog('WAV built: ' + totalSamples + ' samples, ' + sampleRate + 'Hz, ' + (totalSamples / sampleRate).toFixed(2) + 's');
+  };
+
+} catch (err) {
+  document.getElementById('log').textContent += '\nERROR: ' + err.message + '\n' + err.stack;
+  console.error('[RAW-OSC] Fatal:', err);
+}
+</script>
+</body>
+</html>

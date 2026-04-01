@@ -1,0 +1,17 @@
+Loading SuperSonic from CDN...
+SuperSonic module loaded
+scsynth WASM initialized (sampleRate=48000)
+Synthdefs loaded: basic_stereo_player, mixer
+Sample loaded: bd_tek (buf=0)
+scsynth synced
+Group structure created: synths(100) â†’ fx(101) â†’ mixer(11000)
+Mixer created: pre_amp=0.2, amp=6 (desktop identical)
+Audio routing: splitter â†’ merger(bus 0 L+R) â†’ gain(1.0) â†’ destination
+WAV recorder ready (ScriptProcessor, float32 PCM)
+Recording started
+Scheduled 20 kicks (4 loops of pattern)
+Pattern: x--x--x---x--x-- at 130 BPM
+Params: amp=1.5, lpf=130, out_bus=0 (desktop identical)
+Total playback: 7.38s + 1s lead
+WAV built: 454656 samples, 48000Hz, 9.47s
+Recording saved (119 KB)

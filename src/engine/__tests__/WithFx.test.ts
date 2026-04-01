@@ -23,12 +23,15 @@ function createMockBridge(): SuperSonicBridge & { calls: string[] } {
     calls,
     allocateBus() { const b = nextBus++; calls.push(`alloc:${b}`); return b },
     freeBus(n: number) { calls.push(`free:${n}`) },
-    async applyFx(name: string, params: Record<string, number>, inBus: number, outBus: number) {
+    async applyFx(name: string, _audioTime: number, params: Record<string, number>, inBus: number, outBus: number) {
       const id = nextNode++
       calls.push(`fx:${name}:in${inBus}:out${outBus}`)
       return id
     },
     freeNode(id: number) { calls.push(`freeNode:${id}`) },
+    createFxGroup() { const g = nextNode++; calls.push(`createGroup:${g}`); return g },
+    freeGroup(id: number) { calls.push(`freeGroup:${id}`) },
+    flushMessages() { calls.push('flush') },
     async triggerSynth(_name: string, _time: number, params: Record<string, number>) {
       return nextNode++
     },
@@ -37,6 +40,7 @@ function createMockBridge(): SuperSonicBridge & { calls: string[] } {
     },
     get audioContext() { return null as unknown as AudioContext },
     send(_addr: string, ..._args: (string | number)[]) {},
+    sendTimedControl(_time: number, _nodeId: number, _params: (string | number)[]) {},
   } as unknown as SuperSonicBridge & { calls: string[] }
 }
 
@@ -54,6 +58,7 @@ function makeAudioCtx(
     eventStream,
     schedAheadTime: 100,
     nodeRefMap,
+    reusableFx: new Map(),
   }
 }
 
@@ -86,6 +91,10 @@ describe('with_fx', () => {
     // FX bridge should have been called
     expect(bridge.calls).toContain('alloc:16')
     expect(bridge.calls).toContain('fx:reverb:in16:out0')
+    expect(bridge.calls).toContain('createGroup:5000')
+    // Group freeing is delayed by kill_delay (default 1s) — advance timers
+    await new Promise(r => setTimeout(r, 1100))
+    expect(bridge.calls).toContain('freeGroup:5000')
     expect(bridge.calls).toContain('free:16')
   })
 
