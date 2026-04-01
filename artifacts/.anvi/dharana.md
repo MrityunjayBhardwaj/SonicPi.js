@@ -106,6 +106,11 @@ HOW: Observation targets: verify task.virtualTime is monotonic after hot-swap. V
 - Code comments are CLAIMS, not EVIDENCE. A comment saying "Sonic Pi does X" must cite the source file and line.
 - When A/B spectrogram comparison shows temporal (not just level) differences, the param transformation pipeline is the first suspect.
 
+**Optimization bypass gate (SP18 prevention) → for this project:**
+- When adding a performance optimization to a hot path (rAF batching, object pooling, buffer reuse), **grep for ALL callers of the unoptimized path**. If any bypass the optimization (overflow, rebuild, error, edge-case paths), they become the new bottleneck.
+- Before investigating exotic causes (GC, WASM, SharedArrayBuffer), **measure the actual hot function** with `performance.now()`. If a function takes >1ms per call and runs 43+ times/sec, it's the bottleneck — regardless of how elegant the theory about V8 internals.
+- Progressive degradation that starts at a FIXED time (not proportional to complexity) is likely a BUFFER OVERFLOW path, not an accumulation of work.
+
 ### Observation Tools and Gaps
 
 | Assertion level | Tool | Status |
