@@ -429,7 +429,12 @@ export class SuperSonicBridge {
     this.sampleDurations.set(name, audioBuffer.duration)
   }
 
-  async triggerSynth(
+  /**
+   * Trigger a synth. Fast path: if synthdef already loaded, no async/await overhead.
+   * The await in ensureSynthDefLoaded creates a microtask yield even on cache hit,
+   * which at 43 events/sec causes significant event loop contention. See #71.
+   */
+  triggerSynth(
     synthName: string,
     audioTime: number,
     params: Record<string, number>
@@ -437,19 +442,37 @@ export class SuperSonicBridge {
     if (!this.sonic) throw new Error('SuperSonic not initialized')
 
     const fullName = synthName.startsWith('sonic-pi-') ? synthName : `sonic-pi-${synthName}`
-    await this.ensureSynthDefLoaded(fullName)
 
-    const nodeId = this.sonic.nextNodeId()
+    // Fast path: synthdef already loaded — skip async entirely
+    if (this.loadedSynthDefs.has(fullName)) {
+      return Promise.resolve(this.triggerSynthImmediate(fullName, audioTime, params))
+    }
+
+    // Slow path: load synthdef first (only happens once per synth name)
+    return this.ensureSynthDefLoaded(fullName).then(() =>
+      this.triggerSynthImmediate(fullName, audioTime, params)
+    )
+  }
+
+  private triggerSynthImmediate(
+    fullName: string,
+    audioTime: number,
+    params: Record<string, number>,
+  ): number {
+    const nodeId = this.sonic!.nextNodeId()
     const paramList: (string | number)[] = []
     for (const [key, value] of Object.entries(params)) {
       paramList.push(key, value)
     }
-
     this.queueMessage(audioTime, '/s_new', [fullName, nodeId, 0, 100, ...paramList])
     return nodeId
   }
 
-  async playSample(
+  /**
+   * Play a sample. Fast path: if sample + synthdef already loaded, no async overhead.
+   * See triggerSynth comment re: microtask yield cost at high event density (#71).
+   */
+  playSample(
     sampleName: string,
     audioTime: number,
     opts?: Record<string, number>,
@@ -457,13 +480,29 @@ export class SuperSonicBridge {
   ): Promise<number> {
     if (!this.sonic) throw new Error('SuperSonic not initialized')
 
-    const bufNum = await this.ensureSampleLoaded(sampleName)
-    const nodeId = this.sonic.nextNodeId()
+    const playerName = selectSamplePlayer(opts)
+    const bufNum = this.loadedSamples.get(sampleName)
 
-    // Duration is null on first play (async fetch in flight); exact from second play on.
+    // Fast path: sample loaded + synthdef loaded — skip async entirely
+    if (bufNum !== undefined && this.loadedSynthDefs.has(playerName)) {
+      return Promise.resolve(this.playSampleImmediate(sampleName, bufNum, playerName, audioTime, opts, bpm))
+    }
+
+    // Slow path: load sample/synthdef first (only happens once per sample name)
+    return this.playSampleSlow(sampleName, playerName, audioTime, opts, bpm)
+  }
+
+  private playSampleImmediate(
+    sampleName: string,
+    bufNum: number,
+    playerName: string,
+    audioTime: number,
+    opts?: Record<string, number>,
+    bpm?: number,
+  ): number {
+    const nodeId = this.sonic!.nextNodeId()
     const duration = this.sampleDurations.get(sampleName) ?? null
     const translated = translateSampleOpts(opts, bpm ?? 60, duration)
-    // SoundLayer: BPM-scale time params, inject env_curve for envelope samples, strip non-scsynth
     const params = normalizeSampleParams(translated, bpm ?? 60)
 
     const paramList: (string | number)[] = ['buf', bufNum]
@@ -471,17 +510,26 @@ export class SuperSonicBridge {
       paramList.push(key, value)
     }
 
-    // Select synthdef via SoundLayer (basic_stereo_player or stereo_player)
-    const playerName = selectSamplePlayer(opts)
-    if (playerName !== 'sonic-pi-basic_stereo_player') {
-      await this.ensureSynthDefLoaded(playerName)
-    }
-
     this.queueMessage(audioTime, '/s_new', [playerName, nodeId, 0, 100, ...paramList])
     return nodeId
   }
 
-  async applyFx(
+  private async playSampleSlow(
+    sampleName: string,
+    playerName: string,
+    audioTime: number,
+    opts?: Record<string, number>,
+    bpm?: number,
+  ): Promise<number> {
+    const bufNum = await this.ensureSampleLoaded(sampleName)
+    if (playerName !== 'sonic-pi-basic_stereo_player') {
+      await this.ensureSynthDefLoaded(playerName)
+    }
+    return this.playSampleImmediate(sampleName, bufNum, playerName, audioTime, opts, bpm)
+  }
+
+  /** Apply an FX. Fast path when synthdef already loaded. */
+  applyFx(
     fxName: string,
     audioTime: number,
     params: Record<string, number>,
@@ -490,15 +538,29 @@ export class SuperSonicBridge {
   ): Promise<number> {
     if (!this.sonic) throw new Error('SuperSonic not initialized')
 
-    const fullName = `sonic-pi-fx_${fxName}`
-    await this.ensureSynthDefLoaded(fullName)
+    const fullName = fxName.startsWith('sonic-pi-') ? fxName : `sonic-pi-fx_${fxName}`
 
-    const nodeId = this.sonic.nextNodeId()
+    if (this.loadedSynthDefs.has(fullName)) {
+      return Promise.resolve(this.applyFxImmediate(fullName, audioTime, params, inBus, outBus))
+    }
+
+    return this.ensureSynthDefLoaded(fullName).then(() =>
+      this.applyFxImmediate(fullName, audioTime, params, inBus, outBus)
+    )
+  }
+
+  private applyFxImmediate(
+    fullName: string,
+    audioTime: number,
+    params: Record<string, number>,
+    inBus: number,
+    outBus: number,
+  ): number {
+    const nodeId = this.sonic!.nextNodeId()
     const paramList: (string | number)[] = ['in_bus', inBus, 'out_bus', outBus]
     for (const [key, value] of Object.entries(params)) {
       paramList.push(key, value)
     }
-
     this.queueMessage(audioTime, '/s_new', [fullName, nodeId, 0, 101, ...paramList])
     return nodeId
   }

@@ -342,8 +342,7 @@ export class SonicPiEngine {
           // Enter per-loop scope so variable writes are isolated
           scopeHandle?.enterScope(name)
           try {
-            // Await in case builderFn is async (backward compat with old JS code)
-            await Promise.resolve(builderFn(builder))
+            builderFn(builder)
           } finally {
             scopeHandle?.exitScope()
           }
