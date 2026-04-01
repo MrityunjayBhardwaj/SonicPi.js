@@ -301,6 +301,60 @@ describe('Reference parity: Synth params match desktop Sonic Pi', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Parity tests: Synth default injection (#68)
+// ---------------------------------------------------------------------------
+
+describe('Reference parity: Synth defaults injected from synthinfo.rb', () => {
+  it('injects release:1 for standard synths when not set', () => {
+    // play 60 at 130 BPM — no explicit release.
+    // Desktop: injects release=1 (beat) → scales to 0.46s → sends explicitly.
+    // Without injection: scsynth uses compiled default 1.0s → note 2.17x too long.
+    const result = normalizePlayParams('beep', { note: 60 }, BPM)
+    expect(result.release).toBeCloseTo(1 * FACTOR, 10)
+  })
+
+  it('does NOT override user-provided release', () => {
+    const result = normalizePlayParams('beep', { note: 60, release: 2 }, BPM)
+    expect(result.release).toBeCloseTo(2 * FACTOR, 10) // user value, not default 1
+  })
+
+  it('gabberkick: uses per-synth overrides (release=0.02, not 1)', () => {
+    const result = normalizePlayParams('gabberkick', { note: 60 }, BPM)
+    expect(result.release).toBeCloseTo(0.02 * FACTOR, 10)
+    expect(result.attack).toBeCloseTo(0.001 * FACTOR, 10)
+    expect(result.decay).toBeCloseTo(0.01 * FACTOR, 10)
+    expect(result.sustain).toBeCloseTo(0.3 * FACTOR, 10)
+  })
+
+  it('dark_sea_horn: attack=1, release=4', () => {
+    const result = normalizePlayParams('dark_sea_horn', {}, BPM)
+    expect(result.attack).toBeCloseTo(1 * FACTOR, 10)
+    expect(result.release).toBeCloseTo(4 * FACTOR, 10)
+  })
+
+  it('mod_saw: injects mod_phase=0.25 and release=1', () => {
+    const result = normalizePlayParams('mod_saw', { note: 60 }, BPM)
+    expect(result.mod_phase).toBeCloseTo(0.25 * FACTOR, 10)
+    expect(result.release).toBeCloseTo(1 * FACTOR, 10)
+  })
+
+  it('sc808_bassdrum: decay=2 (no release)', () => {
+    const result = normalizePlayParams('sc808_bassdrum', {}, BPM)
+    expect(result.decay).toBeCloseTo(2 * FACTOR, 10)
+  })
+
+  it('at 60 BPM: defaults pass through unchanged', () => {
+    const result = normalizePlayParams('beep', { note: 60 }, 60)
+    expect(result.release).toBe(1) // 1 * 60/60 = 1
+  })
+
+  it('handles sonic-pi- prefix', () => {
+    const result = normalizePlayParams('sonic-pi-beep', { note: 60 }, BPM)
+    expect(result.release).toBeCloseTo(1 * FACTOR, 10)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Parity tests: Sample normalization
 // ---------------------------------------------------------------------------
 

@@ -31,13 +31,14 @@ const TIME_PARAMS = new Set([
   // tb303 filter envelope
   'cutoff_attack', 'cutoff_decay', 'cutoff_sustain', 'cutoff_release',
   // FX time params — tagged :bpm_scale => true in Sonic Pi's synthinfo.rb.
-  // Desktop Sonic Pi BPM-scales these via scale_time_args_to_bpm! in sound.rb.
   // echo/delay/ping_pong: phase, max_phase
   // slicer/wobble/tremolo/panslicer/ixi_techno/flanger: phase
   // flanger: delay
   'phase', 'max_phase',
   'pre_delay',
   'delay',
+  // Mod synths: modulation rate (mod_saw, mod_tri, mod_pulse, etc.)
+  'mod_phase',
 ])
 
 // ---------------------------------------------------------------------------
@@ -66,6 +67,70 @@ const FX_TIME_DEFAULTS: Record<string, Record<string, number>> = {
   tremolo:    { phase: 4 },
   ping_pong:  { phase: 0.25, max_phase: 1 },
   chorus:     { decay: 0.00001, max_phase: 1 },
+}
+
+// ---------------------------------------------------------------------------
+// Synth time-param defaults — from synthinfo.rb (force_add behavior)
+// ---------------------------------------------------------------------------
+
+/**
+ * Desktop Sonic Pi's scale_time_args_to_bpm! uses force_add=true for synths:
+ * for EVERY param tagged :bpm_scale => true, if not set by the user, the
+ * synthinfo.rb default is injected AND scaled. Without this, scsynth uses
+ * compiled defaults (in seconds). At 130 BPM, release:1 (beat) should become
+ * 0.46s but scsynth uses 1.0s — notes ring 2.17x too long.
+ *
+ * Only NON-ZERO defaults need injection (0 × factor = 0, a no-op).
+ * Source: synthinfo.rb per-synth class default values. See issue #68.
+ */
+
+/** Base defaults — apply to all synths unless overridden below. */
+const SYNTH_TIME_DEFAULTS_BASE: Record<string, number> = {
+  release: 1,
+}
+
+/** Per-synth overrides for non-standard ADSR/time defaults. */
+const SYNTH_TIME_DEFAULTS_OVERRIDE: Record<string, Record<string, number>> = {
+  dark_sea_horn:    { attack: 1, release: 4 },
+  growl:            { attack: 0.1, release: 1 },
+  hoover:           { attack: 0.05, release: 1 },
+  rhodey:           { attack: 0.001, decay: 1, release: 1 },
+  organ_tonewheel:  { attack: 0.01, sustain: 1, release: 0.01 },
+  gabberkick:       { attack: 0.001, decay: 0.01, sustain: 0.3, release: 0.02 },
+  singer:           { attack: 1, release: 4 },
+  kalimba:          { sustain: 4, release: 1 },
+  rodeo:            { decay: 1, sustain: 0.8, release: 1 },
+  zawa:             { phase: 1, release: 1 },
+  synth_violin:     { release: 1 },
+  piano:            { release: 1 },
+  pluck:            { release: 1 },
+  pretty_bell:      { release: 1 },
+  winwood_lead:     { release: 1 },
+  // Mod synths: mod_phase needs injection at non-60 BPM
+  mod_saw:          { release: 1, mod_phase: 0.25 },
+  mod_dsaw:         { release: 1, mod_phase: 0.25 },
+  mod_sine:         { release: 1, mod_phase: 0.25 },
+  mod_beep:         { release: 1, mod_phase: 0.25 },
+  mod_tri:          { release: 1, mod_phase: 0.25 },
+  mod_pulse:        { release: 1, mod_phase: 0.25 },
+  mod_fm:           { release: 1, mod_phase: 0.25 },
+  // SC808 drums — each has unique decay default (no release, decay controls length)
+  sc808_bassdrum:   { decay: 2 },
+  sc808_snare:      { decay: 4.2 },
+  sc808_clap:       {},  // no non-zero time defaults
+  sc808_open_hihat: { decay: 0.5 },
+  sc808_closed_hihat: { decay: 0.42 },
+  sc808_cowbell:    { decay: 9.5 },
+  sc808_tom_lo:     { decay: 4 },
+  sc808_tom_mid:    { decay: 16 },
+  sc808_tom_hi:     { decay: 11 },
+  sc808_maracas:    { decay: 0.1 },
+  sc808_claves:     { decay: 0.1 },
+  sc808_rimshot:    { decay: 0.07 },
+  sc808_open_cymbal: { decay: 2 },
+  sc808_conga_lo:   { decay: 18 },
+  sc808_conga_mid:  { decay: 9 },
+  sc808_conga_hi:   { decay: 6 },
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +188,11 @@ const SYNTH_ALIASES: Record<string, Array<[string, string]>> = {
 
 /**
  * Normalize synth params for play().
- * Full pipeline: strip → resolve → defaults → alias → munge → BPM scale.
+ * Full pipeline: sustain → slide → strip → resolve → inject defaults → alias → munge → BPM scale.
+ *
+ * Desktop Sonic Pi's scale_time_args_to_bpm! with force_add=true injects
+ * synthinfo.rb defaults for ALL bpm_scale params before scaling. Without this,
+ * scsynth uses compiled defaults (in seconds). See issue #68.
  */
 export function normalizePlayParams(
   synthName: string,
@@ -136,6 +205,7 @@ export function normalizePlayParams(
   p = stripNonScynthParams(p)
   p = resolveSymbolDefaults(p)
   p = injectMandatoryDefaults(p)
+  p = injectSynthTimeDefaults(synthName, p)
   p = aliasSynthParams(synthName, p)
   p = mungeSynthOpts(synthName, p)
   p = scaleTimeParamsToBpm(p, bpm)
@@ -276,6 +346,31 @@ function resolveSymbolDefaults(params: Record<string, number>): Record<string, n
 function injectMandatoryDefaults(params: Record<string, number>): Record<string, number> {
   if ('env_curve' in params) return params
   return { ...params, env_curve: 2 }
+}
+
+/**
+ * Step 3 (synths): Inject synthinfo.rb default values for BPM-scaled time params.
+ * Mirrors desktop's scale_time_args_to_bpm! with force_add=true.
+ * Only non-zero defaults need injection (0 × factor = 0).
+ * See issue #68.
+ */
+function injectSynthTimeDefaults(
+  synthName: string,
+  params: Record<string, number>,
+): Record<string, number> {
+  const name = synthName.replace(/^sonic-pi-/, '')
+  // Per-synth override replaces base entirely (e.g., gabberkick release=0.02, not 1).
+  // If no override exists, use base defaults (release:1 for most synths).
+  const defaults = SYNTH_TIME_DEFAULTS_OVERRIDE[name] ?? SYNTH_TIME_DEFAULTS_BASE
+
+  let p = params
+  for (const [key, val] of Object.entries(defaults)) {
+    if (!(key in p)) {
+      if (p === params) p = { ...params }
+      p[key] = val
+    }
+  }
+  return p
 }
 
 /**
