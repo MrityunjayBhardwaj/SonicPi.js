@@ -22,6 +22,9 @@ export class Console {
   private autoScroll = true
   private runCount = 0
   private startTime = 0
+  /** Pending entries waiting for next animation frame flush (#73 — DOM throttling). */
+  private pendingEntries: LogEntry[] = []
+  private rafScheduled = false
 
   constructor(container: HTMLElement) {
     this.el = document.createElement('div')
@@ -98,7 +101,7 @@ export class Console {
       this.rebuild()
       return
     }
-    this.appendLine(entry)
+    this.scheduleFlush(entry)
   }
 
   logEvent(type: string, detail: string, audioTime?: number): void {
@@ -115,7 +118,32 @@ export class Console {
       this.rebuild()
       return
     }
-    this.appendLine(entry)
+    this.scheduleFlush(entry)
+  }
+
+  /**
+   * Batch DOM updates to requestAnimationFrame — prevents 250+ DOM mutations
+   * per second from blocking the main thread. See issue #73.
+   */
+  private scheduleFlush(entry: LogEntry): void {
+    this.pendingEntries.push(entry)
+    if (!this.rafScheduled) {
+      this.rafScheduled = true
+      requestAnimationFrame(() => {
+        this.rafScheduled = false
+        // Use DocumentFragment to batch all appends into one reflow
+        const fragment = document.createDocumentFragment()
+        for (const e of this.pendingEntries) {
+          fragment.appendChild(this.createLine(e))
+        }
+        this.body.appendChild(fragment)
+        this.pendingEntries.length = 0
+        // Auto-scroll after batch
+        if (this.autoScroll) {
+          this.body.scrollTop = this.body.scrollHeight
+        }
+      })
+    }
   }
 
   logError(title: string, message: string): void {
@@ -136,6 +164,13 @@ export class Console {
   }
 
   private appendLine(entry: LogEntry): void {
+    this.body.appendChild(this.createLine(entry))
+    if (this.autoScroll) {
+      this.body.scrollTop = this.body.scrollHeight
+    }
+  }
+
+  private createLine(entry: LogEntry): HTMLDivElement {
     const line = document.createElement('div')
     line.style.cssText = `
       padding: 0.1rem 0.6rem;
@@ -185,11 +220,7 @@ export class Console {
 
     content.textContent = entry.text
     line.appendChild(content)
-    this.body.appendChild(line)
-
-    if (this.autoScroll) {
-      this.body.scrollTop = this.body.scrollHeight
-    }
+    return line
   }
 
   private rebuild(): void {
