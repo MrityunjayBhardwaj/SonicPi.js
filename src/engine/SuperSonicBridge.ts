@@ -465,7 +465,47 @@ export class SuperSonicBridge {
       paramList.push(key, value)
     }
     this.queueMessage(audioTime, '/s_new', [fullName, nodeId, 0, 100, ...paramList])
+
+    // Schedule node free after expected duration (#73).
+    // Params are already BPM-scaled (in seconds) at this point.
+    // Duration = attack + decay + sustain + release + safety margin.
+    // Without this, nodes rely solely on synthdef doneAction:2 which
+    // may not fire if the envelope doesn't reach its end (e.g., long sustain).
+    this.scheduleNodeFree(nodeId, audioTime, params)
+
     return nodeId
+  }
+
+  /**
+   * Schedule /n_free for a synth node after its expected lifetime.
+   * This ensures nodes are freed even if doneAction:2 doesn't fire,
+   * keeping the concurrent node count bounded. See issue #73.
+   */
+  private scheduleNodeFree(
+    nodeId: number,
+    audioTime: number,
+    params: Record<string, number>,
+  ): void {
+    // Compute expected note duration from ADSR envelope (already in seconds)
+    const attack = params.attack ?? 0
+    const decay = params.decay ?? 0
+    const sustain = params.sustain ?? 0
+    const release = params.release ?? 1
+    const duration = attack + decay + sustain + release
+
+    // Safety margin: 0.1s extra to let the envelope fully complete
+    const freeTime = audioTime + duration + 0.1
+
+    // Use setTimeout relative to current audio time
+    const audioCtx = this.sonic?.audioContext
+    if (!audioCtx) return
+    const delayMs = (freeTime - audioCtx.currentTime) * 1000
+    if (delayMs <= 0) return // already past
+
+    setTimeout(() => {
+      // Send immediate /n_free (no timetag needed — node should be done)
+      this.sonic?.send('/n_free', nodeId)
+    }, delayMs)
   }
 
   /**
@@ -511,7 +551,52 @@ export class SuperSonicBridge {
     }
 
     this.queueMessage(audioTime, '/s_new', [playerName, nodeId, 0, 100, ...paramList])
+
+    // Schedule node free after expected sample duration (#73)
+    this.scheduleSampleNodeFree(nodeId, sampleName, audioTime, params)
+
     return nodeId
+  }
+
+  /**
+   * Schedule /n_free for a sample node after its expected playback duration.
+   * Sample duration = (sample_length / rate) + release + safety margin.
+   */
+  private scheduleSampleNodeFree(
+    nodeId: number,
+    sampleName: string,
+    audioTime: number,
+    params: Record<string, number>,
+  ): void {
+    const sampleDur = this.sampleDurations.get(sampleName) ?? null
+    const rate = Math.abs(params.rate ?? 1)
+    const finish = params.finish ?? 1
+    const start = params.start ?? 0
+    const release = params.release ?? 0
+    const attack = params.attack ?? 0
+    const sustain = params.sustain ?? 0
+
+    let playDuration: number
+    if (sustain > 0 && sustain < 100) {
+      // Explicit sustain — total = attack + sustain + release
+      playDuration = attack + sustain + release
+    } else if (sampleDur !== null && rate > 0) {
+      // Compute from sample length and rate
+      playDuration = (sampleDur * (finish - start)) / rate + release
+    } else {
+      // Fallback: 2 seconds (short enough to not accumulate, long enough for most samples)
+      playDuration = 2.0
+    }
+
+    const freeTime = audioTime + playDuration + 0.1
+    const audioCtx = this.sonic?.audioContext
+    if (!audioCtx) return
+    const delayMs = (freeTime - audioCtx.currentTime) * 1000
+    if (delayMs <= 0) return
+
+    setTimeout(() => {
+      this.sonic?.send('/n_free', nodeId)
+    }, delayMs)
   }
 
   private async playSampleSlow(
