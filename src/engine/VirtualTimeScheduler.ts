@@ -331,35 +331,73 @@ export class VirtualTimeScheduler {
   // Start / Stop
   // ---------------------------------------------------------------------------
 
-  /** Start the tick timer. Loops are already running (suspended at sleep). */
+  /**
+   * Start the tick timer. Loops are already running (suspended at sleep).
+   *
+   * Uses self-scheduling setTimeout instead of setInterval to compensate
+   * for time spent in tick + microtask processing. setInterval(25ms) fires
+   * at fixed wall-clock intervals but doesn't account for callback duration —
+   * if tick + microtasks take 30ms, the next tick fires at 55ms (not 25ms).
+   * Self-scheduling subtracts elapsed time so ticks stay on-grid. See #71.
+   */
   start(): void {
     if (this._running) return
     this._running = true
-    this.tickTimer = setInterval(() => this.tick(), this.tickInterval)
+    this.scheduleTick()
+  }
+
+  /** Wall-clock time when the next tick was expected to fire. */
+  private nextTickTarget = 0
+
+  /** Self-scheduling tick — compensates for elapsed time to prevent drift. */
+  private scheduleTick(): void {
+    if (!this._running) return
+    const now = performance.now()
+    if (this.nextTickTarget === 0) {
+      this.nextTickTarget = now + this.tickInterval
+    }
+    // How late are we? If microtasks delayed us, nextTickTarget is in the past.
+    const delay = Math.max(1, this.nextTickTarget - now)
+    this.tickTimer = setTimeout(() => {
+      if (!this._running) return
+      this.tick()
+      // Advance target by one interval from where it SHOULD have been,
+      // not from now — this prevents cumulative drift from jitter.
+      this.nextTickTarget += this.tickInterval
+      // If we're more than 2 intervals behind, snap to now (catch up, don't stack)
+      const catchup = performance.now()
+      if (this.nextTickTarget < catchup - this.tickInterval) {
+        this.nextTickTarget = catchup + this.tickInterval
+      }
+      this.scheduleTick()
+    }, delay)
   }
 
   /** Pause the tick timer without stopping tasks. Used during hot-swap. */
   pauseTick(): void {
     if (this.tickTimer !== null) {
-      clearInterval(this.tickTimer)
+      clearTimeout(this.tickTimer)
       this.tickTimer = null
     }
+    this.nextTickTarget = 0
   }
 
   /** Resume the tick timer after a pause. */
   resumeTick(): void {
     if (this.tickTimer !== null) return // already running
     if (!this._running) return
-    this.tickTimer = setInterval(() => this.tick(), this.tickInterval)
+    this.nextTickTarget = 0 // reset so scheduleTick re-anchors
+    this.scheduleTick()
   }
 
   stop(): void {
     this._running = false
 
     if (this.tickTimer !== null) {
-      clearInterval(this.tickTimer)
+      clearTimeout(this.tickTimer)
       this.tickTimer = null
     }
+    this.nextTickTarget = 0
 
     // Mark all tasks as not running — breaks their while loops
     for (const task of this.tasks.values()) {
