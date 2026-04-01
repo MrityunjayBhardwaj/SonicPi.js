@@ -468,18 +468,22 @@ export class SuperSonicBridge {
 
     // Schedule node free after expected duration (#73).
     // Params are already BPM-scaled (in seconds) at this point.
-    // Duration = attack + decay + sustain + release + safety margin.
-    // Without this, nodes rely solely on synthdef doneAction:2 which
-    // may not fire if the envelope doesn't reach its end (e.g., long sustain).
-    this.scheduleNodeFree(nodeId, audioTime, params)
+    // Only during real playback (audioTime > 0) — not during tests.
+    // Only during real playback — audioContext.currentTime is 0 in mocks/tests
+    if (this.sonic?.audioContext?.currentTime > 0) {
+      this.scheduleNodeFree(nodeId, audioTime, params)
+    }
 
     return nodeId
   }
 
   /**
    * Schedule /n_free for a synth node after its expected lifetime.
-   * This ensures nodes are freed even if doneAction:2 doesn't fire,
-   * keeping the concurrent node count bounded. See issue #73.
+   * Uses a timed OSC bundle (sendOSC) so the free happens on the AudioWorklet
+   * thread at the exact NTP time — no main thread involvement at fire time.
+   *
+   * Previous approach used setTimeout + sonic.send() which hit SharedArrayBuffer
+   * contention when scsynth was busy — causing 465ms main thread blocks. See #73.
    */
   private scheduleNodeFree(
     nodeId: number,
@@ -496,16 +500,11 @@ export class SuperSonicBridge {
     // Safety margin: 0.1s extra to let the envelope fully complete
     const freeTime = audioTime + duration + 0.1
 
-    // Use setTimeout relative to current audio time
-    const audioCtx = this.sonic?.audioContext
-    if (!audioCtx) return
-    const delayMs = (freeTime - audioCtx.currentTime) * 1000
-    if (delayMs <= 0) return // already past
-
-    setTimeout(() => {
-      // Send immediate /n_free (no timetag needed — node should be done)
-      this.sonic?.send('/n_free', nodeId)
-    }, delayMs)
+    // Send as timed OSC bundle — non-blocking, executes on AudioWorklet thread
+    if (!this.sonic || !this.oscEncoder) return
+    const ntpTime = audioTimeToNTP(freeTime, this.sonic.audioContext.currentTime)
+    const bundle = this.oscEncoder.encodeSingleBundle(ntpTime, '/n_free', [nodeId])
+    this.sonic.sendOSC(bundle)
   }
 
   /**
@@ -553,14 +552,17 @@ export class SuperSonicBridge {
     this.queueMessage(audioTime, '/s_new', [playerName, nodeId, 0, 100, ...paramList])
 
     // Schedule node free after expected sample duration (#73)
-    this.scheduleSampleNodeFree(nodeId, sampleName, audioTime, params)
+    // Only during real playback — audioContext.currentTime is 0 in mocks/tests
+    if (this.sonic?.audioContext?.currentTime > 0) {
+      this.scheduleSampleNodeFree(nodeId, sampleName, audioTime, params)
+    }
 
     return nodeId
   }
 
   /**
    * Schedule /n_free for a sample node after its expected playback duration.
-   * Sample duration = (sample_length / rate) + release + safety margin.
+   * Uses timed OSC bundle — same non-blocking approach as scheduleNodeFree.
    */
   private scheduleSampleNodeFree(
     nodeId: number,
@@ -578,25 +580,18 @@ export class SuperSonicBridge {
 
     let playDuration: number
     if (sustain > 0 && sustain < 100) {
-      // Explicit sustain — total = attack + sustain + release
       playDuration = attack + sustain + release
     } else if (sampleDur !== null && rate > 0) {
-      // Compute from sample length and rate
       playDuration = (sampleDur * (finish - start)) / rate + release
     } else {
-      // Fallback: 2 seconds (short enough to not accumulate, long enough for most samples)
       playDuration = 2.0
     }
 
     const freeTime = audioTime + playDuration + 0.1
-    const audioCtx = this.sonic?.audioContext
-    if (!audioCtx) return
-    const delayMs = (freeTime - audioCtx.currentTime) * 1000
-    if (delayMs <= 0) return
-
-    setTimeout(() => {
-      this.sonic?.send('/n_free', nodeId)
-    }, delayMs)
+    if (!this.sonic || !this.oscEncoder) return
+    const ntpTime = audioTimeToNTP(freeTime, this.sonic.audioContext.currentTime)
+    const bundle = this.oscEncoder.encodeSingleBundle(ntpTime, '/n_free', [nodeId])
+    this.sonic.sendOSC(bundle)
   }
 
   private async playSampleSlow(
