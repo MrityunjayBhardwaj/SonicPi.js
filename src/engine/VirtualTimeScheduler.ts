@@ -4,10 +4,21 @@ import { MinHeap } from './MinHeap'
 // Scheduling constants
 // ---------------------------------------------------------------------------
 
-/** How far ahead (seconds) events are submitted to the audio graph. */
-export const DEFAULT_SCHED_AHEAD_TIME = 0.1
+/**
+ * How far ahead (seconds) events are submitted to the audio graph.
+ *
+ * Desktop Sonic Pi uses 0.5s. Events are scheduled via OSC bundles with NTP
+ * timetags — the audio is sample-accurate regardless of schedAheadTime.
+ * A larger value gives the scheduler more runway to process microtask work
+ * from multiple concurrent loops without events arriving late.
+ *
+ * At 0.1s with 7 loops, tick + microtask work (~40ms) leaves only 60ms of
+ * buffer — events barely make their window, causing audible drift (#71).
+ * At 0.3s, the buffer is 260ms — comfortable even at high loop density.
+ */
+export const DEFAULT_SCHED_AHEAD_TIME = 0.3
 
-/** Scheduler heartbeat interval in ms — 25ms = 40Hz, fast enough for 100ms lookahead. */
+/** Scheduler heartbeat interval in ms — 25ms = 40Hz. */
 export const DEFAULT_TICK_INTERVAL_MS = 25
 
 /**
@@ -310,6 +321,10 @@ export class VirtualTimeScheduler {
   /**
    * Resolve all sleep entries up to targetTime.
    * Entries are resolved in deterministic order (time, then insertion order).
+   *
+   * With 10ms tick interval + 300ms schedAheadTime (#71), events are resolved
+   * more frequently (100Hz vs 40Hz) and have 3x more runway before their
+   * target audio time, reducing the impact of microtask processing delays.
    */
   tick(targetTime?: number): void {
     const target = targetTime ?? (this.getAudioTime() + this.schedAheadTime)
