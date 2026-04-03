@@ -344,8 +344,12 @@ function resolveSymbolDefaults(params: Record<string, number>): Record<string, n
  * env_curve: compiled default is 1 (linear), Sonic Pi sends 2 (exponential).
  */
 function injectMandatoryDefaults(params: Record<string, number>): Record<string, number> {
-  if ('env_curve' in params) return params
-  return { ...params, env_curve: 2 }
+  // SP22 fix: Do NOT inject env_curve: 2 (exponential envelope).
+  // SuperSonic's WASM scsynth produces zero audio when env_curve: 2 is sent with
+  // overlapping synth nodes. The compiled default (env_curve: 1, linear) works.
+  // This is a minor timbre difference from Desktop Sonic Pi (which uses exponential).
+  // Filed upstream — remove this workaround when SuperSonic fixes env_curve: 2.
+  return params
 }
 
 /**
@@ -407,7 +411,7 @@ function injectSampleDefaults(params: Record<string, number>): Record<string, nu
     'sustain' in params || 'release' in params
   if (hasEnvelope) {
     const p = { ...params }
-    if (!('env_curve' in p)) p.env_curve = 2
+    // SP22: env_curve: 2 injection disabled — causes silence in WASM scsynth
     if (!('pre_amp' in p)) p.pre_amp = 1
     return p
   }

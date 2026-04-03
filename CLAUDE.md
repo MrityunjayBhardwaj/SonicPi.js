@@ -11,6 +11,18 @@ This has never been done before. You are building the first one.
 5. `artifacts/ref/RESEARCH_SUPERSONIC.md` — SuperSonic (scsynth WASM) API reference
 6. `artifacts/ref/RESEARCH_MATH_FOUNDATIONS.md` — Formal math (temporal monad, free monad, stratified isomorphism)
 
+### Ground Truth Documents (code-level pipeline traces with file:line citations)
+7. `artifacts/ref/GROUND_TRUTH_SONIC_PI_WEB.md` — **Our engine** end-to-end: Ruby code → transpile → sandbox → ProgramBuilder → AudioInterpreter → SoundLayer → OSC → audio
+8. `artifacts/ref/GROUND_TRUTH_SUPERSONIC.md` — SuperSonic end-to-end: send() → transport → AudioWorklet → WASM → audio
+9. `artifacts/ref/GROUND_TRUTH_DESKTOP_SP.md` — Desktop Sonic Pi end-to-end: eval → normalize → sleep → OSC → scsynth
+10. `artifacts/ref/GROUND_TRUTH_SONIC_TAU.md` — Sonic Tau end-to-end: editor → compiler → SPSC → AudioWorklet VM → OSC → audio
+11. `artifacts/ref/GROUND_TRUTH_META_PROMPT.md` — The meta-prompt that generated Ground Truth docs
+
+### Reference Source Code (downloaded locally)
+- `artifacts/ref/sources/supersonic/` — SuperSonic JS source from GitHub (22 files, ~11K lines)
+- `artifacts/ref/sources/desktop-sp/` — Desktop Sonic Pi Ruby source (7 files, ~17K lines)
+- `artifacts/ref/sources/sonic-tau/` — Sonic Tau demo JS source (7 files, ~25K lines)
+
 ### The Core Innovation
 `sleep()` returns a Promise that ONLY the VirtualTimeScheduler can resolve.
 This gives JavaScript cooperative concurrency with virtual time.
@@ -121,13 +133,60 @@ The capture tool records audio via Rec button in Chromium and analyzes the WAV:
 
 ---
 
+## Grounded Debugging Methodology
+
+### Two-Track Grounding
+
+**Internal (our code):** Catalogue entries describe our own patterns, invariants, lifecycles.
+```
+Catalogue entry (compact)     ← hetvabhasa, vyapti, krama, dharana
+    ↓ REF: our-file.ts:line
+Our source code (ground truth) ← src/engine/
+    ↓ traced in
+GROUND_TRUTH_SONIC_PI_WEB.md  ← full pipeline trace with file:line citations
+```
+
+**External (reference systems):** Ground Truth docs for systems we depend on or model after.
+```
+GROUND_TRUTH_SUPERSONIC.md    ← SuperSonic pipeline (external, opaque past WASM)
+GROUND_TRUTH_DESKTOP_SP.md    ← Desktop Sonic Pi pipeline (the reference we match)
+GROUND_TRUTH_SONIC_TAU.md     ← Sonic Tau pipeline (comparison architecture)
+    ↓ cite
+External source code          ← artifacts/ref/sources/{supersonic,desktop-sp,sonic-tau}/
+```
+
+Catalogue REFs point to our own source. External GT docs are consulted on demand when verifying parity claims or debugging at system boundaries. If a catalogue entry lacks a REF, it is ungrounded — add one.
+
+### The Rule: Source Code First, Hypothesis Second
+Before forming ANY hypothesis about a bug:
+1. Read the relevant Ground Truth document (internal: `GROUND_TRUTH_SONIC_PI_WEB.md`, external: the relevant system's GT doc)
+2. Cite the specific code block supporting your hypothesis
+3. If no Ground Truth doc covers the area, create one using `artifacts/ref/GROUND_TRUTH_META_PROMPT.md`
+
+### Provenance Chain (every fix must trace back)
+```
+Fix → Experiment that proved it → Hypothesis → Source code line (cited in GT doc)
+```
+If any link is missing, the fix is ungrounded.
+
+### When to Save Insights to Catalogues
+Save ONLY when a finding:
+1. Contradicts a current catalogue entry (update immediately)
+2. Reveals a new error pattern with REF to Ground Truth (add to hetvabhasa)
+3. Confirms or refutes an invariant with REF to Ground Truth (update vyapti)
+Do NOT save routine experiment results. Save ONLY high-entropy findings that change the worldview.
+
+---
+
 ## Project Catalogues
 
 Location: `artifacts/.anvi/`
-- `hetvabhasa.md` — 14 error patterns
-- `vyapti.md` — 13 invariants (SV12 and SV13 are NOT YET IMPLEMENTED)
-- `krama.md` — 9 lifecycle patterns
-- `dharana.md` — 4 boundaries, invariant spans, org health, composition pairs
+- `hetvabhasa.md` — 22 error patterns (SP1-SP22), each with REF to our source code
+- `vyapti.md` — 15 invariants (SV15 NOT YET IMPLEMENTED — cold-start warmup)
+- `krama.md` — 10 lifecycle patterns (SK10 = cross-platform cold-start comparison)
+- `dharana.md` — 5 boundaries (B5 = init↔AudioWorklet stability), invariant spans, org health
+
+Catalogue REFs point to our own `src/engine/*.ts` files. For the full pipeline trace, read `GROUND_TRUTH_SONIC_PI_WEB.md`. For external system behavior, consult the external GT docs.
 
 ### Dhyana — Active During SoundLayer Work
 
@@ -162,10 +221,12 @@ Location: `artifacts/.anvi/`
 
 5. **scsynth group execution order matters.** Synths → FX → mixer must execute in that order. Groups at "head" execute first. `ReplaceOut` overwrites, `Out` adds. Getting the order wrong means the mixer processes an empty bus.
 
-6. **Code comments about desktop behavior are claims, not evidence.** The comment "Sonic Pi passes arg_bpm_scaling: false for FX" was wrong — desktop DOES BPM-scale FX time params (phase, decay, max_phase). This wrong assumption propagated into unit tests and catalogues, passing CI while producing incorrect audio. **Before writing "matches desktop Sonic Pi"**, verify against the actual source: `synthinfo.rb` for `:bpm_scale` tags, `sound.rb` for the normalization chain. When A/B spectrogram comparison shows temporal (not just level) differences, the param transformation pipeline is the first suspect.
+6. **Code comments about desktop behavior are claims, not evidence.** The comment "Sonic Pi passes arg_bpm_scaling: false for FX" was wrong — desktop DOES BPM-scale FX time params (phase, decay, max_phase). This wrong assumption propagated into unit tests and catalogues, passing CI while producing incorrect audio. **Before writing "matches desktop Sonic Pi"**, verify against the actual source: `synthinfo.rb` for `:bpm_scale` tags, `sound.rb` for the normalization chain. When A/B spectrogram comparison shows temporal (not just level) differences, the param transformation pipeline is the first suspect. Similarly, `env_curve: 2` injection to match Desktop SP causes silence in WASM scsynth for overlapping nodes — the WASM build handles this parameter differently from native scsynth.
 
 7. **Temporal structure reveals param bugs that level analysis misses.** RMS and peak comparisons showed the clap+FX was "1.8x louder" but didn't reveal WHY. Spectrogram analysis showed the echo timing pattern was completely different — echoes at 250ms instead of 115ms. This pointed directly at FX BPM scaling. When spectrograms match in frequency content but differ in temporal pattern, check time-based param handling.
 
 8. **Check ALL code paths when adding optimizations — especially overflow/error paths.** Adding rAF batching to Console.log() fixed the normal path but missed Console.rebuild() which ran on buffer overflow — recreating 500 DOM elements synchronously. 12 experiments investigated exotic causes before finding the bypass. **Rule: grep for ALL callers of the unoptimized function.** Full case study: `artifacts/ref/CASE_STUDY_PERFORMANCE_INVESTIGATION.md`
 
 9. **Measure the actual hot function before theorizing.** A single `performance.now()` wrapper would have found the bottleneck in minutes. Profile first, theorize second.
+
+10. **Diff message content before investigating execution context.** The silent prophet bug was attributed to WASM AudioWorklet cold-start timing (SP22 v2) after 9 experiments. The actual cause was `env_curve: 2` injection by SoundLayer — a parameter that was present in engine messages but absent in raw test messages. When path A works and path B doesn't, diff the CONTENT at the boundary before diffing the CONTEXT. The investigation's raw tests lacked env_curve, so they worked — but the conclusion blamed execution context instead of message content.

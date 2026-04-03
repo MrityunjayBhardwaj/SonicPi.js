@@ -129,10 +129,12 @@ describe('symbol resolution', () => {
 // env_curve injection (G_NEW.13)
 // ---------------------------------------------------------------------------
 
-describe('env_curve injection', () => {
-  it('injects env_curve: 2 for synths when not set', () => {
+describe('env_curve injection — DISABLED (SP22 workaround)', () => {
+  // SP22: WASM scsynth produces silence when env_curve: 2 is sent with overlapping
+  // synth nodes. Injection disabled until upstream SuperSonic fix.
+  it('does NOT inject env_curve (uses compiled default 1/linear)', () => {
     const p = normalizePlayParams('beep', { note: 60 }, 60)
-    expect(p.env_curve).toBe(2)
+    expect(p.env_curve).toBeUndefined()
   })
 
   it('preserves explicit env_curve from user', () => {
@@ -140,9 +142,9 @@ describe('env_curve injection', () => {
     expect(p.env_curve).toBe(1)
   })
 
-  it('injects env_curve for samples with envelope params', () => {
+  it('does not inject env_curve for samples', () => {
     const p = normalizeSampleParams({ attack: 0.1, release: 0.5 }, 60)
-    expect(p.env_curve).toBe(2)
+    expect(p.env_curve).toBeUndefined()
   })
 
   it('does NOT inject env_curve for simple samples (no ADSR)', () => {

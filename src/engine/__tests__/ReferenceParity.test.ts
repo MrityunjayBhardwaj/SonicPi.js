@@ -281,9 +281,9 @@ describe('Reference parity: Synth params match desktop Sonic Pi', () => {
 
   it('env_curve is NOT BPM-scaled (it is a shape index, not time)', () => {
     // Source: synthinfo.rb — env_curve has no :bpm_scale tag
-    // Our injected default (env_curve: 2) must NOT be scaled
-    const result = normalizePlayParams('beep', { release: 1 }, BPM)
-    expect(result.env_curve).toBe(2)      // injected, not scaled
+    // env_curve injection disabled (SP22 workaround) — test with explicit user value
+    const result = normalizePlayParams('beep', { release: 1, env_curve: 2 }, BPM)
+    expect(result.env_curve).toBe(2)      // preserved from user, not scaled
     expect(result.release).toBeCloseTo(FACTOR, 10) // scaled
   })
 
