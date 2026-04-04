@@ -477,4 +477,24 @@ describe('selectSamplePlayer', () => {
   it('returns stereo_player for compress', () => {
     expect(selectSamplePlayer({ compress: 1 })).toBe('sonic-pi-stereo_player')
   })
+
+  it('returns basic for cutoff + rate + amp (all simple)', () => {
+    expect(selectSamplePlayer({ cutoff: 110, rate: 1.5, amp: 2 })).toBe('sonic-pi-basic_stereo_player')
+  })
+
+  it('returns basic for ADSR params (simple per Desktop SP)', () => {
+    expect(selectSamplePlayer({ attack: 0.5, release: 2 })).toBe('sonic-pi-basic_stereo_player')
+  })
+
+  it('returns basic for beat_stretch (simple per Desktop SP)', () => {
+    expect(selectSamplePlayer({ beat_stretch: 4 })).toBe('sonic-pi-basic_stereo_player')
+  })
+
+  it('returns stereo_player for window_size (granular)', () => {
+    expect(selectSamplePlayer({ window_size: 0.1 })).toBe('sonic-pi-stereo_player')
+  })
+
+  it('returns stereo_player for norm', () => {
+    expect(selectSamplePlayer({ norm: 1 })).toBe('sonic-pi-stereo_player')
+  })
 })

@@ -585,16 +585,40 @@ export function translateSampleOpts(
 // Sample player selection
 // ---------------------------------------------------------------------------
 
-/** Complex opts that require stereo_player instead of basic_stereo_player. */
-const COMPLEX_SAMPLE_KEYS = new Set(['pitch', 'compress', 'norm', 'window_size', 'start', 'finish'])
+/**
+ * Simple sampler args — from Desktop SP sound.rb:75 @simple_sampler_args.
+ * If ALL user opts are in this set → basic_stereo_player.
+ * If ANY opt is NOT in this set → stereo_player (supports pitch, start/finish, compress, etc.)
+ *
+ * This matches Desktop SP's logic: default to basic, upgrade to complex only when needed.
+ * REF: sound.rb:75 @simple_sampler_args, sound.rb:3462 complex_sampler_args?
+ */
+const SIMPLE_SAMPLER_ARGS = new Set([
+  'amp', 'amp_slide', 'amp_slide_shape', 'amp_slide_curve',
+  'pan', 'pan_slide', 'pan_slide_shape', 'pan_slide_curve',
+  'cutoff', 'cutoff_slide', 'cutoff_slide_shape', 'cutoff_slide_curve',
+  'lpf', 'lpf_slide', 'lpf_slide_shape', 'lpf_slide_curve',
+  'hpf', 'hpf_slide', 'hpf_slide_shape', 'hpf_slide_curve',
+  'rate', 'slide', 'beat_stretch', 'rpitch',
+  'attack', 'decay', 'sustain', 'release',
+  'attack_level', 'decay_level', 'sustain_level', 'env_curve',
+  // Internal params (stripped before sending to scsynth)
+  'on', 'duration', 'pitch_stretch',
+  // Our internal params
+  '_srcLine', 'out_bus',
+])
 
 /**
  * Select the appropriate sample player synthdef.
- * basic_stereo_player for simple opts, stereo_player for complex.
+ * Matches Desktop SP's complex_sampler_args? logic (sound.rb:3462):
+ * basic_stereo_player if ALL keys are simple, stereo_player if ANY key is complex.
  */
 export function selectSamplePlayer(opts?: Record<string, number>): string {
-  if (opts && Array.from(COMPLEX_SAMPLE_KEYS).some(k => k in opts)) {
-    return 'sonic-pi-stereo_player'
+  if (!opts) return 'sonic-pi-basic_stereo_player'
+  for (const key of Object.keys(opts)) {
+    if (!SIMPLE_SAMPLER_ARGS.has(key)) {
+      return 'sonic-pi-stereo_player'
+    }
   }
   return 'sonic-pi-basic_stereo_player'
 }

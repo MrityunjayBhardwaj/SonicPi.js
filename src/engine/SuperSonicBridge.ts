@@ -105,6 +105,7 @@ const COMMON_SYNTHDEFS = [
   'sonic-pi-pretty_bell',
   'sonic-pi-piano',
   'sonic-pi-basic_stereo_player',
+  'sonic-pi-stereo_player',
 ]
 
 
