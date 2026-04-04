@@ -802,17 +802,15 @@ function transpileExpression(expr: string): string {
   })
   result = result.replace(/#\{/g, '${')
 
-  // ring, knit, range, line, spread, chord, scale, note, note_range, chord_invert, chord_degree, degree, chord_names, scale_names → b.*
-  result = result.replace(/\b(ring|knit|range|line|spread|chord_degree|chord_invert|chord_names|chord|scale_names|scale|note_range|note|degree)\s*\(/g, 'b.$1(')
-  // Without parens: ring 1, 2, 3 — also handles (ring/scale/chord/knit ...) wrapping
-  // Matches: `(scale :c4, :major)`, `(chord :e4, :min)`, `(knit :a, 3, :b, 1)`
+  // ALL ProgramBuilder functions that need b.* prefix in expressions.
+  // Single authoritative list — derived from ProgramBuilder's public methods.
+  // These get b. prefix when called with parens: func(...) → b.func(...)
+  const EXPR_BUILDER_FNS = 'ring|knit|range|line|spread|chord_degree|chord_invert|chord_names|chord|scale_names|scale|note_range|note|degree|rrand_i|rrand|rdist|rand_i|rand|choose|dice|one_in|hz_to_midi|midi_to_hz|quantise|quantize|octs|bools|pick|shuffle|factor_q'
+  result = result.replace(new RegExp(`\\b(${EXPR_BUILDER_FNS})\\s*\\(`, 'g'), 'b.$1(')
+  // Without parens: (scale :c4, :major), (chord :e4, :min), (knit :a, 3, :b, 1), (ring 1, 2, 3)
   result = result.replace(/(?<=\(|^)(ring|spread|scale|chord|knit|range|line)\s+([^(].+?)(?=\)|$)/g, 'b.$1($2)')
-  // Bare note/chord_degree/degree without parens: `note n` → `b.note(n)`, `chord_degree d, n, s, 3` → `b.chord_degree(d, n, s, 3)`
-  // Only match when followed by a variable/symbol/number (word char or "), not inside strings
+  // Bare note/chord_degree/degree without parens: `note n` → `b.note(n)`
   result = result.replace(/(?<![`"'.])(?<!\w)\b(note|chord_degree|degree|chord_invert|note_range)\s+(["\w:].*)$/g, 'b.$1($2)')
-
-  // rrand, choose, dice, rrand_i, rdist, tick, look, math helpers → b.*
-  result = result.replace(/\b(rrand_i|rrand|rdist|rand_i|rand|choose|dice|one_in|hz_to_midi|midi_to_hz|quantise|quantize|octs)\s*\(/g, 'b.$1(')
   // Without parens: rrand 0, 1
   result = result.replace(/\b(rrand_i|rrand|rand_i|rand)\s+([^(].+)$/, 'b.$1($2)')
   // Bare rand / rand_i (no args, no parens) — Ruby treats as function call
