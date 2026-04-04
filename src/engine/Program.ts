@@ -21,6 +21,7 @@ export type Step =
   | { tag: 'liveAudio'; name: string; opts: Record<string, number> }
   | { tag: 'set'; key: string | symbol; value: unknown }
   | { tag: 'stop' }
+  | { tag: 'kill'; nodeRef: number }
 
 export type Program = Step[]
 

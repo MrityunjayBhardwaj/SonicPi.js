@@ -11,6 +11,38 @@ import { ring } from '../Ring'
 import { spread } from '../EuclideanRhythm'
 import { chord, scale, chord_invert, note, note_range } from '../ChordScale'
 import { noteToMidi, midiToFreq, noteToFreq } from '../NoteToFreq'
+import { Ring } from '../Ring'
+
+// Runtime operator helpers — same logic as Sandbox polyfills but as importable functions.
+const __spNoteRe = /^[a-g][sb#]?\d*$/
+function __spIsNote(v: unknown): v is string { return typeof v === 'string' && __spNoteRe.test(v) }
+function __spToNum(v: unknown): unknown { return __spIsNote(v) ? note(v) : v }
+function __spIsRing(v: unknown): boolean { return v != null && typeof v === 'object' && typeof (v as any).toArray === 'function' && typeof (v as any).tick === 'function' }
+function __spAdd(a: unknown, b: unknown): unknown {
+  if (a == null || b == null) return null
+  a = __spToNum(a); b = __spToNum(b)
+  if (__spIsRing(a) && __spIsRing(b)) return (a as Ring<any>).concat(b as Ring<any>)
+  if (__spIsRing(a) && Array.isArray(b)) return (a as Ring<any>).concat(b)
+  if (typeof a === 'number' && Array.isArray(b)) return b.map(x => (a as number) + x)
+  if (Array.isArray(a) && typeof b === 'number') return a.map(x => x + (b as number))
+  if (typeof a === 'number' && __spIsRing(b)) return ring(...(b as Ring<number>).toArray().map(x => (a as number) + x))
+  if (__spIsRing(a) && typeof b === 'number') return ring(...(a as Ring<number>).toArray().map(x => x + (b as number)))
+  return (a as number) + (b as number)
+}
+function __spSub(a: unknown, b: unknown): unknown {
+  if (a == null || b == null) return null
+  a = __spToNum(a); b = __spToNum(b)
+  if (typeof a === 'number' && Array.isArray(b)) return b.map(x => (a as number) - x)
+  if (Array.isArray(a) && typeof b === 'number') return a.map(x => x - (b as number))
+  if (typeof a === 'number' && __spIsRing(b)) return ring(...(b as Ring<number>).toArray().map(x => (a as number) - x))
+  if (__spIsRing(a) && typeof b === 'number') return ring(...(a as Ring<number>).toArray().map(x => x - (b as number)))
+  return (a as number) - (b as number)
+}
+function __spMul(a: unknown, b: unknown): unknown {
+  if (__spIsRing(a) && typeof b === 'number') return (a as Ring<any>).repeat(b)
+  if (typeof a === 'number' && __spIsRing(b)) return (b as Ring<any>).repeat(a)
+  return (a as number) * (b as number)
+}
 // Resolve WASM paths for Node.js test environment
 const base = new URL('../../..', import.meta.url).pathname
 const tsWasm = base + 'node_modules/web-tree-sitter/tree-sitter.wasm'
@@ -298,7 +330,7 @@ end`)
   sleep 1
 end`)
       expect(result.ok).toBe(true)
-      expect(result.code).toContain('60 + 12')
+      expect(result.code).toContain('__spAdd(60, 12)')
     })
 
     it('string interpolation', () => {
@@ -735,6 +767,7 @@ end`,
           'ring', 'spread', 'chord', 'scale', 'chord_invert', 'note', 'note_range',
           'noteToMidi', 'midiToFreq', 'noteToFreq',
           'sample_duration', 'sample_names', 'sample_groups', 'sample_loaded',
+          '__spAdd', '__spSub', '__spMul',
           result.code,
         )
         fn(
@@ -744,6 +777,7 @@ end`,
           ring, spread, chord, scale, chord_invert, note, note_range,
           noteToMidi, midiToFreq, noteToFreq,
           sample_duration, sample_names, sample_groups, sample_loaded,
+          __spAdd, __spSub, __spMul,
         )
 
         if (!capturedBuilderFn) return { steps: [], error: 'No live_loop captured' }
@@ -968,6 +1002,71 @@ end`)
       const sleepSteps = steps.filter((s: any) => s.tag === 'sleep')
       expect(playSteps.length).toBe(3)
       expect(sleepSteps.length).toBeGreaterThanOrEqual(2)
+    })
+
+    // --- Issue #95: Runtime semantic gap tests ---
+
+    it('note + number: :c3 + 7 resolves to MIDI arithmetic', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  play :c3 + 7
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('play')
+      // :c3 = 48, + 7 = 55
+      expect(steps[0].note).toBe(55)
+    })
+
+    it('note subtraction: :c5 - 7 resolves to MIDI arithmetic', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  play :c5 - 7
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('play')
+      // :c5 = 72, - 7 = 65
+      expect(steps[0].note).toBe(65)
+    })
+
+    it('note + array: :c3 + [0, 7, 11] produces chord', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  play :c3 + [0, 7, 11]
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      // Should produce 3 play steps (chord): 48, 55, 59
+      const playSteps = steps.filter((s: any) => s.tag === 'play')
+      expect(playSteps.length).toBe(3)
+      expect(playSteps[0].note).toBe(48)
+      expect(playSteps[1].note).toBe(55)
+      expect(playSteps[2].note).toBe(59)
+    })
+
+    it('Ring * number: spread repeat', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  pattern = spread(2, 6) * 3
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toContain('__spMul')
+    })
+
+    it('Ring + Ring: concat', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  combined = ring(1, 2) + ring(3, 4)
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toContain('__spAdd')
+    })
+
+    it('array .look: transpiled to .at(b.look())', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  play [0, 0, 12].look
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toContain('?.at(b.look())')
     })
   })
 })

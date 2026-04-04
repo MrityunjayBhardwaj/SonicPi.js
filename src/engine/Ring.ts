@@ -99,11 +99,49 @@ export class Ring<T> {
     return new Ring(result)
   }
 
+  /** Rotate the ring by n positions. Positive = left, negative = right. */
+  rotate(n: number = 1): Ring<T> {
+    if (this.items.length === 0) return new Ring([])
+    const len = this.items.length
+    const offset = ((n % len) + len) % len
+    return new Ring([...this.items.slice(offset), ...this.items.slice(0, offset)])
+  }
+
   /** Mirror: [1,2,3] → [1,2,3,2,1] */
   mirror(): Ring<T> {
     const mid = this.items.slice(1, -1).reverse()
     return new Ring([...this.items, ...mid])
   }
+
+  /** First element. */
+  first(): T { return this.items[0] }
+
+  /** Last element. */
+  last(): T { return this.items[this.items.length - 1] }
+
+  /** All elements except the last. */
+  butlast(): Ring<T> { return new Ring(this.items.slice(0, -1)) }
+
+  /** Concatenate with another ring or array. */
+  concat(other: Ring<T> | T[]): Ring<T> {
+    const otherItems = other instanceof Ring ? other.toArray() : other
+    return new Ring([...this.items, ...otherItems])
+  }
+
+  /** Reflect: like mirror but no middle duplication for even-length. */
+  reflect(): Ring<T> { return new Ring([...this.items, ...[...this.items].reverse()]) }
+
+  /** Last n elements. */
+  take_last(n: number): Ring<T> { return new Ring(this.items.slice(-n)) }
+
+  /** Remove last n elements. */
+  drop_last(n: number): Ring<T> { return new Ring(this.items.slice(0, -n)) }
+
+  /** Sort elements (ascending). */
+  sort(): Ring<T> { return new Ring([...this.items].sort((a, b) => (a as number) - (b as number))) }
+
+  /** Multiply all elements by n (numeric rings only). */
+  scale(n: number): Ring<number> { return new Ring((this.items as number[]).map(v => v * n)) }
 
   /** Repeat the ring n times. */
   repeat(n: number): Ring<T> {

@@ -236,6 +236,45 @@ export class SonicPiEngine {
       const pendingLoops = new Map<string, () => Promise<void>>()
       const pendingDefaults = new Map<string, { bpm: number; synth: string }>()
 
+      // Top-level set_volume! — Desktop SP range is 0-5, maps to mixer pre_amp
+      let currentVolume = 1
+      const set_volume = (vol: number) => {
+        currentVolume = Math.max(0, Math.min(5, vol))
+        this.bridge?.setMasterVolume(currentVolume / 5) // normalize 0-5 → 0-1
+      }
+
+      // Top-level current_* introspection functions
+      const current_synth_fn = () => defaultSynth
+      const current_volume_fn = () => currentVolume
+
+      // Catalog queries
+      const synth_names_fn = () => [
+        'beep','saw','prophet','tb303','supersaw','pluck','pretty_bell','piano',
+        'dsaw','dpulse','dtri','fm','mod_fm','mod_saw','mod_pulse','mod_tri',
+        'sine','square','tri','pulse','noise','pnoise','bnoise','gnoise','cnoise',
+        'chipbass','chiplead','chipnoise','dark_ambience','hollow','growl','zawa',
+        'blade','tech_saws','bass_foundation',
+      ]
+      const fx_names_fn = () => [
+        'reverb','echo','delay','distortion','slicer','wobble','ixi_techno',
+        'compressor','rlpf','rhpf','hpf','lpf','normaliser','pan','band_eq',
+        'flanger','krush','bitcrusher','ring_mod','chorus','octaver','vowel',
+        'tanh','gverb','pitch_shift','whammy','tremolo','level','mono',
+        'ping_pong','panslicer',
+      ]
+
+      // load_sample — no-op (samples auto-load on first use via CDN)
+      const load_sample_fn = (_name: string) => { /* auto-loaded on first use */ }
+
+      // sample_info — return duration via bridge
+      const sample_info_fn = (name: string) => {
+        const dur = this.bridge?.getSampleDuration(name)
+        return dur !== undefined ? { duration: dur } : null
+      }
+
+      // all_sample_names — from the sample catalog
+      const all_sample_names_fn = () => sample_names()
+
       // Top-level print handler
       const topLevelPuts = (...args: unknown[]) => {
         const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
@@ -339,6 +378,10 @@ export class SonicPiEngine {
           this.loopSeeds.set(name, seed + 1)
 
           const builder = new ProgramBuilder(seed, this.loopTicks.get(name))
+          // Apply the loop's synth default (set by top-level use_synth)
+          if (task.currentSynth && task.currentSynth !== 'beep') {
+            builder.use_synth(task.currentSynth)
+          }
           // Enter per-loop scope so variable writes are isolated
           scopeHandle?.enterScope(name)
           try {
@@ -437,8 +480,13 @@ export class SonicPiEngine {
           builderFn = maybeFn!
         }
         if (topFxStack.length > 0 && currentFxScopeId) {
-          // Assign this loop to the current FX scope — loops under same with_fx share one scope
-          const scopeId = currentFxScopeId
+          // Generate scope ID from FX stack contents — loops with identical FX chains share one scope.
+          // Different inner with_fx (e.g., reverb(0.5) vs reverb(0.8)) get separate scopes,
+          // but loops inside the SAME with_fx block share FX nodes.
+          const stackFingerprint = topFxStack.map(f =>
+            `${f.name}:${JSON.stringify(f.opts)}`
+          ).join('|')
+          const scopeId = `${currentFxScopeId}:${stackFingerprint}`
           this.loopFxScope.set(name, scopeId)
           if (!this.fxScopeChains.has(scopeId)) {
             this.fxScopeChains.set(scopeId, [...topFxStack])
@@ -575,8 +623,13 @@ export class SonicPiEngine {
       const octs = (n: number, numOctaves: number = 1): number[] =>
         Array.from({ length: numOctaves }, (_, i) => n + i * 12)
 
+      // Top-level ProgramBuilder — provides tick/look/knit/etc. for code outside live_loops.
+      // Inside live_loops, the callback parameter `b` shadows this.
+      const topLevelBuilder = new ProgramBuilder()
+
       // Build DSL parameter names and values for the executor
       const dslNames = [
+        'b',
         'live_loop', 'with_fx', 'use_bpm', 'use_synth', 'use_random_seed',
         'in_thread', 'at', 'density',
         'ring', 'knit', 'range', 'line', 'spread',
@@ -587,6 +640,12 @@ export class SonicPiEngine {
         'quantise', 'quantize', 'octs',
         'current_bpm',
         'puts', 'print', 'stop', 'stop_loop',
+        // Volume & introspection
+        'set_volume', 'current_synth', 'current_volume',
+        // Catalog queries
+        'synth_names', 'fx_names', 'all_sample_names',
+        // Sample management
+        'load_sample', 'sample_info',
         // Global store
         'get', 'set',
         // Sample catalog
@@ -601,6 +660,7 @@ export class SonicPiEngine {
         'midi_all_notes_off', 'midi_notes_off', 'midi_devices',
       ]
       const dslValues = [
+        topLevelBuilder,
         fxAwareWrappedLiveLoop, topLevelWithFx, topLevelUseBpm, topLevelUseSynth, topLevelUseRandomSeed,
         topLevelInThread, topLevelAt, topLevelDensity,
         ring, knit, range, line, spread,
@@ -611,6 +671,12 @@ export class SonicPiEngine {
         quantise, quantize, octs,
         current_bpm,
         topLevelPuts, topLevelPrint, topLevelStop, stop_loop,
+        // Volume & introspection
+        set_volume, current_synth_fn, current_volume_fn,
+        // Catalog queries
+        synth_names_fn, fx_names_fn, all_sample_names_fn,
+        // Sample management
+        load_sample_fn, sample_info_fn,
         // Global store
         get, set,
         // Sample catalog
@@ -790,6 +856,10 @@ export class SonicPiEngine {
             const bpm = task?.bpm ?? 60
             const factory = (ticks?: Map<string, number>, iteration?: number) => {
               const builder = new ProgramBuilder(iteration ?? 0, ticks)
+              // Apply the loop's synth default so QueryInterpreter shows the correct synth
+              if (task?.currentSynth && task.currentSynth !== 'beep') {
+                builder.use_synth(task.currentSynth)
+              }
               builderFn(builder)
               return { program: builder.build(), ticks: builder.getTicks() }
             }

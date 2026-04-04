@@ -55,7 +55,7 @@ export class ProgramBuilder {
   /** Returns the node reference of the last play() call, for use with control(). */
   get lastRef(): number { return this._lastRef }
 
-  play(noteVal: number | string | Ring<number> | number[], opts?: Record<string, unknown>): this {
+  play(noteVal: number | string | Ring<number> | number[] | null | undefined, opts?: Record<string, unknown>): this {
     // Chord: Ring or array — push one play step per note (all at the same virtual time).
     if (noteVal instanceof Ring || Array.isArray(noteVal)) {
       const notes: number[] = noteVal instanceof Ring ? noteVal.toArray() : noteVal
@@ -66,7 +66,9 @@ export class ProgramBuilder {
     return this
   }
 
-  private _pushPlayStep(noteVal: number | string, opts?: Record<string, unknown>): void {
+  private _pushPlayStep(noteVal: number | string | null | undefined, opts?: Record<string, unknown>): void {
+    // :rest / nil — Desktop SP skips the synth trigger entirely
+    if (noteVal === null || noteVal === undefined || noteVal === 'rest') return
     const midi = (typeof noteVal === 'string' ? noteToMidi(noteVal) : noteVal) + this._transpose
     const synth = opts?.synth as string | undefined
     const srcLine = opts?._srcLine as number | undefined
@@ -207,6 +209,35 @@ export class ProgramBuilder {
     return this
   }
 
+  /** Free a running synth node immediately. */
+  kill(nodeRef: number): this {
+    this.steps.push({ tag: 'kill', nodeRef })
+    return this
+  }
+
+  /** Play multiple notes simultaneously as a chord. */
+  play_chord(notes: number | string | Ring<number> | number[], opts?: Record<string, unknown>): this {
+    return this.play(notes, opts)
+  }
+
+  /** Play notes sequentially with sleep(1) between each. */
+  play_pattern(notes: (number | string)[], opts?: Record<string, unknown>): this {
+    for (const n of notes) {
+      this.play(n, opts)
+      this.sleep(1)
+    }
+    return this
+  }
+
+  /** Return the current synth name. */
+  get current_synth_name(): string { return this.currentSynth }
+
+  /** Return the current synth defaults hash. */
+  get current_synth_defaults_hash(): Record<string, number> { return { ...this._synthDefaults } }
+
+  /** Return the current sample defaults hash. */
+  get current_sample_defaults_hash(): Record<string, number> { return { ...this._sampleDefaults } }
+
   /** Deferred set — fires at runtime (interleaved with sleeps). */
   set(key: string | symbol, value: unknown): this {
     this.steps.push({ tag: 'set', key, value })
@@ -267,6 +298,11 @@ export class ProgramBuilder {
     return new Ring(result)
   }
 
+  /** Random distribution — returns a value between -max and +max. */
+  rdist(max: number, centre: number = 0): number {
+    return centre + this.rng.rrand(-max, max)
+  }
+
   dice(sides: number, bonus: number = 0): number {
     return this.rng.dice(sides) + bonus
   }
@@ -315,6 +351,24 @@ export class ProgramBuilder {
     return this
   }
 
+  /** Temporarily shift by N octaves within block, then restore. */
+  with_octave(octaves: number, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._transpose
+    this._transpose = prev + (octaves * 12)
+    buildFn(this)
+    this._transpose = prev
+    return this
+  }
+
+  /** Run block with a specific random seed, then restore. */
+  with_random_seed(seed: number, buildFn: (b: ProgramBuilder) => void): this {
+    const prevState = this.rng.getState()
+    this.rng.reset(seed)
+    buildFn(this)
+    this.rng.setState(prevState)
+    return this
+  }
+
   // --- Synth defaults ---
 
   /** Set default synthesis parameters for all subsequent play calls. */
@@ -350,6 +404,15 @@ export class ProgramBuilder {
   }
 
   // --- Debug ---
+
+  /** Run block with density factor — divides sleep times. */
+  with_density(factor: number, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this.densityFactor
+    this.densityFactor = prev * factor
+    buildFn(this)
+    this.densityFactor = prev
+    return this
+  }
 
   /** Enable/disable debug output. In browser, this is a no-op flag. */
   use_debug(enabled: boolean): this {

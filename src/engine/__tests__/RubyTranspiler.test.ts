@@ -324,13 +324,11 @@ end`
     })
 
     it('returns usedFallback: true when parser fails', () => {
-      // This code triggers a parser error that forces fallback
+      // This code triggers a parser error that forces fallback (Ruby splat operator)
       const code = `live_loop :test do
-  at [0, 0.5] do |t|
-    play 60
-    sleep 0.25
-  end
-  sleep 1
+  notes = [*ring(:c4, :e4, :g4)]
+  play notes.tick
+  sleep 0.25
 end`
       const result = autoTranspileDetailed(code)
       expect(result.usedFallback).toBe(true)

@@ -280,7 +280,8 @@ const BUILDER_METHODS = new Set([
   'with_fx', 'in_thread', 'at',
   'puts', 'print',
   // Random (resolved eagerly)
-  'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in',
+  'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in', 'rdist', 'rand_look',
+  'shuffle', 'pick',
   // Tick
   'tick', 'look', 'tick_reset', 'tick_reset_all',
   // Transpose
@@ -292,6 +293,9 @@ const BUILDER_METHODS = new Set([
   // Utility
   'factor_q', 'bools', 'play_pattern_timed', 'sample_duration',
   'hz_to_midi', 'midi_to_hz', 'quantise', 'quantize', 'octs',
+  'kill', 'play_chord', 'play_pattern',
+  'with_octave', 'with_random_seed', 'with_density',
+  'noteToMidi', 'midiToFreq', 'noteToFreq',
   // Data constructors
   'ring', 'knit', 'range', 'line', 'spread',
   'chord', 'scale', 'chord_invert', 'note', 'note_range',
@@ -317,6 +321,12 @@ const TOP_LEVEL_SCOPE = new Set([
   'sample_duration', 'sample_names', 'sample_groups', 'sample_loaded',
   // Output
   'puts', 'print', 'stop',
+  // Volume & introspection
+  'set_volume', 'current_synth', 'current_volume',
+  // Catalog queries
+  'synth_names', 'fx_names', 'all_sample_names',
+  // Sample management
+  'load_sample', 'sample_info',
   // Math / music theory
   'hz_to_midi', 'midi_to_hz', 'quantise', 'quantize', 'octs',
   'chord_degree', 'degree', 'chord_names', 'scale_names',
@@ -354,13 +364,24 @@ const BARE_CALLABLE_TOP_LEVEL = new Set([
 ])
 
 // Synth names that can be used as bare commands: `beep 60`
+// Complete synth list — all 66 user-facing synths from Desktop SP synthinfo.rb
 const SYNTH_NAMES = new Set([
-  'beep', 'saw', 'prophet', 'tb303', 'supersaw', 'pluck', 'pretty_bell',
-  'piano', 'dsaw', 'dpulse', 'dtri', 'fm', 'mod_fm', 'mod_saw',
-  'mod_pulse', 'mod_tri', 'sine', 'square', 'tri', 'pulse', 'noise',
-  'pnoise', 'bnoise', 'gnoise', 'cnoise', 'chipbass', 'chiplead',
-  'chipnoise', 'dark_ambience', 'hollow', 'growl', 'zawa', 'blade',
-  'tech_saws',
+  'beep', 'sine', 'saw', 'pulse', 'subpulse', 'square', 'tri',
+  'dsaw', 'dpulse', 'dtri', 'fm', 'mod_fm', 'mod_saw', 'mod_dsaw',
+  'mod_sine', 'mod_beep', 'mod_tri', 'mod_pulse',
+  'supersaw', 'hoover', 'prophet', 'zawa', 'dark_ambience', 'growl',
+  'hollow', 'blade', 'piano', 'pluck', 'pretty_bell', 'dull_bell',
+  'tech_saws', 'winwood_lead', 'chipbass', 'chiplead', 'chipnoise',
+  'tb303', 'bass_foundation', 'bass_highend',
+  'organ_tonewheel', 'rhodey', 'rodeo', 'kalimba', 'singer',
+  'dark_sea_horn', 'gabberkick',
+  'noise', 'pnoise', 'bnoise', 'gnoise', 'cnoise',
+  'sound_in', 'sound_in_stereo',
+  'sc808_bassdrum', 'sc808_snare', 'sc808_clap',
+  'sc808_tomlo', 'sc808_tommid', 'sc808_tomhi',
+  'sc808_congalo', 'sc808_congamid', 'sc808_congahi',
+  'sc808_rimshot', 'sc808_claves', 'sc808_maracas', 'sc808_cowbell',
+  'sc808_closed_hihat', 'sc808_open_hihat', 'sc808_cymbal',
 ])
 
 // ---------------------------------------------------------------------------
@@ -543,7 +564,17 @@ function transpileNode(node: any, ctx: TranspileContext): string {
         return `Math.pow(${transpileNode(left, ctx)}, ${transpileNode(right, ctx)})`
       }
 
-      return `${transpileNode(left, ctx)} ${jsOp} ${transpileNode(right, ctx)}`
+      const lhs = transpileNode(left, ctx)
+      const rhs = transpileNode(right, ctx)
+
+      // Sonic Pi operator helpers — handle note strings (:c3→48),
+      // Ring arithmetic (ring*3→repeat, ring+ring→concat),
+      // and note+array mapping (:c3+[0,7,11]→[48,55,59]).
+      if (op === '+') return `__spAdd(${lhs}, ${rhs})`
+      if (op === '-') return `__spSub(${lhs}, ${rhs})`
+      if (op === '*') return `__spMul(${lhs}, ${rhs})`
+
+      return `${lhs} ${jsOp} ${rhs}`
     }
 
     case 'unary': {
@@ -883,7 +914,9 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     }
 
     // --- Bare method call (no receiver) ---
-    const methodName = methodNode?.text ?? node.namedChildren[0]?.text ?? node.text
+    // Strip Ruby bang (!) from method names: set_volume! → set_volume
+    const rawMethodName = methodNode?.text ?? node.namedChildren[0]?.text ?? node.text
+    const methodName = rawMethodName.endsWith('!') ? rawMethodName.slice(0, -1) : rawMethodName
 
     // live_loop :name do ... end
     if (methodName === 'live_loop') {
@@ -1105,15 +1138,16 @@ function transpileReceiverMethodCall(
   }
 
   // .tick / .tick() → .at(b.tick())
+  // Use optional chaining (?.) so undefined receivers (e.g. npat when no case matched) return undefined instead of crashing
   if (method === 'tick') {
     const args = argsNode ? transpileArgList(argsNode, ctx) : ''
-    if (args) return `${recStr}.at(b.tick(${args}))`
-    return `${recStr}.at(b.tick())`
+    if (args) return `${recStr}?.at(b.tick(${args}))`
+    return `${recStr}?.at(b.tick())`
   }
 
   // .look / .look() → .at(b.look())
   if (method === 'look') {
-    return `${recStr}.at(b.look())`
+    return `${recStr}?.at(b.look())`
   }
 
   // .choose → b.choose(receiver) — works on both arrays and Rings

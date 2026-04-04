@@ -7,7 +7,7 @@
  */
 
 import type { Program } from '../Program'
-import { normalizePlayParams, normalizeControlParams, normalizeFxParams } from '../SoundLayer'
+import { normalizePlayParams, normalizeControlParams, normalizeFxParams, resolveSynthName } from '../SoundLayer'
 
 /** Visual duration used for note events in the sound event stream (seconds). */
 const NOTE_EVENT_VISUAL_DURATION = 0.25
@@ -75,7 +75,7 @@ export async function runProgram(
         if ('on' in step.opts && !step.opts.on) break
 
         const audioTime = task.virtualTime + ctx.schedAheadTime
-        const synth = step.synth ?? currentSynth
+        const synth = resolveSynthName(step.synth ?? currentSynth)
         const nodeRef = nextNodeRef++
 
         if (ctx.bridge) {
@@ -144,8 +144,8 @@ export async function runProgram(
         break
 
       case 'useSynth':
-        currentSynth = step.name
-        if (task) task.currentSynth = step.name
+        currentSynth = resolveSynthName(step.name)
+        if (task) task.currentSynth = currentSynth
         break
 
       case 'useBpm':
@@ -163,6 +163,14 @@ export async function runProgram(
             paramList.push(k, v)
           }
           ctx.bridge.sendTimedControl(audioTime, realNodeId, paramList)
+        }
+        break
+      }
+
+      case 'kill': {
+        const killNodeId = ctx.nodeRefMap.get(step.nodeRef)
+        if (killNodeId && ctx.bridge) {
+          ctx.bridge.freeNode(killNodeId)
         }
         break
       }
