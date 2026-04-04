@@ -120,7 +120,10 @@ export function createIsolatedExecutor(
   // Note: `with` is forbidden in strict mode, so we do NOT use "use strict"
   // Polyfill: Ruby's Hash#merge → JS Object spread. Injected so `opts.merge({amp: 1})` works.
   const mergePolyfill = `if (!Object.prototype.merge) { Object.defineProperty(Object.prototype, 'merge', { value: function(other) { return {...this, ...other}; }, writable: true, configurable: true, enumerable: false }); }\n`
-  const wrappedCode = `with(__scope__) { return (async () => {\n${mergePolyfill}${transpiledCode}\n})(); }`
+  // Polyfill: Ruby's String#ring → split string into array of characters (ring-like).
+  // Usage: "x-x-".ring.tick → ["x","-","x","-"].at(b.tick())
+  const stringRingPolyfill = `if (!String.prototype.ring) { Object.defineProperty(String.prototype, 'ring', { get: function() { return this.split(''); }, configurable: true, enumerable: false }); }\n`
+  const wrappedCode = `with(__scope__) { return (async () => {\n${mergePolyfill}${stringRingPolyfill}${transpiledCode}\n})(); }`
 
   try {
     const fn = new Function('__scope__', wrappedCode)

@@ -239,6 +239,7 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
   const definedFunctions = new Set<string>()
 
   function peek(): Token { return tokens[pos] ?? { type: 'eof', value: '', line: 0, col: 0 } }
+  function peekAt(offset: number): Token | undefined { return tokens[pos + offset] }
   function advance(): Token { return tokens[pos++] }
   function at(type: Token['type'], value?: string): boolean {
     const t = peek()
@@ -327,8 +328,8 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
       return
     }
 
-    // at [times] do ... end
-    if (t.type === 'word' && t.value === 'at') {
+    // at [times] do ... end — but NOT `at = 0.2` (variable assignment)
+    if (t.type === 'word' && t.value === 'at' && !(peekAt(1)?.type === 'op' && peekAt(1)?.value === '=')) {
       parseAtBlock()
       return
     }

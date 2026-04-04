@@ -160,7 +160,7 @@ export function transpileRubyToJS(ruby: string): string {
   let i = 0
   // Track block types so `end` produces the correct closing bracket
   // 'loop' → `})`, 'block' → `}`, 'thread' → `})()`
-  const blockStack: Array<'loop' | 'block' | 'thread' | 'density' | 'density-toplevel' | 'case'> = []
+  const blockStack: Array<'loop' | 'block' | 'thread' | 'define' | 'density' | 'density-toplevel' | 'case'> = []
   const definedFunctions = new Set<string>()
   // Stack for case/when — stores the expression being matched and whether first when was seen
   const caseExprStack: string[] = []
@@ -502,13 +502,13 @@ export function transpileRubyToJS(ruby: string): string {
         : ''
       definedFunctions.add(name)
       result.push(`${indent}function ${name}(b${args ? ', ' + args : ''}) {${inlineComment}`)
-      blockStack.push('loop') // 'loop' so body lines get b. prefix (insideLoop = blockStack.includes('loop'))
+      blockStack.push('define') // 'define' closes with `}` not `})`, but body lines still get b. prefix
       i++
       continue
     }
 
     // --- Call to user-defined function: inject b as first arg ---
-    const insideLoop = blockStack.includes('loop')
+    const insideLoop = blockStack.includes('loop') || blockStack.includes('define')
     const firstWord = code.match(/^(\w+)/)
     if (firstWord && definedFunctions.has(firstWord[1])) {
       const fnName = firstWord[1]
@@ -526,7 +526,7 @@ export function transpileRubyToJS(ruby: string): string {
     }
 
     // --- General line transformation ---
-    let transformed = transpileLine(code, insideLoop, i + 1)
+    let transformed = transpileLine(code, insideLoop, i + 1, definedFunctions)
     result.push(`${indent}${transformed}${inlineComment}`)
     i++
   }
@@ -537,7 +537,7 @@ export function transpileRubyToJS(ruby: string): string {
 /**
  * Transpile a single line of Sonic Pi Ruby to JS.
  */
-function transpileLine(line: string, insideLoop: boolean = true, srcLine?: number): string {
+function transpileLine(line: string, insideLoop: boolean = true, srcLine?: number, definedFunctions?: Set<string>): string {
   // Already a JS comment
   if (line.startsWith('//')) return line
 
@@ -556,16 +556,16 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
   // --- Ruby trailing conditional: `statement if condition` ---
   const trailingIfMatch = line.match(/^(.+?)\s+if\s+(.+)$/)
   if (trailingIfMatch) {
-    const statement = transpileLine(trailingIfMatch[1], insideLoop, srcLine)
-    const condition = transpileExpression(trailingIfMatch[2])
+    const statement = transpileLine(trailingIfMatch[1], insideLoop, srcLine, definedFunctions)
+    const condition = transpileCondition(trailingIfMatch[2], definedFunctions)
     return `if (${condition}) { ${statement} }`
   }
 
   // --- Ruby trailing unless: `statement unless condition` ---
   const trailingUnlessMatch = line.match(/^(.+?)\s+unless\s+(.+)$/)
   if (trailingUnlessMatch) {
-    const statement = transpileLine(trailingUnlessMatch[1], insideLoop, srcLine)
-    const condition = transpileExpression(trailingUnlessMatch[2])
+    const statement = transpileLine(trailingUnlessMatch[1], insideLoop, srcLine, definedFunctions)
+    const condition = transpileCondition(trailingUnlessMatch[2], definedFunctions)
     return `if (!(${condition})) { ${statement} }`
   }
 
@@ -667,6 +667,14 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
     return `${prefix}puts(${transpileExpression(putsMatch[1])})`
   }
 
+  // --- set :key, value --- (deferred inside loops via b.set)
+  const setMatch = line.match(/^set\s+(.+)$/)
+  if (setMatch) {
+    const prefix = insideLoop ? 'b.' : ''
+    const args = transpileArgs(setMatch[1])
+    return `${prefix}set(${args})`
+  }
+
   // --- print "text" ---
   const printMatch = line.match(/^print\s+(.+)$/)
   if (printMatch) {
@@ -691,6 +699,28 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
 }
 
 /**
+ * Transpile a condition expression, handling user-defined bare function calls.
+ * `pattern "x-x-"` → `pattern(b, "x-x-")`
+ */
+function transpileCondition(expr: string, definedFunctions?: Set<string>): string {
+  const trimmed = expr.trim()
+  if (definedFunctions) {
+    const firstWord = trimmed.match(/^(\w+)/)
+    if (firstWord && definedFunctions.has(firstWord[1])) {
+      const fnName = firstWord[1]
+      const rest = trimmed.slice(fnName.length).trim()
+      if (!rest) return `${fnName}(b)`
+      if (rest.startsWith('(')) {
+        const inner = rest.slice(1, -1).trim()
+        return `${fnName}(b${inner ? ', ' + transpileExpression(inner) : ''})`
+      }
+      return `${fnName}(b, ${transpileExpression(rest)})`
+    }
+  }
+  return transpileExpression(trimmed)
+}
+
+/**
  * Transpile a Ruby expression to JS.
  */
 function transpileExpression(expr: string): string {
@@ -710,6 +740,9 @@ function transpileExpression(expr: string): string {
   result = result.replace(/\b(ring|knit|range|line|spread|chord_degree|chord_invert|chord_names|chord|scale_names|scale|note_range|note|degree)\s*\(/g, 'b.$1(')
   // Without parens: ring 1, 2, 3 — also handles (ring ...) wrapping
   result = result.replace(/(?<=\(|^)(ring|spread)\s+([^(].+?)(?=\)|$)/g, 'b.$1($2)')
+  // Bare note/chord_degree/degree without parens: `note n` → `b.note(n)`, `chord_degree d, n, s, 3` → `b.chord_degree(d, n, s, 3)`
+  // Only match when followed by a variable/symbol/number (word char or "), not inside strings
+  result = result.replace(/(?<![`"'.])(?<!\w)\b(note|chord_degree|degree|chord_invert|note_range)\s+(["\w:].*)$/g, 'b.$1($2)')
 
   // rrand, choose, dice, rrand_i, tick, look, math helpers → b.*
   result = result.replace(/\b(rrand_i|rrand|rand_i|rand|choose|dice|one_in|hz_to_midi|midi_to_hz|quantise|quantize|octs)\s*\(/g, 'b.$1(')
@@ -770,6 +803,13 @@ function transpileExpression(expr: string): string {
 
   // [].choose → b.choose([])
   // Already handled if user writes choose([...])
+
+  // .merge(key: val, ...) → .merge({key: val, ...}) — Ruby Hash#merge with named args
+  result = result.replace(/\.merge\((\w+:\s*.+)\)/g, (_match, inner) => {
+    // Check if it already has braces
+    if (inner.trim().startsWith('{')) return `.merge(${inner})`
+    return `.merge({${inner}})`
+  })
 
   // Ruby block syntax: .map { |var| expr } → .map((var) => expr)
   result = result.replace(/\.map\s*\{\s*\|(\w+)\|\s*(.+?)\s*\}/g, '.map(($1) => $2)')
