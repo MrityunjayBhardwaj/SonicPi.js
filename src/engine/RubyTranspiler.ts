@@ -248,6 +248,19 @@ export function transpileRubyToJS(ruby: string): string {
       continue
     }
 
+    // --- with_octave / with_transpose / with_random_seed N do ... end ---
+    const withBlockMatch = code.match(
+      /^(with_octave|with_transpose|with_random_seed)\s+(.+?)\s+do\s*$/
+    )
+    if (withBlockMatch) {
+      const fn = withBlockMatch[1]
+      const arg = transpileExpression(withBlockMatch[2])
+      result.push(`${indent}b.${fn}(${arg}, (b) => {${inlineComment}`)
+      blockStack.push('loop')
+      i++
+      continue
+    }
+
     // --- N.times do |var| ---
     const timesMatch = code.match(
       /^(\w+(?:\.\w+)*)\.times\s+do\s*(?:\|(\w+)\|)?\s*$/

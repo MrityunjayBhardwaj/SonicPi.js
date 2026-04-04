@@ -247,6 +247,34 @@ export class SonicPiEngine {
       const current_synth_fn = () => defaultSynth
       const current_volume_fn = () => currentVolume
 
+      // Catalog queries
+      const synth_names_fn = () => [
+        'beep','saw','prophet','tb303','supersaw','pluck','pretty_bell','piano',
+        'dsaw','dpulse','dtri','fm','mod_fm','mod_saw','mod_pulse','mod_tri',
+        'sine','square','tri','pulse','noise','pnoise','bnoise','gnoise','cnoise',
+        'chipbass','chiplead','chipnoise','dark_ambience','hollow','growl','zawa',
+        'blade','tech_saws','bass_foundation',
+      ]
+      const fx_names_fn = () => [
+        'reverb','echo','delay','distortion','slicer','wobble','ixi_techno',
+        'compressor','rlpf','rhpf','hpf','lpf','normaliser','pan','band_eq',
+        'flanger','krush','bitcrusher','ring_mod','chorus','octaver','vowel',
+        'tanh','gverb','pitch_shift','whammy','tremolo','level','mono',
+        'ping_pong','panslicer',
+      ]
+
+      // load_sample — no-op (samples auto-load on first use via CDN)
+      const load_sample_fn = (_name: string) => { /* auto-loaded on first use */ }
+
+      // sample_info — return duration via bridge
+      const sample_info_fn = (name: string) => {
+        const dur = this.bridge?.getSampleDuration(name)
+        return dur !== undefined ? { duration: dur } : null
+      }
+
+      // all_sample_names — from the sample catalog
+      const all_sample_names_fn = () => sample_names()
+
       // Top-level print handler
       const topLevelPuts = (...args: unknown[]) => {
         const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
@@ -609,6 +637,10 @@ export class SonicPiEngine {
         'puts', 'print', 'stop', 'stop_loop',
         // Volume & introspection
         'set_volume', 'current_synth', 'current_volume',
+        // Catalog queries
+        'synth_names', 'fx_names', 'all_sample_names',
+        // Sample management
+        'load_sample', 'sample_info',
         // Global store
         'get', 'set',
         // Sample catalog
@@ -635,6 +667,10 @@ export class SonicPiEngine {
         topLevelPuts, topLevelPrint, topLevelStop, stop_loop,
         // Volume & introspection
         set_volume, current_synth_fn, current_volume_fn,
+        // Catalog queries
+        synth_names_fn, fx_names_fn, all_sample_names_fn,
+        // Sample management
+        load_sample_fn, sample_info_fn,
         // Global store
         get, set,
         // Sample catalog

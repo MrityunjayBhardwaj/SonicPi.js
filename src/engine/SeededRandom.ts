@@ -110,6 +110,17 @@ export class SeededRandom {
     return r
   }
 
+  /** Snapshot state for save/restore (used by with_random_seed). */
+  getState(): { mt: Uint32Array; mti: number } {
+    return { mt: new Uint32Array(this.mt), mti: this.mti }
+  }
+
+  /** Restore state from snapshot. */
+  setState(state: { mt: Uint32Array; mti: number }): void {
+    this.mt.set(state.mt)
+    this.mti = state.mti
+  }
+
   /** Return next value without advancing state. */
   peek(): number {
     const clone = this.clone()

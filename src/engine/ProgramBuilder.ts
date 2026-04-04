@@ -346,6 +346,24 @@ export class ProgramBuilder {
     return this
   }
 
+  /** Temporarily shift by N octaves within block, then restore. */
+  with_octave(octaves: number, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._transpose
+    this._transpose = prev + (octaves * 12)
+    buildFn(this)
+    this._transpose = prev
+    return this
+  }
+
+  /** Run block with a specific random seed, then restore. */
+  with_random_seed(seed: number, buildFn: (b: ProgramBuilder) => void): this {
+    const prevState = this.rng.getState()
+    this.rng.reset(seed)
+    buildFn(this)
+    this.rng.setState(prevState)
+    return this
+  }
+
   // --- Synth defaults ---
 
   /** Set default synthesis parameters for all subsequent play calls. */
