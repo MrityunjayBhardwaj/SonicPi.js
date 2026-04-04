@@ -55,7 +55,7 @@ export class ProgramBuilder {
   /** Returns the node reference of the last play() call, for use with control(). */
   get lastRef(): number { return this._lastRef }
 
-  play(noteVal: number | string | Ring<number> | number[], opts?: Record<string, unknown>): this {
+  play(noteVal: number | string | Ring<number> | number[] | null | undefined, opts?: Record<string, unknown>): this {
     // Chord: Ring or array — push one play step per note (all at the same virtual time).
     if (noteVal instanceof Ring || Array.isArray(noteVal)) {
       const notes: number[] = noteVal instanceof Ring ? noteVal.toArray() : noteVal
@@ -66,7 +66,9 @@ export class ProgramBuilder {
     return this
   }
 
-  private _pushPlayStep(noteVal: number | string, opts?: Record<string, unknown>): void {
+  private _pushPlayStep(noteVal: number | string | null | undefined, opts?: Record<string, unknown>): void {
+    // :rest / nil — Desktop SP skips the synth trigger entirely
+    if (noteVal === null || noteVal === undefined || noteVal === 'rest') return
     const midi = (typeof noteVal === 'string' ? noteToMidi(noteVal) : noteVal) + this._transpose
     const synth = opts?.synth as string | undefined
     const srcLine = opts?._srcLine as number | undefined

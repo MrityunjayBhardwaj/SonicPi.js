@@ -74,6 +74,7 @@ const TIME_PARAMS = new Set([
  */
 const FX_TIME_DEFAULTS: Record<string, Record<string, number>> = {
   echo:       { phase: 0.25, decay: 2,       max_phase: 2 },
+  delay:      { phase: 0.25, decay: 2,       max_phase: 2 }, // same as echo — synthinfo.rb FXDelay
   slicer:     { phase: 0.25 },
   wobble:     { phase: 0.5 },
   panslicer:  { phase: 0.25 },
