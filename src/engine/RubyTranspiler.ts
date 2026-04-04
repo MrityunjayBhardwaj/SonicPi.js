@@ -805,11 +805,22 @@ function transpileExpression(expr: string): string {
   // Already handled if user writes choose([...])
 
   // .merge(key: val, ...) → .merge({key: val, ...}) — Ruby Hash#merge with named args
-  result = result.replace(/\.merge\((\w+:\s*.+)\)/g, (_match, inner) => {
-    // Check if it already has braces
-    if (inner.trim().startsWith('{')) return `.merge(${inner})`
-    return `.merge({${inner}})`
-  })
+  // Uses balanced-paren matching to find the correct closing paren
+  const mergeIdx = result.indexOf('.merge(')
+  if (mergeIdx >= 0) {
+    const start = mergeIdx + '.merge('.length
+    let depth = 1
+    let end = start
+    for (; end < result.length && depth > 0; end++) {
+      if (result[end] === '(' || result[end] === '[') depth++
+      if (result[end] === ')' || result[end] === ']') depth--
+    }
+    end-- // back up to the closing paren
+    const inner = result.slice(start, end).trim()
+    if (inner && !inner.startsWith('{') && /\w+:/.test(inner)) {
+      result = result.slice(0, start) + '{' + inner + '}' + result.slice(end)
+    }
+  }
 
   // Ruby block syntax: .map { |var| expr } → .map((var) => expr)
   result = result.replace(/\.map\s*\{\s*\|(\w+)\|\s*(.+?)\s*\}/g, '.map(($1) => $2)')
