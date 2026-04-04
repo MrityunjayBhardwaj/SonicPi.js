@@ -360,13 +360,24 @@ const BARE_CALLABLE_TOP_LEVEL = new Set([
 ])
 
 // Synth names that can be used as bare commands: `beep 60`
+// Complete synth list — all 66 user-facing synths from Desktop SP synthinfo.rb
 const SYNTH_NAMES = new Set([
-  'beep', 'saw', 'prophet', 'tb303', 'supersaw', 'pluck', 'pretty_bell',
-  'piano', 'dsaw', 'dpulse', 'dtri', 'fm', 'mod_fm', 'mod_saw',
-  'mod_pulse', 'mod_tri', 'sine', 'square', 'tri', 'pulse', 'noise',
-  'pnoise', 'bnoise', 'gnoise', 'cnoise', 'chipbass', 'chiplead',
-  'chipnoise', 'dark_ambience', 'hollow', 'growl', 'zawa', 'blade',
-  'tech_saws',
+  'beep', 'sine', 'saw', 'pulse', 'subpulse', 'square', 'tri',
+  'dsaw', 'dpulse', 'dtri', 'fm', 'mod_fm', 'mod_saw', 'mod_dsaw',
+  'mod_sine', 'mod_beep', 'mod_tri', 'mod_pulse',
+  'supersaw', 'hoover', 'prophet', 'zawa', 'dark_ambience', 'growl',
+  'hollow', 'blade', 'piano', 'pluck', 'pretty_bell', 'dull_bell',
+  'tech_saws', 'winwood_lead', 'chipbass', 'chiplead', 'chipnoise',
+  'tb303', 'bass_foundation', 'bass_highend',
+  'organ_tonewheel', 'rhodey', 'rodeo', 'kalimba', 'singer',
+  'dark_sea_horn', 'gabberkick',
+  'noise', 'pnoise', 'bnoise', 'gnoise', 'cnoise',
+  'sound_in', 'sound_in_stereo',
+  'sc808_bassdrum', 'sc808_snare', 'sc808_clap',
+  'sc808_tomlo', 'sc808_tommid', 'sc808_tomhi',
+  'sc808_congalo', 'sc808_congamid', 'sc808_congahi',
+  'sc808_rimshot', 'sc808_claves', 'sc808_maracas', 'sc808_cowbell',
+  'sc808_closed_hihat', 'sc808_open_hihat', 'sc808_cymbal',
 ])
 
 // ---------------------------------------------------------------------------

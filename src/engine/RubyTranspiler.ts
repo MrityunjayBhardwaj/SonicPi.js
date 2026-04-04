@@ -644,7 +644,7 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
   }
 
   // --- bare synth name as command: beep note:67, tb303 60, etc ---
-  const SYNTH_NAMES = ['beep','saw','prophet','tb303','supersaw','pluck','pretty_bell','piano','dsaw','dpulse','dtri','fm','mod_fm','mod_saw','mod_pulse','mod_tri','sine','square','tri','pulse','noise','pnoise','bnoise','gnoise','cnoise','chipbass','chiplead','chipnoise','dark_ambience','hollow','growl','zawa','blade','tech_saws']
+  const SYNTH_NAMES = ['beep','saw','prophet','tb303','supersaw','pluck','pretty_bell','piano','dsaw','dpulse','dtri','fm','mod_fm','mod_saw','mod_dsaw','mod_pulse','mod_tri','mod_sine','mod_beep','sine','square','tri','pulse','subpulse','noise','pnoise','bnoise','gnoise','cnoise','chipbass','chiplead','chipnoise','dark_ambience','dark_sea_horn','hollow','growl','zawa','blade','tech_saws','bass_foundation','bass_highend','organ_tonewheel','rhodey','rodeo','kalimba','winwood_lead','singer','hoover','dull_bell','gabberkick','sound_in','sound_in_stereo','sc808_bassdrum','sc808_snare','sc808_clap','sc808_tomlo','sc808_tommid','sc808_tomhi','sc808_congalo','sc808_congamid','sc808_congahi','sc808_rimshot','sc808_claves','sc808_maracas','sc808_cowbell','sc808_closed_hihat','sc808_open_hihat','sc808_cymbal']
   const bareSynthMatch = line.match(/^(\w+)\s+(.+)$/)
   if (bareSynthMatch && SYNTH_NAMES.includes(bareSynthMatch[1])) {
     const synthName = bareSynthMatch[1]
