@@ -44,10 +44,21 @@ function wrapBareCode(code: string): string {
   // Check if there are any live_loop blocks
   const hasLiveLoop = lines.some(l => /^\s*live_loop\s/.test(l))
 
-  // Check for bare DSL calls (play, sleep, sample, .times do, .each do, with_fx outside any block)
-  const bareDSLPattern = /^\s*(play|sleep|sample)\s/
-  const bareBlockPattern = /^\s*(\d+\.times\s+do|.*\.each\s+do|with_fx\s)/
-  const hasBareCode = lines.some(l => bareDSLPattern.test(l) || bareBlockPattern.test(l))
+  // Check for bare DSL calls outside any live_loop/define/with_fx block.
+  // We track nesting: only flag code at depth 0 (not inside builder-owning blocks).
+  let bareCheckDepth = 0
+  let hasBareCode = false
+  for (const l of lines) {
+    const t = l.trim()
+    if (/^(live_loop|define|in_thread|with_fx|at|time_warp)\s/.test(t)) bareCheckDepth++
+    if (t === 'end' && bareCheckDepth > 0) bareCheckDepth--
+    if (bareCheckDepth === 0) {
+      if (/^\s*(play|sleep|sample)\s/.test(l) || /^\s*(\d+\.times\s+do|.*\.each\s+do)\s*/.test(l)) {
+        hasBareCode = true
+        break
+      }
+    }
+  }
 
   if (!hasBareCode) return code
   if (hasLiveLoop) {
@@ -97,7 +108,7 @@ function wrapBareCode(code: string): string {
       bareCode.push(line)
     }
 
-    const hasActualBare = bareCode.some(l => bareDSLPattern.test(l))
+    const hasActualBare = bareCode.some(l => /^\s*(play|sleep|sample)\s/.test(l))
     if (!hasActualBare) return code
 
     return [
@@ -252,12 +263,14 @@ export function transpileRubyToJS(ruby: string): string {
       continue
     }
 
-    // --- with_octave / with_transpose / with_random_seed N do ... end ---
+    // --- with_* / density N do ... end ---
+    // Block-scoped modifiers: with_octave, with_transpose, with_random_seed,
+    // with_synth, with_bpm, density — all take a value + do/end block.
     const withBlockMatch = code.match(
-      /^(with_octave|with_transpose|with_random_seed)\s+(.+?)\s+do\s*$/
+      /^(with_octave|with_transpose|with_random_seed|with_synth|with_bpm|density)\s+(.+?)\s+do\s*$/
     )
     if (withBlockMatch) {
-      const fn = withBlockMatch[1]
+      const fn = withBlockMatch[1] === 'density' ? 'with_density' : withBlockMatch[1]
       const arg = transpileExpression(withBlockMatch[2])
       result.push(`${indent}b.${fn}(${arg}, (b) => {${inlineComment}`)
       blockStack.push('loop')
@@ -677,11 +690,11 @@ function transpileLine(line: string, insideLoop: boolean = true, srcLine?: numbe
     return `b.live_audio(${args})`
   }
 
-  // --- use_synth :name ---
-  const useSynthMatch = line.match(/^use_synth\s+:(\w+)\s*$/)
+  // --- use_synth :name / use_synth expr ---
+  const useSynthMatch = line.match(/^use_synth\s+(.+)$/)
   if (useSynthMatch) {
     const prefix = insideLoop ? 'b.' : ''
-    return `${prefix}use_synth("${useSynthMatch[1]}")`
+    return `${prefix}use_synth(${transpileExpression(useSynthMatch[1])})`
   }
 
   // --- use_bpm N ---
@@ -798,8 +811,8 @@ function transpileExpression(expr: string): string {
   // Only match when followed by a variable/symbol/number (word char or "), not inside strings
   result = result.replace(/(?<![`"'.])(?<!\w)\b(note|chord_degree|degree|chord_invert|note_range)\s+(["\w:].*)$/g, 'b.$1($2)')
 
-  // rrand, choose, dice, rrand_i, tick, look, math helpers → b.*
-  result = result.replace(/\b(rrand_i|rrand|rand_i|rand|choose|dice|one_in|hz_to_midi|midi_to_hz|quantise|quantize|octs)\s*\(/g, 'b.$1(')
+  // rrand, choose, dice, rrand_i, rdist, tick, look, math helpers → b.*
+  result = result.replace(/\b(rrand_i|rrand|rdist|rand_i|rand|choose|dice|one_in|hz_to_midi|midi_to_hz|quantise|quantize|octs)\s*\(/g, 'b.$1(')
   // Without parens: rrand 0, 1
   result = result.replace(/\b(rrand_i|rrand|rand_i|rand)\s+([^(].+)$/, 'b.$1($2)')
   // Bare rand / rand_i (no args, no parens) — Ruby treats as function call
@@ -837,10 +850,10 @@ function transpileExpression(expr: string): string {
   // .choose → .choose() (when used as method on Ring/Array)
   result = result.replace(/\.choose(?!\()/g, '.choose()')
 
-  // Ruby range (1..5) → not directly supported, but common in Sonic Pi for note ranges
-  // (a..b).to_a → Array.from({length: b-a+1}, (_, i) => a+i)
+  // Ruby range (1..5) → Array.from (used in .each, .to_a, and bare iterations)
+  // (a..b).to_a or bare (a..b) → Array.from({length: b-a+1}, (_, i) => a+i)
   result = result.replace(
-    /\((\w+)\.\.(\w+)\)\.to_a/g,
+    /\((\w+)\.\.(\w+)\)(?:\.to_a)?/g,
     'Array.from({length: $2 - $1 + 1}, (_, _i) => $1 + _i)'
   )
 
@@ -881,6 +894,28 @@ function transpileExpression(expr: string): string {
   result = result.replace(/\.select\s*\{\s*\|(\w+)\|\s*(.+?)\s*\}/g, '.filter(($1) => $2)')
   result = result.replace(/\.reject\s*\{\s*\|(\w+)\|\s*(.+?)\s*\}/g, '.filter(($1) => !($2))')
   result = result.replace(/\.collect\s*\{\s*\|(\w+)\|\s*(.+?)\s*\}/g, '.map(($1) => $2)')
+
+  // Wrap kwargs inside function calls: b.scale("c4", "major", num_octaves: 2)
+  // → b.scale("c4", "major", {num_octaves: 2})
+  // Find function calls with kwargs (key: value) inside parens
+  result = result.replace(/(\w+\()([^)]*?\w+:\s*[^)]+)\)/g, (_match, prefix, inner) => {
+    // Split args, find where kwargs start, wrap them
+    const args = splitArgs(inner)
+    const positional: string[] = []
+    const kwargs: string[] = []
+    for (const arg of args) {
+      const kw = arg.trim().match(/^(\w+):\s*(.+)$/)
+      if (kw) {
+        kwargs.push(`${kw[1]}: ${kw[2]}`)
+      } else {
+        positional.push(arg.trim())
+      }
+    }
+    if (kwargs.length > 0 && positional.length > 0) {
+      return `${prefix}${[...positional, `{${kwargs.join(', ')}}`].join(', ')})`
+    }
+    return _match // no change if all kwargs or all positional
+  })
 
   return result
 }

@@ -298,6 +298,11 @@ export class ProgramBuilder {
     return new Ring(result)
   }
 
+  /** Random distribution — returns a value between -max and +max. */
+  rdist(max: number, centre: number = 0): number {
+    return centre + this.rng.rrand(-max, max)
+  }
+
   dice(sides: number, bonus: number = 0): number {
     return this.rng.dice(sides) + bonus
   }
@@ -399,6 +404,15 @@ export class ProgramBuilder {
   }
 
   // --- Debug ---
+
+  /** Run block with density factor — divides sleep times. */
+  with_density(factor: number, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this.densityFactor
+    this.densityFactor = prev * factor
+    buildFn(this)
+    this.densityFactor = prev
+    return this
+  }
 
   /** Enable/disable debug output. In browser, this is a no-op flag. */
   use_debug(enabled: boolean): this {
