@@ -123,7 +123,10 @@ export function createIsolatedExecutor(
   // Polyfill: Ruby's String#ring → split string into array of characters (ring-like).
   // Usage: "x-x-".ring.tick → ["x","-","x","-"].at(b.tick())
   const stringRingPolyfill = `if (!String.prototype.ring) { Object.defineProperty(String.prototype, 'ring', { get: function() { return this.split(''); }, configurable: true, enumerable: false }); }\n`
-  const wrappedCode = `with(__scope__) { return (async () => {\n${mergePolyfill}${stringRingPolyfill}${transpiledCode}\n})(); }`
+  // Polyfill: Array.at() wrapping — Sonic Pi treats all arrays as rings (wrapping on tick).
+  // JS Array.at() returns undefined for index >= length. This wraps with modulo.
+  const arrayAtPolyfill = `{ const _origAt = Array.prototype.at; Object.defineProperty(Array.prototype, 'at', { value: function(i) { return this[((i % this.length) + this.length) % this.length]; }, writable: true, configurable: true }); }\n`
+  const wrappedCode = `with(__scope__) { return (async () => {\n${mergePolyfill}${stringRingPolyfill}${arrayAtPolyfill}${transpiledCode}\n})(); }`
 
   try {
     const fn = new Function('__scope__', wrappedCode)
