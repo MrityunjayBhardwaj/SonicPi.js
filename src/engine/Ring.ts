@@ -99,10 +99,33 @@ export class Ring<T> {
     return new Ring(result)
   }
 
+  /** Rotate the ring by n positions. Positive = left, negative = right. */
+  rotate(n: number = 1): Ring<T> {
+    if (this.items.length === 0) return new Ring([])
+    const len = this.items.length
+    const offset = ((n % len) + len) % len
+    return new Ring([...this.items.slice(offset), ...this.items.slice(0, offset)])
+  }
+
   /** Mirror: [1,2,3] → [1,2,3,2,1] */
   mirror(): Ring<T> {
     const mid = this.items.slice(1, -1).reverse()
     return new Ring([...this.items, ...mid])
+  }
+
+  /** First element. */
+  first(): T { return this.items[0] }
+
+  /** Last element. */
+  last(): T { return this.items[this.items.length - 1] }
+
+  /** All elements except the last. */
+  butlast(): Ring<T> { return new Ring(this.items.slice(0, -1)) }
+
+  /** Concatenate with another ring or array. */
+  concat(other: Ring<T> | T[]): Ring<T> {
+    const otherItems = other instanceof Ring ? other.toArray() : other
+    return new Ring([...this.items, ...otherItems])
   }
 
   /** Repeat the ring n times. */

@@ -889,7 +889,9 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     }
 
     // --- Bare method call (no receiver) ---
-    const methodName = methodNode?.text ?? node.namedChildren[0]?.text ?? node.text
+    // Strip Ruby bang (!) from method names: set_volume! → set_volume
+    const rawMethodName = methodNode?.text ?? node.namedChildren[0]?.text ?? node.text
+    const methodName = rawMethodName.endsWith('!') ? rawMethodName.slice(0, -1) : rawMethodName
 
     // live_loop :name do ... end
     if (methodName === 'live_loop') {
