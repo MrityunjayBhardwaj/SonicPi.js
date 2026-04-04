@@ -459,11 +459,18 @@ export function parseAndTranspile(source: string): { code: string; errors: Parse
       output.push(`${indent}${prefix}with_fx("${fxName}", (b) => {`)
     }
 
+    // Top-level with_fx: body is a registration context (b=null), NOT a ProgramBuilder scope.
+    // Only set insideLoop=true if we're already inside a loop — otherwise DSL functions
+    // (use_synth, use_bpm, etc.) must call the scope-level version without b. prefix.
+    const wasInsideLoop = insideLoop
     blockStack.push('loop')
-    const prevInsideLoop = insideLoop
-    insideLoop = true
+    if (!wasInsideLoop) {
+      // Keep insideLoop=false so use_synth/use_bpm/etc don't get b. prefix
+    } else {
+      insideLoop = true
+    }
     parseBlock()
-    insideLoop = prevInsideLoop
+    insideLoop = wasInsideLoop
     blockStack.pop()
 
     if (at('word', 'end')) advance()

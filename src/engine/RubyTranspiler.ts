@@ -160,7 +160,7 @@ export function transpileRubyToJS(ruby: string): string {
   let i = 0
   // Track block types so `end` produces the correct closing bracket
   // 'loop' → `})`, 'block' → `}`, 'thread' → `})()`
-  const blockStack: Array<'loop' | 'block' | 'thread' | 'define' | 'density' | 'density-toplevel' | 'case'> = []
+  const blockStack: Array<'loop' | 'block' | 'thread' | 'define' | 'density' | 'density-toplevel' | 'case' | 'toplevel-fx'> = []
   const definedFunctions = new Set<string>()
   // Stack for case/when — stores the expression being matched and whether first when was seen
   const caseExprStack: string[] = []
@@ -238,7 +238,11 @@ export function transpileRubyToJS(ruby: string): string {
       } else {
         result.push(`${indent}${prefix}with_fx("${fxName}", (b) => {${inlineComment}`)
       }
-      blockStack.push('loop') // uses }) closing like live_loop
+      // Top-level with_fx: body is a registration context (b=null), NOT a ProgramBuilder scope.
+      // Push 'toplevel-fx' so DSL functions (use_synth, use_bpm, etc.) don't get b. prefix.
+      // Inside a loop: body IS a ProgramBuilder scope, push 'loop' for b. prefix.
+      const alreadyInLoop = blockStack.includes('loop') || blockStack.includes('define')
+      blockStack.push(alreadyInLoop ? 'loop' : 'toplevel-fx')
       i++
       continue
     }
@@ -484,7 +488,7 @@ export function transpileRubyToJS(ruby: string): string {
         caseHadWhenStack.pop()
         result.push(`${indent}}${inlineComment}`)
       } else {
-        const closing = blockType === 'loop' ? '})' : blockType === 'thread' ? '})()' : '}'
+        const closing = (blockType === 'loop' || blockType === 'toplevel-fx') ? '})' : blockType === 'thread' ? '})()' : '}'
         result.push(`${indent}${closing}${inlineComment}`)
       }
       i++
@@ -508,6 +512,7 @@ export function transpileRubyToJS(ruby: string): string {
     }
 
     // --- Call to user-defined function: inject b as first arg ---
+    // 'toplevel-fx' does NOT count as insideLoop — b is null in top-level with_fx callbacks
     const insideLoop = blockStack.includes('loop') || blockStack.includes('define')
     const firstWord = code.match(/^(\w+)/)
     if (firstWord && definedFunctions.has(firstWord[1])) {
@@ -851,7 +856,22 @@ function transpileArgs(argsStr: string, srcLine?: number): string {
     if (kwMatch) {
       kwargs.push(`${kwMatch[1]}: ${kwMatch[2]}`)
     } else {
-      positional.push(part.trim())
+      let pos = part.trim()
+      // Strip Ruby grouping parens: `(chord_degree ...)` → `chord_degree ...`
+      // Without this, JS interprets `(a, b)` as the comma operator (discards a, returns b).
+      // Only strip if the entire arg is wrapped in matched parens.
+      if (pos.startsWith('(') && pos.endsWith(')')) {
+        // Verify the parens are a matched outer pair (not part of a function call)
+        let d = 0
+        let isOuterWrap = true
+        for (let j = 0; j < pos.length - 1; j++) {
+          if (pos[j] === '(') d++
+          if (pos[j] === ')') d--
+          if (d === 0) { isOuterWrap = false; break } // closed before end → not outer wrap
+        }
+        if (isOuterWrap) pos = pos.slice(1, -1).trim()
+      }
+      positional.push(pos)
     }
   }
 

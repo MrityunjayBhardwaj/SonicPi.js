@@ -339,6 +339,10 @@ export class SonicPiEngine {
           this.loopSeeds.set(name, seed + 1)
 
           const builder = new ProgramBuilder(seed, this.loopTicks.get(name))
+          // Apply the loop's synth default (set by top-level use_synth)
+          if (task.currentSynth && task.currentSynth !== 'beep') {
+            builder.use_synth(task.currentSynth)
+          }
           // Enter per-loop scope so variable writes are isolated
           scopeHandle?.enterScope(name)
           try {
@@ -437,8 +441,13 @@ export class SonicPiEngine {
           builderFn = maybeFn!
         }
         if (topFxStack.length > 0 && currentFxScopeId) {
-          // Assign this loop to the current FX scope — loops under same with_fx share one scope
-          const scopeId = currentFxScopeId
+          // Generate scope ID from FX stack contents — loops with identical FX chains share one scope.
+          // Different inner with_fx (e.g., reverb(0.5) vs reverb(0.8)) get separate scopes,
+          // but loops inside the SAME with_fx block share FX nodes.
+          const stackFingerprint = topFxStack.map(f =>
+            `${f.name}:${JSON.stringify(f.opts)}`
+          ).join('|')
+          const scopeId = `${currentFxScopeId}:${stackFingerprint}`
           this.loopFxScope.set(name, scopeId)
           if (!this.fxScopeChains.has(scopeId)) {
             this.fxScopeChains.set(scopeId, [...topFxStack])
