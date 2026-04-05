@@ -164,6 +164,9 @@ export function createIsolatedExecutor(
   ].join('\n') + '\n'
   const wrappedCode = `with(__scope__) { return (async () => {\n${mergePolyfill}${stringRingPolyfill}${arrayAtPolyfill}${spOperatorPolyfill}${transpiledCode}\n})(); }`
 
+  // Count polyfill lines so we can map error line numbers back to user code
+  const polyfillLineCount = (mergePolyfill + stringRingPolyfill + arrayAtPolyfill + spOperatorPolyfill).split('\n').length
+
   try {
     const fn = new Function('__scope__', wrappedCode)
     const execute = (...dslArgs: unknown[]) => {
@@ -174,8 +177,26 @@ export function createIsolatedExecutor(
       return fn(scope)
     }
     return { execute, scopeHandle }
-  } catch {
-    // Fallback: plain executor without sandbox
+  } catch (e) {
+    // SyntaxError from new Function() — enrich with line info before re-throwing
+    if (e instanceof SyntaxError) {
+      const msg = e.message
+      // Try to extract line number from the SyntaxError
+      // Chrome: stack contains "<anonymous>:42:5"
+      // Firefox/Safari: message may contain "line 42"
+      const lineMatch = e.stack?.match(/<anonymous>:(\d+):\d+/) ??
+                        msg.match(/line\s+(\d+)/i)
+      if (lineMatch) {
+        const jsLine = parseInt(lineMatch[1], 10)
+        // Subtract wrapper: 1 (with+async) + polyfill lines + 1 (function wrapper)
+        const sourceLine = jsLine - 1 - polyfillLineCount
+        const enriched = new SyntaxError(`${msg} (line ${sourceLine > 0 ? sourceLine : jsLine})`)
+        enriched.stack = e.stack
+        throw enriched
+      }
+      throw e
+    }
+    // Non-syntax error (e.g., CSP violation) — fallback to plain executor
     console.warn('[SonicPi] Sandbox unavailable — running without global blocking')
     const asyncBody = `return (async () => {\n${transpiledCode}\n})();`
     const fn = new Function(...dslParamNames, asyncBody)

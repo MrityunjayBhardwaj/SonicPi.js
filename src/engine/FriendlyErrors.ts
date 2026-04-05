@@ -45,22 +45,39 @@ export const KNOWN_FX = [
   'level', 'mono', 'autotuner',
 ]
 
-/** Try to extract a line number from an error stack trace. */
+/** Try to extract a line number from an error stack trace or message. */
 function extractLineFromStack(err: Error, lineOffset: number): number | undefined {
-  const stack = err.stack
-  if (!stack) return undefined
+  const msg = err.message ?? ''
+  const stack = err.stack ?? ''
 
-  // Look for "eval" or "anonymous" frames — that's where user code runs
-  const match = stack.match(/<anonymous>:(\d+):\d+/) ??
-                stack.match(/eval.*?:(\d+):\d+/) ??
-                stack.match(/Function.*?:(\d+):\d+/)
+  // 1. SyntaxError from new Function() — browsers embed line info in the message
+  //    Chrome: "Unexpected token '#' (line 42)"  or in stack "<anonymous>:42:5"
+  //    Firefox: "SyntaxError: ... line 42"
+  //    Safari: "SyntaxError: ... at line 42"
+  const syntaxMatch = msg.match(/line\s+(\d+)/i) ??
+                      stack.match(/Function.*?:(\d+):\d+/) ??
+                      stack.match(/<anonymous>:(\d+):\d+/) ??
+                      stack.match(/eval.*?:(\d+):\d+/)
 
-  if (match) {
-    const raw = parseInt(match[1], 10)
-    // Subtract the wrapper function's lines (async IIFE adds 2)
+  if (syntaxMatch) {
+    const raw = parseInt(syntaxMatch[1], 10)
+    // Subtract the wrapper function's lines (async IIFE wrapper + polyfills)
+    // The Sandbox wraps code in: with(__scope__) { return (async () => { ...polyfills... CODE })(); }
+    // Polyfills add ~7 lines before user code starts
+    const wrapperLines = 2 + lineOffset
+    const adjusted = raw - wrapperLines
+    return adjusted > 0 ? adjusted : raw > 0 ? raw : undefined
+  }
+
+  // 2. Runtime errors — look for the eval frame in the stack
+  const runtimeMatch = stack.match(/<anonymous>:(\d+):\d+/) ??
+                       stack.match(/eval.*?:(\d+):\d+/)
+  if (runtimeMatch) {
+    const raw = parseInt(runtimeMatch[1], 10)
     const adjusted = raw - 2 - lineOffset
     return adjusted > 0 ? adjusted : undefined
   }
+
   return undefined
 }
 
