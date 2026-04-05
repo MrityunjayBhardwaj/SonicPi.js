@@ -60,7 +60,9 @@ export class MenuBar {
 
     // Close dropdown on outside click
     document.addEventListener('click', (e) => {
-      if (this.activeDropdown && !this.container.contains(e.target as Node)) {
+      if (this.activeDropdown &&
+          !this.container.contains(e.target as Node) &&
+          !this.activeDropdown.contains(e.target as Node)) {
         this.closeDropdown()
       }
     })
@@ -146,7 +148,19 @@ export class MenuBar {
     `
     dropdown.appendChild(header)
 
-    const active = this.getActiveModes()
+    // Store checkbox refs for in-place updates (no rebuild flicker)
+    const checkboxes = new Map<ScopeMode, HTMLSpanElement>()
+
+    const updateCheckboxes = () => {
+      const active = this.getActiveModes()
+      for (const [mode, check] of checkboxes) {
+        const isOn = active.has(mode)
+        check.textContent = isOn ? '✓' : ''
+        check.style.color = isOn ? '#fff' : 'transparent'
+        check.style.background = isOn ? SCOPE_COLORS[mode] : 'none'
+        check.style.borderColor = isOn ? SCOPE_COLORS[mode] : 'rgba(255,255,255,0.2)'
+      }
+    }
 
     for (const mode of ALL_SCOPE_MODES) {
       const item = document.createElement('div')
@@ -159,6 +173,7 @@ export class MenuBar {
         color: #c9d1d9;
         gap: 0.5rem;
         transition: background 0.1s;
+        user-select: none;
       `
       item.addEventListener('mouseenter', () => {
         item.style.background = 'rgba(255,255,255,0.06)'
@@ -169,19 +184,23 @@ export class MenuBar {
 
       // Checkbox
       const check = document.createElement('span')
+      const active = this.getActiveModes()
+      const isOn = active.has(mode)
       check.style.cssText = `
         width: 14px; height: 14px;
-        border: 1px solid rgba(255,255,255,0.2);
+        border: 1px solid ${isOn ? SCOPE_COLORS[mode] : 'rgba(255,255,255,0.2)'};
         border-radius: 3px;
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 0.6rem;
         flex-shrink: 0;
-        ${active.has(mode) ? `background: ${SCOPE_COLORS[mode]}; border-color: ${SCOPE_COLORS[mode]};` : ''}
+        background: ${isOn ? SCOPE_COLORS[mode] : 'none'};
+        color: ${isOn ? '#fff' : 'transparent'};
+        transition: all 0.15s;
       `
-      check.textContent = active.has(mode) ? '✓' : ''
-      check.style.color = active.has(mode) ? '#fff' : 'transparent'
+      check.textContent = isOn ? '✓' : ''
+      checkboxes.set(mode, check)
 
       // Color dot + label
       const dot = document.createElement('span')
@@ -202,16 +221,7 @@ export class MenuBar {
       item.addEventListener('click', (e) => {
         e.stopPropagation()
         this.onToggleScope(mode)
-        // Rebuild menu to reflect new state
-        const parent = dropdown.parentElement
-        const pos = { left: dropdown.style.left, top: dropdown.style.top }
-        dropdown.remove()
-        const newDropdown = this.buildVisualsMenu()
-        newDropdown.dataset.menu = 'Visuals'
-        newDropdown.style.left = pos.left
-        newDropdown.style.top = pos.top
-        if (parent) parent.appendChild(newDropdown)
-        this.activeDropdown = newDropdown
+        updateCheckboxes()
       })
 
       dropdown.appendChild(item)
