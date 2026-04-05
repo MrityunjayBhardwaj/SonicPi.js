@@ -4,7 +4,6 @@ import { VirtualTimeScheduler } from '../VirtualTimeScheduler'
 import { ProgramBuilder } from '../ProgramBuilder'
 import { runProgram } from '../interpreters/AudioInterpreter'
 import { SoundEventStream } from '../SoundEventStream'
-import { transpile, createExecutor } from '../Transpiler'
 import { ring, knit, range, line } from '../Ring'
 import { spread } from '../EuclideanRhythm'
 import { noteToMidi, midiToFreq, noteToFreq } from '../NoteToFreq'
@@ -108,8 +107,30 @@ async function runCode(rubyCode: string): Promise<{ error?: Error; events: strin
   }
 
   try {
-    const transpiled = autoTranspile(rubyCode)
-    const { code: transpiledCode } = transpile(transpiled)
+    const transpiledCode = autoTranspile(rubyCode)
+
+    // Operator helpers — same as Sandbox polyfills (TreeSitter emits these for +, -, *)
+    const __spNoteRe = /^[a-g][sb#]?\d*$/
+    const __spIsNote = (v: unknown): v is string => typeof v === 'string' && __spNoteRe.test(v)
+    const __spToNum = (v: unknown): unknown => __spIsNote(v) && typeof note === 'function' ? note(v) : v
+    const __spIsRing = (v: unknown): boolean => v != null && typeof v === 'object' && typeof (v as any).toArray === 'function' && typeof (v as any).tick === 'function'
+    const __spAdd = (a: any, b: any) => {
+      if (a == null || b == null) return null
+      a = __spToNum(a); b = __spToNum(b)
+      if (Array.isArray(a) && typeof b === 'number') return a.map((x: number) => x + b)
+      if (typeof a === 'number' && Array.isArray(b)) return b.map((x: number) => a + x)
+      return a + b
+    }
+    const __spSub = (a: any, b: any) => {
+      if (a == null || b == null) return null
+      a = __spToNum(a); b = __spToNum(b)
+      return a - b
+    }
+    const __spMul = (a: any, b: any) => {
+      if (a == null || b == null) return null
+      a = __spToNum(a); b = __spToNum(b)
+      return a * b
+    }
 
     const dslNames = [
       'live_loop', 'use_bpm', 'use_synth',
@@ -119,6 +140,7 @@ async function runCode(rubyCode: string): Promise<{ error?: Error; events: strin
       'chord', 'scale', 'chord_invert', 'note', 'note_range',
       'noteToMidi', 'midiToFreq', 'noteToFreq',
       'puts', 'stop',
+      '__spAdd', '__spSub', '__spMul', '__spIsNote', '__spToNum', '__spIsRing',
     ]
     const dslValues = [
       wrappedLiveLoop,
@@ -131,9 +153,12 @@ async function runCode(rubyCode: string): Promise<{ error?: Error; events: strin
       noteToMidi, midiToFreq, noteToFreq,
       (...args: unknown[]) => {},  // puts no-op in tests
       () => {},  // stop no-op
+      __spAdd, __spSub, __spMul, __spIsNote, __spToNum, __spIsRing,
     ]
 
-    const executor = createExecutor(transpiledCode, dslNames)
+    // Inline executor — replaces the deleted Transpiler.ts createExecutor
+    const asyncBody = `return (async () => {\n${transpiledCode}\n})();`
+    const executor = new Function(...dslNames, asyncBody) as (...args: unknown[]) => Promise<void>
     await executor(...dslValues)
 
     // If there was top-level code (not in a live_loop), run it as __main__

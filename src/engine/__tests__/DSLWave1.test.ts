@@ -199,11 +199,12 @@ describe('ProgramBuilder Wave 1', () => {
 // Transpiler wiring — verify new functions transpile correctly (regex fallback)
 // ---------------------------------------------------------------------------
 
-describe('Transpiler wiring (regex)', () => {
-  it('wait transpiles to b.sleep()', () => {
+describe('Transpiler wiring', () => {
+  it('wait transpiles to b.sleep() or b.wait()', () => {
     const ruby = `live_loop :test do\n  play 60\n  wait 0.5\nend`
     const result = autoTranspileDetailed(ruby)
-    expect(result.code).toContain('b.sleep(0.5)')
+    // TreeSitter preserves `wait` as b.wait() — ProgramBuilder aliases it to sleep
+    expect(result.code).toMatch(/b\.(sleep|wait)\(0\.5\)/)
   })
 
   it('standalone hz_to_midi gets b. prefix', () => {
