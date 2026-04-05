@@ -80,11 +80,9 @@ export class Scope {
   }
 
   private rebuildCanvases(): void {
-    // Remove old canvases
-    for (const canvas of this.canvases.values()) {
-      canvas.remove()
-    }
+    // Clear everything — canvases AND their wrapper divs
     this.canvases.clear()
+    this.canvasContainer.innerHTML = ''
 
     // Create canvas per active mode
     for (const mode of ALL_SCOPE_MODES) {
