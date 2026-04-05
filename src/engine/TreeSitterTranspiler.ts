@@ -146,6 +146,17 @@ export function treeSitterTranspile(ruby: string): TreeSitterTranspileResult {
     return { code: '', ok: false, errors: ['tree-sitter not initialized'] }
   }
 
+  // Pre-process: Sonic Pi uses /text/ as single-line comments (Ruby regex syntax
+  // repurposed). TreeSitter's Ruby grammar may parse these as division depending
+  // on context. Convert to # comments before parsing so TreeSitter sees clean Ruby.
+  ruby = ruby.split('\n').map(line => {
+    const trimmed = line.trim()
+    if (/^\/[^/].*\/$/.test(trimmed) && !/[=~<>!]/.test(trimmed)) {
+      return line.replace(trimmed, `# ${trimmed.slice(1, -1).trim()}`)
+    }
+    return line
+  }).join('\n')
+
   const tree = Parser.parse(ruby)
   const errors: string[] = []
   const ctx: TranspileContext = {
@@ -1642,8 +1653,9 @@ function transpileCase(node: any, ctx: TranspileContext): string {
         continue
       }
 
-      // Multiple children: patterns + body
+      // Multiple children: patterns + body (filter out comment nodes)
       const patternNodes = child.namedChildren.slice(0, -1)
+        .filter((p: any) => p.type !== 'comment')
       const bodyNode = child.namedChildren[child.namedChildCount - 1]
       conditions = patternNodes.map((p: any) => transpileNode(p, ctx))
       const condStr = conditions.map(c => `${exprStr} === ${c}`).join(' || ')

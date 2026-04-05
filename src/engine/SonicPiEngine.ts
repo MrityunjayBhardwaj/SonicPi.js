@@ -4,10 +4,9 @@ import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioI
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
 import { normalizeFxParams } from './SoundLayer'
-import { transpile } from './Transpiler'
 import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbox'
 import { autoTranspileDetailed } from './RubyTranspiler'
-import { initTreeSitter, isTreeSitterReady, treeSitterTranspile } from './TreeSitterTranspiler'
+import { initTreeSitter } from './TreeSitterTranspiler'
 import { friendlyError, formatFriendlyError, type FriendlyError } from './FriendlyErrors'
 import { detectStratum, Stratum } from './Stratum'
 import { SoundEventStream } from './SoundEventStream'
@@ -200,35 +199,20 @@ export class SonicPiEngine {
         this.loopSeeds.clear()
       }
 
-      // Transpile: Ruby DSL → JS builder chain
-      // Primary: tree-sitter catamorphism. Fallback: regex transpiler.
+      // Transpile: Ruby DSL → JS builder chain (TreeSitter only).
       // Compile-once cache (#8): skip transpilation on hot-swap with unchanged code.
       let transpiledCode: string
       const cached = this.transpileCache.get(code)
       if (cached) {
         transpiledCode = cached
-      } else if (isTreeSitterReady()) {
-        const tsResult = treeSitterTranspile(code)
-        if (tsResult.ok) {
-          transpiledCode = tsResult.code
-        } else {
-          // Tree-sitter failed — fall back to regex
-          const warnMsg = `[Warning] Tree-sitter transpile failed (${tsResult.errors[0] ?? 'unknown'}), using regex fallback`
-          if (this.printHandler) this.printHandler(warnMsg)
-          else console.warn('[SonicPi]', warnMsg)
-          const regexResult = autoTranspileDetailed(code)
-          transpiledCode = transpile(regexResult.code).code
-        }
-        this.transpileCache.set(code, transpiledCode)
       } else {
-        // Tree-sitter not available — use regex transpiler
-        const regexResult = autoTranspileDetailed(code)
-        if (regexResult.usedFallback) {
-          const warnMsg = `[Warning] Parser fell back to regex transpiler: ${regexResult.fallbackReason}`
+        const result = autoTranspileDetailed(code)
+        if (result.usedFallback) {
+          const warnMsg = `[Warning] Transpile issue: ${result.fallbackReason}`
           if (this.printHandler) this.printHandler(warnMsg)
           else console.warn('[SonicPi]', warnMsg)
         }
-        transpiledCode = transpile(regexResult.code).code
+        transpiledCode = result.code
         this.transpileCache.set(code, transpiledCode)
       }
 
