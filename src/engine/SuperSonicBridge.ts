@@ -360,9 +360,18 @@ export class SuperSonicBridge {
       const bundle = this.oscEncoder!.encodeSingleBundle(ntpTime, msg.address, msg.args)
       this.sonic.sendOSC(bundle)
     } else {
-      // Multiple messages — batch into one bundle
-      const bundle = fallbackEncodeBundle(ntpTime, this.messageQueue)
-      this.sonic.sendOSC(bundle)
+      // Multiple messages — try batching, fall back to individual sends
+      // if the combined bundle exceeds SuperSonic's 1024-byte limit.
+      try {
+        const bundle = fallbackEncodeBundle(ntpTime, this.messageQueue)
+        this.sonic.sendOSC(bundle)
+      } catch {
+        // Bundle too large — send each message as its own bundle
+        for (const msg of this.messageQueue) {
+          const single = this.oscEncoder!.encodeSingleBundle(ntpTime, msg.address, msg.args)
+          this.sonic.sendOSC(single)
+        }
+      }
     }
     this.messageQueue.length = 0
   }
