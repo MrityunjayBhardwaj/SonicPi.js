@@ -315,6 +315,8 @@ const BUILDER_METHODS = new Set([
   'ring', 'knit', 'range', 'line', 'spread',
   'chord', 'scale', 'chord_invert', 'note', 'note_range',
   'chord_degree', 'degree', 'chord_names', 'scale_names',
+  // OSC
+  'osc_send',
   // Budget
   '__checkBudget__',
 ])
@@ -349,6 +351,8 @@ const TOP_LEVEL_SCOPE = new Set([
   // Data constructors (also on builder, but available at top level)
   'ring', 'knit', 'range', 'line', 'spread',
   'chord', 'scale', 'chord_invert', 'note', 'note_range',
+  // OSC
+  'osc_send',
 ])
 
 /**
@@ -1069,9 +1073,11 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return '/* load_samples: no-op in browser */'
     }
 
-    // osc_send — no-op with warning
+    // osc_send — emit to host-provided handler
     if (methodName === 'osc_send') {
-      return '/* osc_send: not available in browser */'
+      const args = argsNode ? transpileArgList(argsNode, ctx) : ''
+      const prefix = ctx.insideLoop ? 'b.' : ''
+      return `${prefix}osc_send(${args})`
     }
 
     // synth command: `synth :name, opts`

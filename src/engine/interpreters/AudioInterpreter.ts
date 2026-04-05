@@ -44,6 +44,8 @@ export interface AudioContext {
   reusableFx: Map<string, ReusableFxState>
   /** Global store for set/get — deferred set steps write here at runtime. */
   globalStore?: Map<string | symbol, unknown>
+  /** Host-provided OSC send handler. If not set, osc_send is a silent no-op. */
+  oscHandler?: (host: string, port: number, path: string, ...args: unknown[]) => void
 }
 
 /**
@@ -300,6 +302,14 @@ export async function runProgram(
         }
         break
       }
+
+      case 'oscSend':
+        if (ctx.oscHandler) {
+          ctx.oscHandler(step.host, step.port, step.path, ...step.args)
+        } else {
+          ctx.printHandler?.(`[Warning] osc_send: no handler set — message to ${step.host}:${step.port}${step.path} dropped`)
+        }
+        break
 
       case 'print':
         ctx.printHandler?.(step.message)

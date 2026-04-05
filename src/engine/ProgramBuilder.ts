@@ -223,6 +223,12 @@ export class ProgramBuilder {
     return this
   }
 
+  /** Emit an OSC message — the host provides the actual transport. */
+  osc_send(host: string, port: number, path: string, ...args: unknown[]): this {
+    this.steps.push({ tag: 'oscSend', host, port, path, args })
+    return this
+  }
+
   /** Play multiple notes simultaneously as a chord. */
   play_chord(notes: number | string | Ring<number> | number[], opts?: Record<string, unknown>): this {
     return this.play(notes, opts)

@@ -215,6 +215,7 @@ export class Editor {
   private onRunCallback: (() => void) | null = null
   private onStopCallback: (() => void) | null = null
   private onCursorWordChange: ((word: string) => void) | null = null
+  private currentFontSize: number = 14
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -222,6 +223,11 @@ export class Editor {
       height: 100%; overflow: hidden;
       background: #1B2B34;
     `
+    // Load saved font size
+    try {
+      const saved = localStorage.getItem('spw-font-size')
+      if (saved) this.currentFontSize = Math.max(10, Math.min(24, parseInt(saved)))
+    } catch { /* ignore */ }
   }
 
   async init(initialCode: string): Promise<void> {
@@ -300,6 +306,26 @@ export class Editor {
   }
 
   private errorLineEl: HTMLElement | null = null
+  private onZenCallback: (() => void) | null = null
+
+  /** Register a callback for fullscreen/zen mode (F11). */
+  onZen(callback: () => void): void { this.onZenCallback = callback }
+
+  /** Change editor font size by delta px. Persists to localStorage. */
+  changeFontSize(delta: number): void {
+    this.currentFontSize = Math.max(10, Math.min(24, this.currentFontSize + delta))
+    try { localStorage.setItem('spw-font-size', String(this.currentFontSize)) } catch { /* ignore */ }
+
+    if (this.view) {
+      // CodeMirror: update the editor's CSS font-size via its DOM element
+      const scroller = this.view.dom.querySelector('.cm-scroller') as HTMLElement | null
+      if (scroller) scroller.style.fontSize = `${this.currentFontSize}px`
+      // Also update the top-level & wrapper
+      this.view.dom.style.fontSize = `${this.currentFontSize}px`
+    } else if (this.fallbackTextarea) {
+      this.fallbackTextarea.style.fontSize = `${this.currentFontSize}px`
+    }
+  }
 
   dispose(): void {
     this.view?.destroy()
@@ -376,7 +402,7 @@ export class Editor {
     // Dark theme
     try {
       const theme = cm.EditorView.theme({
-        '&': { height: '100%', fontSize: '14px', background: '#1B2B34' },
+        '&': { height: '100%', fontSize: `${this.currentFontSize}px`, background: '#1B2B34' },
         '.cm-scroller': {
           fontFamily: "'Fira Code', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace",
           lineHeight: '1.65',
@@ -422,6 +448,7 @@ export class Editor {
         { key: 'Alt-r', run: () => { this.onRunCallback?.(); return true } },
         { key: 'Escape', run: () => { this.onStopCallback?.(); return true } },
         { key: 'Alt-s', run: () => { this.onStopCallback?.(); return true } },
+        { key: 'F11', run: () => { this.onZenCallback?.(); return true } },
         {
           key: 'Mod-/',
           run: (view: EditorView) => {
@@ -534,7 +561,7 @@ export class Editor {
       border: none;
       padding: 1rem;
       font-family: 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
-      font-size: 14px;
+      font-size: ${this.currentFontSize}px;
       line-height: 1.65;
       resize: none;
       outline: none;
@@ -556,6 +583,10 @@ export class Editor {
       if (e.altKey && e.key === 's') {
         e.preventDefault()
         this.onStopCallback?.()
+      }
+      if (e.key === 'F11') {
+        e.preventDefault()
+        this.onZenCallback?.()
       }
       // Tab inserts 2 spaces
       if (e.key === 'Tab') {

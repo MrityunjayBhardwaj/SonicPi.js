@@ -142,6 +142,7 @@ export class App {
     await this.editor.init(this.buffers[0] || WELCOME_CODE)
     this.editor.onRun(() => this.handlePlay())
     this.editor.onStop(() => this.handleStop())
+    this.editor.onZen(() => this.toggleZen())
     this.editor.onCursorWord((word) => this.helpPanel.updateWord(word))
 
     // Show buffer content indicators
@@ -204,6 +205,10 @@ export class App {
       getMidiDevices: () => this.getMidiDevices(),
       onMidiDeviceToggle: (id, type, selected) => this.toggleMidiDevice(id, type, selected),
       onOpenSampleBrowser: () => this.openSampleBrowser(),
+      onFontSizeChange: (delta) => this.editor.changeFontSize(delta),
+      onSave: () => this.handleSave(),
+      onLoad: () => this.handleLoad(),
+      onZen: () => this.toggleZen(),
     })
 
     // Main area
@@ -353,6 +358,10 @@ export class App {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         this.handleStop()
+      }
+      if (e.key === 'F11') {
+        e.preventDefault()
+        this.toggleZen()
       }
       if (e.ctrlKey && e.shiftKey && e.key === 'S') {
         e.preventDefault()
@@ -539,6 +548,59 @@ export class App {
       // starting the new example — otherwise scsynth plays the tail of the old one.
       await new Promise(r => setTimeout(r, this.engine!.schedAhead * 1000 + 50))
       await this.handlePlay()
+    }
+  }
+
+  private async handleSave(): Promise<void> {
+    const code = this.editor.getValue()
+    const name = `buffer_${this.activeBuffer}.rb`
+
+    // Modern File System Access API
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: name,
+          types: [{ description: 'Sonic Pi', accept: { 'text/x-ruby': ['.rb'] } }],
+        })
+        const writable = await handle.createWritable()
+        await writable.write(code)
+        await writable.close()
+        this.console.logSystem('  File saved.')
+        return
+      } catch { /* user cancelled or API unavailable */ }
+    }
+
+    // Fallback: download link
+    const blob = new Blob([code], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = name; a.click()
+    URL.revokeObjectURL(url)
+    this.console.logSystem('  File downloaded.')
+  }
+
+  private handleLoad(): void {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.rb,.txt,.spi'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      const text = await file.text()
+      this.editor.setValue(text)
+      this.saveBuffers()
+      this.console.logSystem(`  Loaded: ${file.name}`)
+    }
+    input.click()
+  }
+
+  private toggleZen(): void {
+    if (document.fullscreenElement) {
+      document.exitFullscreen()
+    } else {
+      this.root.requestFullscreen().catch(() => {
+        // Fullscreen not supported or denied
+      })
     }
   }
 

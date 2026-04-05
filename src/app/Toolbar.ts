@@ -21,6 +21,10 @@ export interface ToolbarCallbacks {
   onMidiDeviceToggle?: (deviceId: string, type: 'input' | 'output', selected: boolean) => void
   getMidiDevices?: () => MidiDeviceInfo[]
   onOpenSampleBrowser?: () => void
+  onFontSizeChange?: (delta: number) => void
+  onSave?: () => void
+  onLoad?: () => void
+  onZen?: () => void
 }
 
 const BUFFER_COUNT = 10
@@ -108,6 +112,28 @@ export class Toolbar {
 
     topRow.appendChild(this.separator())
 
+    // Save button
+    const saveBtn = this.iconButton(
+      '\u{1F4BE}', 'Save',
+      () => this.callbacks.onSave?.(),
+      { bg: '#555', hover: '#777' }
+    )
+    saveBtn.title = 'Save buffer to file'
+    saveBtn.style.opacity = '0.7'
+    topRow.appendChild(saveBtn)
+
+    // Load button
+    const loadBtn = this.iconButton(
+      '\u{1F4C2}', 'Load',
+      () => this.callbacks.onLoad?.(),
+      { bg: '#555', hover: '#777' }
+    )
+    loadBtn.title = 'Load file into buffer'
+    loadBtn.style.opacity = '0.7'
+    topRow.appendChild(loadBtn)
+
+    topRow.appendChild(this.separator())
+
     // Volume
     const volWrap = document.createElement('div')
     volWrap.style.cssText = 'display: flex; align-items: center; gap: 0.3rem;'
@@ -138,6 +164,38 @@ export class Toolbar {
     `
     this.bpmLabel.textContent = '120 BPM'
     topRow.appendChild(this.bpmLabel)
+
+    topRow.appendChild(this.separator())
+
+    // Font size buttons
+    const fontWrap = document.createElement('div')
+    fontWrap.style.cssText = 'display: flex; align-items: center; gap: 0.15rem;'
+    const fontDown = document.createElement('button')
+    fontDown.textContent = 'A\u2212'
+    fontDown.title = 'Decrease font size'
+    fontDown.style.cssText = `
+      padding: 0.2rem 0.4rem; border: none; border-radius: 3px;
+      background: rgba(255,255,255,0.06); color: #888;
+      font-family: inherit; font-size: 0.65rem; cursor: pointer;
+      transition: background 0.15s;
+    `
+    fontDown.addEventListener('mouseenter', () => { fontDown.style.background = 'rgba(255,255,255,0.12)' })
+    fontDown.addEventListener('mouseleave', () => { fontDown.style.background = 'rgba(255,255,255,0.06)' })
+    fontDown.addEventListener('click', () => this.callbacks.onFontSizeChange?.(-1))
+    const fontUp = document.createElement('button')
+    fontUp.textContent = 'A+'
+    fontUp.title = 'Increase font size'
+    fontUp.style.cssText = `
+      padding: 0.2rem 0.4rem; border: none; border-radius: 3px;
+      background: rgba(255,255,255,0.06); color: #888;
+      font-family: inherit; font-size: 0.65rem; cursor: pointer;
+      transition: background 0.15s;
+    `
+    fontUp.addEventListener('mouseenter', () => { fontUp.style.background = 'rgba(255,255,255,0.12)' })
+    fontUp.addEventListener('mouseleave', () => { fontUp.style.background = 'rgba(255,255,255,0.06)' })
+    fontUp.addEventListener('click', () => this.callbacks.onFontSizeChange?.(1))
+    fontWrap.append(fontDown, fontUp)
+    topRow.appendChild(fontWrap)
 
     topRow.appendChild(this.separator())
 
@@ -207,6 +265,22 @@ export class Toolbar {
       }
     })
     topRow.appendChild(select)
+
+    // Zen / fullscreen button
+    const zenBtn = document.createElement('button')
+    zenBtn.textContent = '\u26F6'
+    zenBtn.title = 'Fullscreen / Zen mode (F11)'
+    zenBtn.style.cssText = `
+      padding: 0.2rem 0.5rem; border: none; border-radius: 3px;
+      background: rgba(255,255,255,0.06); color: #888;
+      font-size: 0.85rem; cursor: pointer;
+      transition: background 0.15s;
+      margin-left: 0.3rem;
+    `
+    zenBtn.addEventListener('mouseenter', () => { zenBtn.style.background = 'rgba(255,255,255,0.12)' })
+    zenBtn.addEventListener('mouseleave', () => { zenBtn.style.background = 'rgba(255,255,255,0.06)' })
+    zenBtn.addEventListener('click', () => this.callbacks.onZen?.())
+    topRow.appendChild(zenBtn)
 
     // Bottom row: buffer tabs
     const bufRow = this.createRow()

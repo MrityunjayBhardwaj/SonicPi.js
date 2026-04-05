@@ -87,6 +87,8 @@ export class SonicPiEngine {
   readonly midiBridge = new MidiBridge()
   /** Global key-value store — shared across all loops via get/set */
   private globalStore = new Map<string | symbol, unknown>()
+  /** Host-provided OSC send handler. Engine fires this; host wires to actual transport. */
+  private oscHandler: ((host: string, port: number, path: string, ...args: unknown[]) => void) | null = null
 
   get schedAhead(): number { return this.schedAheadTime }
 
@@ -401,6 +403,7 @@ export class SonicPiEngine {
             nodeRefMap: this.nodeRefMap,
             reusableFx: this.reusableFx,
             globalStore: this.globalStore,
+            oscHandler: this.oscHandler ?? undefined,
           })
 
           // Auto-cue the loop name after each iteration.
@@ -609,6 +612,15 @@ export class SonicPiEngine {
       const get_note_on = (channel: number = 1) => this.midiBridge.getLastNoteOn(channel)
       const get_note_off = (channel: number = 1) => this.midiBridge.getLastNoteOff(channel)
 
+      // Top-level osc_send — fires the host-provided handler (no-op with warning if unset)
+      const topLevelOscSend = (host: string, port: number, path: string, ...args: unknown[]) => {
+        if (this.oscHandler) {
+          this.oscHandler(host, port, path, ...args)
+        } else {
+          topLevelPuts(`[Warning] osc_send: no handler set — message to ${host}:${port}${path} dropped`)
+        }
+      }
+
       // Top-level print alias (same as puts)
       const topLevelPrint = topLevelPuts
 
@@ -657,6 +669,8 @@ export class SonicPiEngine {
         'midi_prog_change', 'midi_clock_tick',
         'midi_start', 'midi_stop', 'midi_continue',
         'midi_all_notes_off', 'midi_notes_off', 'midi_devices',
+        // OSC
+        'osc_send',
       ]
       const dslValues = [
         topLevelBuilder,
@@ -689,6 +703,8 @@ export class SonicPiEngine {
         midi_prog_change, midi_clock_tick,
         midi_start, midi_stop, midi_continue,
         midi_all_notes_off, midi_notes_off, midi_devices,
+        // OSC
+        topLevelOscSend,
       ]
 
       const codeWarnings = validateCode(transpiledCode)
@@ -804,6 +820,15 @@ export class SonicPiEngine {
   /** Register a handler for `puts` / `print` output from user code. */
   setPrintHandler(handler: (msg: string) => void): void {
     this.printHandler = handler
+  }
+
+  /**
+   * Register a handler for `osc_send` calls in user code.
+   * The engine fires this handler; the host wires it to actual transport
+   * (e.g. WebSocket → UDP bridge). If no handler is set, osc_send logs a warning.
+   */
+  setOscHandler(handler: (host: string, port: number, path: string, ...args: unknown[]) => void): void {
+    this.oscHandler = handler
   }
 
   /**
