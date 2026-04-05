@@ -12,6 +12,7 @@ import { Editor } from './Editor'
 import { Scope } from './Scope'
 import { Console } from './Console'
 import { Toolbar } from './Toolbar'
+import { MenuBar } from './MenuBar'
 
 // Sonic Pi's actual welcome buffer
 const WELCOME_CODE = `# Welcome to SonicPi.js
@@ -259,6 +260,19 @@ export class App {
     rightPanel.appendChild(scopeContainer)
     this.scope = new Scope(scopeContainer)
 
+    // Menu bar — inserted after toolbar, before main content.
+    // Must be created after Scope so toggleMode/getActiveModes are available.
+    const menuBarAnchor = this.root.querySelector('.spw-main')
+    if (menuBarAnchor) {
+      new MenuBar(this.root, {
+        onToggleScope: (mode) => this.scope.toggleMode(mode),
+        getActiveModes: () => this.scope.getActiveModes(),
+      })
+      // Move menu bar before main content
+      const menuEl = this.root.lastElementChild!
+      this.root.insertBefore(menuEl, menuBarAnchor)
+    }
+
     // Console
     const consoleContainer = document.createElement('div')
     consoleContainer.style.cssText = `
@@ -392,7 +406,7 @@ export class App {
       // Connect scope
       const audio = this.engine.components.audio
       if (audio) {
-        this.scope.connect(audio.analyser)
+        this.scope.connect(audio.analyser, audio.analyserL, audio.analyserR)
       }
 
       // Wire event stream for console logging

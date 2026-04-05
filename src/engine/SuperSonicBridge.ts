@@ -126,6 +126,8 @@ export class SuperSonicBridge {
   private resolvedSampleBaseURL = 'https://unpkg.com/supersonic-scsynth-samples@latest/samples/'
   private nextBufNum = 0
   private analyserNode: AnalyserNode | null = null
+  private analyserL: AnalyserNode | null = null
+  private analyserR: AnalyserNode | null = null
   private options: SuperSonicBridgeOptions
   /** rand_buf — buffer of random values for slicer/wobble/panslicer FX.
    *  Desktop SP loads rand-stream.wav (studio.rb:87). We generate in-memory. */
@@ -262,6 +264,16 @@ export class SuperSonicBridge {
     this.masterMerger.connect(this.analyserNode)
     this.analyserNode.connect(this.masterGainNode)
     this.masterGainNode.connect(audioCtx.destination)
+
+    // Per-channel analysers for stereo scope + true lissajous (L=X, R=Y)
+    this.analyserL = audioCtx.createAnalyser()
+    this.analyserL.fftSize = AUDIO_IO.ANALYSER_FFT_SIZE
+    this.analyserL.smoothingTimeConstant = AUDIO_IO.ANALYSER_SMOOTHING
+    this.analyserR = audioCtx.createAnalyser()
+    this.analyserR.fftSize = AUDIO_IO.ANALYSER_FFT_SIZE
+    this.analyserR.smoothingTimeConstant = AUDIO_IO.ANALYSER_SMOOTHING
+    this.splitter.connect(this.analyserL, 0) // left channel
+    this.splitter.connect(this.analyserR, 1) // right channel
   }
 
   get audioContext(): AudioContext | null {
@@ -270,6 +282,14 @@ export class SuperSonicBridge {
 
   get analyser(): AnalyserNode | null {
     return this.analyserNode
+  }
+
+  get analyserLeft(): AnalyserNode | null {
+    return this.analyserL
+  }
+
+  get analyserRight(): AnalyserNode | null {
+    return this.analyserR
   }
 
   /** Expose SuperSonic metrics for diagnostics. Returns null if not available. */

@@ -773,6 +773,11 @@ function transpileNode(node: any, ctx: TranspileContext): string {
     case 'comment':
       return `//${node.text.slice(1)}`
 
+    // Sonic Pi uses /text/ as multi-line comments. Ruby's grammar parses
+    // these as regex literals. Convert to JS comments.
+    case 'regex':
+      return `// ${node.text.slice(1, -1).trim()}`
+
     // ---- Misc ----
     case 'expression_statement':
       return transpileChildren(node, ctx)
