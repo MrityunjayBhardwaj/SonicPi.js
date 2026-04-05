@@ -57,12 +57,12 @@ export class MenuBar {
     this.container = document.createElement('div')
     this.container.style.cssText = `
       display: flex;
-      align-items: center;
-      padding: 0 0.5rem;
-      height: 24px;
-      background: #161b22;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      font-size: 0.65rem;
+      align-items: stretch;
+      padding: 0;
+      height: 32px;
+      background: #0d1117;
+      border-bottom: 2px solid rgba(255,255,255,0.08);
+      font-size: 0.72rem;
       color: #8b949e;
       gap: 0;
       flex-shrink: 0;
@@ -70,10 +70,8 @@ export class MenuBar {
       z-index: 10;
     `
 
-    // View menu (before Visuals)
+    // Tab bar — prominent tabs above everything (Desktop SP style)
     this.addMenu('View', () => this.buildViewMenu())
-
-    // Visuals menu
     this.addMenu('Visuals', () => this.buildVisualsMenu())
 
     // Samples menu (custom sample upload)
@@ -82,9 +80,6 @@ export class MenuBar {
       { onLog: options.onLog },
     )
     this.addMenu('Samples', () => this.buildSamplesMenu())
-
-    // View menu (help panel toggle)
-    this.addMenu('View', () => this.buildViewMenu())
 
     // Close dropdown on outside click
     document.addEventListener('click', (e) => {
@@ -103,18 +98,25 @@ export class MenuBar {
     btn.textContent = label
     btn.style.cssText = `
       background: none; border: none; color: #8b949e;
-      font-family: inherit; font-size: 0.65rem;
-      padding: 0.2rem 0.6rem; cursor: pointer;
-      border-radius: 3px;
-      transition: background 0.1s, color 0.1s;
+      font-family: inherit; font-size: 0.72rem;
+      padding: 0 1rem; cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.15s, border-color 0.15s;
+      height: 100%;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-weight: 500;
     `
     btn.addEventListener('mouseenter', () => {
-      btn.style.background = 'rgba(255,255,255,0.06)'
       btn.style.color = '#c9d1d9'
+      if (this.activeDropdown?.dataset.menu !== label) {
+        btn.style.borderBottomColor = 'rgba(232,82,124,0.3)'
+      }
     })
     btn.addEventListener('mouseleave', () => {
       if (this.activeDropdown?.dataset.menu !== label) {
-        btn.style.background = 'none'
+        btn.style.borderBottomColor = 'transparent'
         btn.style.color = '#8b949e'
       }
     })
@@ -129,10 +131,10 @@ export class MenuBar {
       dropdown.dataset.menu = label
       const rect = btn.getBoundingClientRect()
       dropdown.style.left = `${rect.left}px`
-      dropdown.style.top = `${rect.bottom}px`
+      dropdown.style.top = `${rect.bottom + 2}px`
       document.body.appendChild(dropdown)
       this.activeDropdown = dropdown
-      btn.style.background = 'rgba(255,255,255,0.08)'
+      btn.style.borderBottomColor = '#E8527C'
       btn.style.color = '#c9d1d9'
     })
     this.container.appendChild(btn)
@@ -142,9 +144,9 @@ export class MenuBar {
     if (this.activeDropdown) {
       this.activeDropdown.remove()
       this.activeDropdown = null
-      // Reset all menu button styles
+      // Reset all tab button styles
       for (const btn of this.container.querySelectorAll('button')) {
-        (btn as HTMLElement).style.background = 'none';
+        (btn as HTMLElement).style.borderBottomColor = 'transparent';
         (btn as HTMLElement).style.color = '#8b949e'
       }
     }
