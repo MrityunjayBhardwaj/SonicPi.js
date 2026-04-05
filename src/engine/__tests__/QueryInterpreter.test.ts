@@ -323,6 +323,26 @@ describe('queryLoopProgram — ProgramFactory (tick advancement)', () => {
     expect(events.every(e => e.params.note === 60)).toBe(true)
   })
 
+  it('tick advances even when ring is recreated each iteration (per-loop, not per-Ring)', () => {
+    // This is the key Desktop SP behavior: tick state lives on the THREAD (loop),
+    // not on the Ring object. Even if ring() is called fresh each iteration,
+    // b.tick() advances because it uses ProgramBuilder's persistent ticks map.
+    const factory: ProgramFactory = (ticks, iteration) => {
+      const b = new ProgramBuilder(iteration ?? 0, ticks)
+      // ring() called fresh each iteration — a new Ring object every time
+      const notes = ring(60, 64, 67)
+      b.play(notes.at(b.tick()))
+      b.sleep(1)
+      return { program: b.build(), ticks: b.getTicks() }
+    }
+
+    const events = queryLoopProgram(factory, 0, 6, 60)
+    const notes = events.map(e => e.params.note)
+    // tick advances across iterations: 60→64→67→60→64→67
+    // (If Ring._tick were used, it would be 60→60→60→60→60→60)
+    expect(notes.slice(0, 6)).toEqual([60, 64, 67, 60, 64, 67])
+  })
+
   it('seeded random produces different values across iterations', () => {
     const factory: ProgramFactory = (ticks, iteration) => {
       const b = new ProgramBuilder(iteration ?? 0, ticks)
