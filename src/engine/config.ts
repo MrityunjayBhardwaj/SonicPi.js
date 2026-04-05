@@ -263,7 +263,85 @@ export const TUNING = {
 } as const
 
 // ---------------------------------------------------------------------------
-// SECTION 10: VISUAL / UI
+// SECTION 10: PARAMETER VALIDATION RANGES
+//
+// Desktop SP's synthinfo.rb declares validation rules per param:
+//   v_positive(:amp)                 → min 0
+//   v_between_inclusive(:pan, -1, 1) → min -1, max 1
+//   v_positive(:cutoff), v_less_than(:cutoff, 131) → min 0, max 130
+//   v_between_exclusive(:res, 0, 1) → min 0, max 1 (exclusive)
+//
+// These are used by SoundLayer.validateAndClamp() to clamp out-of-range
+// values and emit warnings. Prevents silent weirdness from scsynth.
+//
+// REF: synthinfo.rb:289-327 validation helpers,
+//      synthinfo.rb:363 amp, :379 pan, :455 cutoff, :523 res
+// ---------------------------------------------------------------------------
+
+/** Param range: [min, max]. null = unbounded in that direction. */
+export type ParamRange = [number | null, number | null]
+
+/**
+ * Universal param validation ranges — from synthinfo.rb.
+ * Applied to synths, samples, and FX params before sending to scsynth.
+ * Only the most common params are listed; unlisted params pass through unclamped.
+ */
+export const PARAM_RANGES: Record<string, ParamRange> = {
+  // Amplitude & panning
+  amp:              [0, null],     // v_positive(:amp) — no upper clamp (compression handles it)
+  pan:              [-1, 1],       // v_between_inclusive(:pan, -1, 1)
+  pre_amp:          [0, null],     // v_positive(:pre_amp)
+
+  // ADSR envelope
+  attack:           [0, null],     // v_positive(:attack)
+  decay:            [0, null],     // v_positive(:decay)
+  sustain:          [0, null],     // v_positive(:sustain)
+  release:          [0, null],     // v_positive(:release)
+  attack_level:     [0, null],     // v_positive(:attack_level)
+  decay_level:      [0, null],     // v_positive(:decay_level)
+  sustain_level:    [0, null],     // v_positive(:sustain_level)
+
+  // Filters
+  cutoff:           [0, 130],      // v_positive(:cutoff), v_less_than(:cutoff, 131)
+  lpf:              [0, 130],      // same as cutoff (alias)
+  hpf:              [0, 130],      // same range
+  res:              [0, 1],        // v_positive(:res), v_less_than(:res, 1)
+
+  // FX
+  mix:              [0, 1],        // v_between_inclusive(:mix, 0, 1)
+  pre_mix:          [0, 1],        // v_between_inclusive(:pre_mix, 0, 1)
+  room:             [0, 1],        // v_between_inclusive(:room, 0, 1)
+  damp:             [0, 1],        // v_between_inclusive(:damp, 0, 1)
+
+  // Modulation
+  mod_phase_offset: [0, 1],        // v_between_inclusive(:mod_phase_offset, 0, 1)
+  pulse_width:      [0, 1],        // v_between_exclusive(:pulse_width, 0, 1)
+  dpulse_width:     [0, 1],        // v_between_exclusive(:dpulse_width, 0, 1)
+  mod_pulse_width:  [0, 1],        // v_between_exclusive(:mod_pulse_width, 0, 1)
+
+  // Timing (pre-BPM-scaling, so in beats)
+  phase:            [0, null],     // v_positive(:phase)
+  mod_phase:        [0, null],     // v_positive(:mod_phase)
+
+  // Sample playback
+  rate:             [null, null],  // no range (negative = reverse)
+  start:            [0, 1],        // v_between_inclusive(:start, 0, 1)
+  finish:           [0, 1],        // v_between_inclusive(:finish, 0, 1)
+
+  // Slide times
+  amp_slide:        [0, null],     // v_positive(:amp_slide)
+  pan_slide:        [0, null],     // v_positive(:pan_slide)
+  cutoff_slide:     [0, null],     // v_positive(:cutoff_slide)
+
+  // Piano/pluck specific
+  vel:              [0, 1],        // v_between_inclusive(:vel, 0, 1)
+  hard:             [0, 1],        // v_between_inclusive(:hard, 0, 1)
+  stereo_width:     [0, 1],        // v_between_inclusive(:stereo_width, 0, 1)
+  coef:             [-1, 1],       // v_between_inclusive(:coef, -1, 1)
+} as const
+
+// ---------------------------------------------------------------------------
+// SECTION 11: VISUAL / UI
 //
 // Constants for the sound event stream visualization (not audio behavior).
 // ---------------------------------------------------------------------------

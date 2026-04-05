@@ -393,12 +393,20 @@ export class VirtualTimeScheduler {
     // Initial sleep(0) so the loop doesn't start until tick fires
     await this.scheduleSleep(task.id, 0)
 
+    // No-sleep iteration counter — detects live_loops that forgot sleep.
+    // Each iteration that completes without advancing virtual time increments this.
+    // After MAX_NOSLEEP_ITERATIONS, the loop is killed with InfiniteLoopError.
+    // A successful sleep resets the counter. Matches Desktop SP's "did you forget a sleep?" error.
+    const MAX_NOSLEEP_ITERATIONS = 1024
+    let noSleepCount = 0
+
     while (task.running) {
       // Auto-cue: Sonic Pi fires cue(:loop_name) at the start of each iteration.
       // This is how sync: :name works on other live_loops.
       // Note: SonicPiEngine also fires a cue after each iteration (line ~290).
       // Having it here ensures it works for raw scheduler usage too.
       this.fireCue(task.id, task.id)
+      const vtBefore = task.virtualTime
       try {
         await task.asyncFn()
       } catch (err) {
@@ -427,6 +435,26 @@ export class VirtualTimeScheduler {
         if (task.running) {
           await this.scheduleSleep(task.id, 1)
         }
+      }
+
+      // No-sleep detection: if virtual time didn't advance, the loop body
+      // had no sleep/sync. After MAX_NOSLEEP_ITERATIONS, kill the loop.
+      // This prevents browser tab freeze from `live_loop :x do; play 60; end`.
+      if (task.virtualTime === vtBefore) {
+        noSleepCount++
+        if (noSleepCount >= MAX_NOSLEEP_ITERATIONS) {
+          const err = new Error('Infinite loop detected — did you forget a sleep?')
+          err.name = 'InfiniteLoopError'
+          task.running = false
+          if (this.loopErrorHandler) {
+            this.loopErrorHandler(task.id, err)
+          } else {
+            console.error(`[SonicPi] Error in loop "${task.id}":`, err)
+          }
+          break
+        }
+      } else {
+        noSleepCount = 0
       }
     }
   }

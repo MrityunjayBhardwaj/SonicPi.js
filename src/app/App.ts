@@ -127,6 +127,23 @@ export class App {
     // Save buffers on page unload
     window.addEventListener('beforeunload', () => this.saveBuffers())
 
+    // Tab backgrounding: warn and resume AudioContext when tab returns (#7)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (this.playing) {
+          this.console.logSystem('  [Warning] Tab hidden — audio may be suspended by the browser.')
+        }
+      } else {
+        // Resume AudioContext if it was suspended by the browser
+        const audio = this.engine?.components?.audio
+        if (audio?.audioCtx?.state === 'suspended') {
+          audio.audioCtx.resume().then(() => {
+            this.console.logSystem('  Audio resumed.')
+          }).catch(() => {})
+        }
+      }
+    })
+
     // Show welcome log
     for (const line of WELCOME_LOG) {
       this.console.logSystem(line)
@@ -303,15 +320,18 @@ export class App {
     try {
       if (!this.engine) {
         this.toolbar.setLoading(true)
+        const t0 = performance.now()
         this.console.logSystem('  Initialising audio engine...')
 
         let SuperSonicClass: unknown = undefined
         try {
+          this.console.logSystem('  Loading SuperSonic WASM runtime...')
           // CDN dependency. dynamic import() does not support SRI.
           // See src/engine/cdn-manifest.ts for the full dependency manifest.
           // @ts-ignore — CDN URL
           const mod = await import(/* @vite-ignore */ 'https://unpkg.com/supersonic-scsynth@latest')
           SuperSonicClass = mod.SuperSonic ?? mod.default
+          this.console.logSystem('  WASM runtime loaded.')
         } catch {
           this.console.logSystem('  SuperSonic CDN unavailable.')
           this.console.logSystem('  Running without audio (events will still log).')
@@ -330,12 +350,24 @@ export class App {
           this.console.log(msg, 'info')
         })
 
+        this.console.logSystem('  Loading synthdefs + initialising scsynth...')
         await this.engine.init()
         await this.sessionLog.initSigning()
         // Expose engine for diagnostics (thread monitor, metrics)
         ;(globalThis as Record<string, unknown>).__spw_engine = this.engine
+
+        // Log audio latency info (#6)
+        const audioInfo = this.engine.components.audio
+        if (audioInfo?.audioCtx) {
+          const ctx = audioInfo.audioCtx as AudioContext & { baseLatency?: number; outputLatency?: number }
+          const base = (ctx.baseLatency ?? 0) * 1000
+          const output = (ctx.outputLatency ?? 0) * 1000
+          this.console.logSystem(`  Audio latency: ${base.toFixed(1)}ms base + ${output.toFixed(1)}ms output = ${(base + output).toFixed(1)}ms`)
+        }
+
+        const elapsed = ((performance.now() - t0) / 1000).toFixed(1)
         this.toolbar.setLoading(false)
-        this.console.logSystem('  Audio engine ready.')
+        this.console.logSystem(`  Audio engine ready. (${elapsed}s)`)
         this.console.logSystem('  Session logging active. Ctrl+Shift+S to export.')
         this.console.logSystem('')
       }

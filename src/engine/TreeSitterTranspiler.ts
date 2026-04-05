@@ -226,8 +226,9 @@ function wrapBareCode(code: string): string {
 
     return [
       ...topLevel, '',
-      'live_loop :main do',
+      'live_loop :__run_once do',
       ...bareCode.map(l => '  ' + l),
+      '  stop',
       'end', '',
       ...blocks,
     ].join('\n')
@@ -244,8 +245,9 @@ function wrapBareCode(code: string): string {
   }
   return [
     ...topLevel, '',
-    'live_loop :main do',
+    'live_loop :__run_once do',
     ...body.map(l => '  ' + l),
+    '  stop',
     'end',
   ].join('\n')
 }
@@ -871,7 +873,8 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   // Transpile top-level settings
   const topJS = topLevel.map(c => transpileNode(c, ctx)).filter(Boolean)
 
-  // Transpile bare code inside an implicit live_loop
+  // Transpile bare code inside an implicit in_thread (runs once, not forever)
+  // Desktop SP runs bare code once — thread terminates at end.
   const bareCtx: TranspileContext = { ...ctx, insideLoop: true }
   const bareJS = bareCode
     .map(c => '  ' + transpileNode(c, bareCtx))
@@ -883,7 +886,7 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   const parts: string[] = []
   if (topJS.length > 0) parts.push(topJS.join('\n'))
   if (bareJS.length > 0) {
-    parts.push(`live_loop("main", (b) => {\n${bareJS.join('\n')}\n})`)
+    parts.push(`live_loop("__run_once", (b) => {\n${bareJS.join('\n')}\n  b.stop()\n})`)
   }
   if (blockJS.length > 0) parts.push(blockJS.join('\n'))
 

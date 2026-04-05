@@ -226,10 +226,11 @@ end`
 sleep 0.5
 play :d4`
       const js = transpileRubyToJS(ruby)
-      expect(strip(js)).toContain('live_loop("main", (b) => {')
+      expect(strip(js)).toContain('live_loop("__run_once", (b) => {')
       expect(strip(js)).toContain('b.play(60')
       expect(strip(js)).toContain('b.sleep(0.5)')
       expect(strip(js)).toContain('b.play("d4")')
+      expect(strip(js)).toContain('b.stop()')
     })
 
     it('keeps use_bpm outside the implicit loop', () => {
@@ -253,7 +254,7 @@ live_loop :drums do
   sleep 0.5
 end`
       const js = transpileRubyToJS(ruby)
-      expect(strip(js)).toContain('live_loop("main"')
+      expect(strip(js)).toContain('live_loop("__run_once"')
       expect(strip(js)).toContain('live_loop("drums"')
     })
 
@@ -262,7 +263,7 @@ end`
 sleep 0.5    # Pauses
 play :d4     # D4`
       const js = transpileRubyToJS(ruby)
-      expect(strip(js)).toContain('live_loop("main"')
+      expect(strip(js)).toContain('live_loop("__run_once"')
       expect(strip(js)).toContain('b.play(60')
       expect(strip(js)).toContain('b.play("d4"')
     })

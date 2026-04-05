@@ -34,7 +34,10 @@ const BUILDER_FUNCTIONS = new Set([
 
 /**
  * If the code has bare play/sleep/sample calls outside any live_loop or
- * define block, wrap them in an implicit `live_loop :main do ... end`.
+ * define block, wrap them in an implicit `live_loop :__run_once do ... stop ... end`.
+ *
+ * Desktop SP runs bare code ONCE (thread terminates at end). We use
+ * live_loop with `stop` at the end so the code executes once then terminates.
  *
  * Top-level `use_bpm`, `use_synth`, `use_random_seed` stay outside
  * (they set defaults for all loops).
@@ -115,15 +118,16 @@ function wrapBareCode(code: string): string {
     return [
       ...topLevel,
       '',
-      'live_loop :main do',
+      'live_loop :__run_once do',
       ...bareCode.map(l => '  ' + l),
+      '  stop',
       'end',
       '',
       ...blocks,
     ].join('\n')
   }
 
-  // No live_loops at all — wrap everything in a single live_loop
+  // No live_loops at all — wrap in a one-shot live_loop with stop
   const topLevel: string[] = []
   const body: string[] = []
 
@@ -139,8 +143,9 @@ function wrapBareCode(code: string): string {
   return [
     ...topLevel,
     '',
-    'live_loop :main do',
+    'live_loop :__run_once do',
     ...body.map(l => '  ' + l),
+    '  stop',
     'end',
   ].join('\n')
 }

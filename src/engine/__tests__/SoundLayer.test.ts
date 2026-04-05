@@ -498,3 +498,70 @@ describe('selectSamplePlayer', () => {
     expect(selectSamplePlayer({ norm: 1 })).toBe('sonic-pi-stereo_player')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Parameter validation & clamping (#57)
+// ---------------------------------------------------------------------------
+
+describe('validateAndClamp', () => {
+  it('clamps cutoff above 130 to 130', () => {
+    const p = normalizePlayParams('beep', { cutoff: 200 }, 60)
+    expect(p.cutoff).toBe(130)
+  })
+
+  it('clamps negative amp to 0', () => {
+    const p = normalizePlayParams('beep', { amp: -5 }, 60)
+    expect(p.amp).toBe(0)
+  })
+
+  it('clamps pan outside -1..1', () => {
+    const p1 = normalizePlayParams('beep', { pan: 3 }, 60)
+    expect(p1.pan).toBe(1)
+    const p2 = normalizePlayParams('beep', { pan: -5 }, 60)
+    expect(p2.pan).toBe(-1)
+  })
+
+  it('clamps mix outside 0..1', () => {
+    const p = normalizeFxParams('reverb', { mix: 1.5 }, 60)
+    expect(p.mix).toBe(1)
+  })
+
+  it('clamps res outside 0..1', () => {
+    const p = normalizePlayParams('beep', { res: 2 }, 60)
+    expect(p.res).toBe(1)
+  })
+
+  it('passes valid values unchanged', () => {
+    const p = normalizePlayParams('beep', { cutoff: 80, amp: 1, pan: -0.5 }, 60)
+    expect(p.cutoff).toBe(80)
+    expect(p.amp).toBe(1)
+    expect(p.pan).toBe(-0.5)
+  })
+
+  it('emits warning via warnFn', () => {
+    const warnings: string[] = []
+    normalizePlayParams('beep', { cutoff: 200, pan: 5 }, 60, (msg) => warnings.push(msg))
+    expect(warnings.length).toBe(2)
+    expect(warnings[0]).toContain('cutoff')
+    expect(warnings[0]).toContain('200')
+    expect(warnings[1]).toContain('pan')
+  })
+
+  it('does not warn for valid values', () => {
+    const warnings: string[] = []
+    normalizePlayParams('beep', { cutoff: 80 }, 60, (msg) => warnings.push(msg))
+    expect(warnings.length).toBe(0)
+  })
+
+  it('works on sample params', () => {
+    const p = normalizeSampleParams({ start: 1.5, finish: -0.5 }, 60)
+    expect(p.start).toBe(1)
+    expect(p.finish).toBe(0)
+  })
+
+  it('works on FX params', () => {
+    const p = normalizeFxParams('reverb', { room: 2, damp: -1 }, 60)
+    expect(p.room).toBe(1)
+    expect(p.damp).toBe(0)
+  })
+})

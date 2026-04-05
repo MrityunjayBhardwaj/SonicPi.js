@@ -75,6 +75,8 @@ export class SonicPiEngine {
   private loopFxScope = new Map<string, string>()
   /** Maps FX scope ID → FX chain definition. */
   private fxScopeChains = new Map<string, Array<{ name: string; opts: Record<string, number> }>>()
+  /** Compile-once cache: source code → transpiled JS. Reused on hot-swap with unchanged code (#8). */
+  private transpileCache = new Map<string, string>()
   /**
    * MIDI I/O bridge — exposed for shell-level device management (listing devices,
    * opening ports, registering event handlers). Not intended for direct note
@@ -200,8 +202,12 @@ export class SonicPiEngine {
 
       // Transpile: Ruby DSL → JS builder chain
       // Primary: tree-sitter catamorphism. Fallback: regex transpiler.
+      // Compile-once cache (#8): skip transpilation on hot-swap with unchanged code.
       let transpiledCode: string
-      if (isTreeSitterReady()) {
+      const cached = this.transpileCache.get(code)
+      if (cached) {
+        transpiledCode = cached
+      } else if (isTreeSitterReady()) {
         const tsResult = treeSitterTranspile(code)
         if (tsResult.ok) {
           transpiledCode = tsResult.code
@@ -213,6 +219,7 @@ export class SonicPiEngine {
           const regexResult = autoTranspileDetailed(code)
           transpiledCode = transpile(regexResult.code).code
         }
+        this.transpileCache.set(code, transpiledCode)
       } else {
         // Tree-sitter not available — use regex transpiler
         const regexResult = autoTranspileDetailed(code)
@@ -222,6 +229,7 @@ export class SonicPiEngine {
           else console.warn('[SonicPi]', warnMsg)
         }
         transpiledCode = transpile(regexResult.code).code
+        this.transpileCache.set(code, transpiledCode)
       }
 
       // Top-level DSL state

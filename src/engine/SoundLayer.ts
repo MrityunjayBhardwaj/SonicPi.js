@@ -1,3 +1,5 @@
+import { PARAM_RANGES } from './config'
+
 /**
  * SoundLayer — parameter normalization pipeline.
  *
@@ -214,6 +216,7 @@ export function normalizePlayParams(
   synthName: string,
   params: Record<string, number>,
   bpm: number,
+  warnFn?: (msg: string) => void,
 ): Record<string, number> {
   let p = { ...params }
   p = calculateSustain(p)
@@ -224,6 +227,7 @@ export function normalizePlayParams(
   p = injectSynthTimeDefaults(synthName, p)
   p = aliasSynthParams(synthName, p)
   p = mungeSynthOpts(synthName, p)
+  p = validateAndClamp(p, warnFn)
   p = scaleTimeParamsToBpm(p, bpm)
   return p
 }
@@ -236,11 +240,13 @@ export function normalizePlayParams(
 export function normalizeSampleParams(
   params: Record<string, number>,
   bpm: number,
+  warnFn?: (msg: string) => void,
 ): Record<string, number> {
   let p = { ...params }
   p = calculateSustain(p)
   p = stripNonScynthParams(p)
   p = injectSampleDefaults(p)
+  p = validateAndClamp(p, warnFn)
   p = scaleTimeParamsToBpm(p, bpm)
   return p
 }
@@ -253,9 +259,11 @@ export function normalizeSampleParams(
 export function normalizeControlParams(
   params: Record<string, number>,
   bpm: number,
+  warnFn?: (msg: string) => void,
 ): Record<string, number> {
   let p = { ...params }
   p = stripNonScynthParams(p)
+  p = validateAndClamp(p, warnFn)
   p = scaleTimeParamsToBpm(p, bpm)
   return p
 }
@@ -279,11 +287,13 @@ export function normalizeFxParams(
   fxName: string,
   params: Record<string, number>,
   bpm: number,
+  warnFn?: (msg: string) => void,
 ): Record<string, number> {
   let p = { ...params }
   p = stripNonScynthParams(p)
   p = injectFxTimeDefaults(fxName, p)
   p = resolveSymbolDefaults(p)
+  p = validateAndClamp(p, warnFn)
   p = scaleTimeParamsToBpm(p, bpm)
   return p
 }
@@ -477,6 +487,39 @@ function mungeSynthOpts(
   }
 
   return params
+}
+
+/**
+ * Step 5.5: Validate and clamp params to valid ranges.
+ * Mirrors Desktop SP's validate_if_slider! — clamps out-of-range values
+ * and emits warnings via the optional warnFn callback.
+ * REF: synthinfo.rb:289-327 validation helpers
+ */
+function validateAndClamp(
+  params: Record<string, number>,
+  warnFn?: (msg: string) => void,
+): Record<string, number> {
+  let p = params
+  for (const key of Object.keys(params)) {
+    const range = PARAM_RANGES[key as keyof typeof PARAM_RANGES]
+    if (!range) continue
+    const [min, max] = range
+    const val = p[key]
+    // Negative time param values are sentinels (e.g., sustain: -1 = "play full duration").
+    // Don't clamp sentinels — scsynth interprets them specially.
+    // Only TIME_PARAMS use negative sentinels; other params (amp, pan, etc.) should clamp.
+    if (val < 0 && TIME_PARAMS.has(key)) continue
+    if (min !== null && val < min) {
+      if (p === params) p = { ...params }
+      p[key] = min
+      warnFn?.(`${key}: ${val} clamped to ${min} (min)`)
+    } else if (max !== null && val > max) {
+      if (p === params) p = { ...params }
+      p[key] = max
+      warnFn?.(`${key}: ${val} clamped to ${max} (max)`)
+    }
+  }
+  return p
 }
 
 /**
