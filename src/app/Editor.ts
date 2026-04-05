@@ -221,7 +221,7 @@ export class Editor {
     this.container = container
     this.container.style.cssText = `
       height: 100%; overflow: hidden;
-      background: #1B2B34;
+      background: #111921;
     `
     // Load saved font size
     try {
@@ -402,13 +402,13 @@ export class Editor {
     // Dark theme
     try {
       const theme = cm.EditorView.theme({
-        '&': { height: '100%', fontSize: `${this.currentFontSize}px`, background: '#1B2B34' },
+        '&': { height: '100%', fontSize: `${this.currentFontSize}px`, background: '#111921' },
         '.cm-scroller': {
           fontFamily: "'Fira Code', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace",
           lineHeight: '1.65',
         },
         '.cm-content': { color: '#CDD3DE', caretColor: '#E8527C', padding: '0.5rem 0' },
-        '.cm-gutters': { background: '#15232D', color: '#6B7C8D', border: 'none', paddingRight: '8px', minWidth: '3.5em' },
+        '.cm-gutters': { background: '#0d1218', color: '#6B7C8D', border: 'none', paddingRight: '8px', minWidth: '3.5em' },
         '.cm-lineNumbers .cm-gutterElement': { minWidth: '3em', textAlign: 'right', paddingRight: '8px' },
         '.cm-activeLineGutter': { background: 'rgba(232,82,124,0.12)', color: '#CDD3DE' },
         '.cm-activeLine': { background: 'rgba(255,255,255,0.02)' },
@@ -557,7 +557,7 @@ export class Editor {
     textarea.spellcheck = false
     textarea.style.cssText = `
       width: 100%; height: 100%;
-      background: #1B2B34;
+      background: #111921;
       color: #CDD3DE;
       border: none;
       padding: 1rem;

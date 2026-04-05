@@ -242,7 +242,7 @@ export class App {
       align-items: center;
       gap: 0.5rem;
       flex-shrink: 0;
-      background: #1B2B34;
+      background: #111921;
     `
     const edTitle = document.createElement('span')
     edTitle.textContent = 'Buffer 0'
