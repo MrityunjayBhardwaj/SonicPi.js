@@ -34,7 +34,7 @@ export interface EngineComponents {
   /** Sound event stream for visualization and logging. */
   streaming: { eventStream: SoundEventStream }
   /** Audio context and analyser node for scope/recording. */
-  audio: { analyser: AnalyserNode; audioCtx: AudioContext; trackAnalysers?: Map<string, AnalyserNode> }
+  audio: { analyser: AnalyserNode; analyserL?: AnalyserNode; analyserR?: AnalyserNode; audioCtx: AudioContext; trackAnalysers?: Map<string, AnalyserNode> }
   /** Capture query for deterministic (S1/S2) code introspection. */
   capture: { queryRange(begin: number, end: number): Promise<QueryEvent[]> }
 }
@@ -850,7 +850,9 @@ export class SonicPiEngine {
     const analyser = this.bridge?.analyser
     if (audioCtx && analyser) {
       const trackAnalysers = this.bridge?.getAllTrackAnalysers()
-      result.audio = { analyser, audioCtx, trackAnalysers }
+      const analyserL = this.bridge?.analyserLeft ?? undefined
+      const analyserR = this.bridge?.analyserRight ?? undefined
+      result.audio = { analyser, analyserL, analyserR, audioCtx, trackAnalysers }
     }
 
     // Capture query (only for deterministic S1/S2 code)

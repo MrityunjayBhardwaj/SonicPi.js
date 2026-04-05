@@ -392,7 +392,7 @@ export class App {
       // Connect scope
       const audio = this.engine.components.audio
       if (audio) {
-        this.scope.connect(audio.analyser)
+        this.scope.connect(audio.analyser, audio.analyserL, audio.analyserR)
       }
 
       // Wire event stream for console logging
