@@ -105,7 +105,7 @@ const COMMON_SYNTHDEFS = [
   'sonic-pi-pretty_bell',
   'sonic-pi-piano',
   'sonic-pi-basic_stereo_player',
-  'sonic-pi-stereo_player',
+  // Note: sonic-pi-stereo_player is NOT in the CDN (404). Loaded lazily on demand.
 ]
 
 
@@ -127,6 +127,9 @@ export class SuperSonicBridge {
   private nextBufNum = 0
   private analyserNode: AnalyserNode | null = null
   private options: SuperSonicBridgeOptions
+  /** rand_buf — buffer of random values for slicer/wobble/panslicer FX.
+   *  Desktop SP loads rand-stream.wav (studio.rb:87). We generate in-memory. */
+  private randBufId: number = -1
   /** Audio bus allocator — buses 0-15 are hardware, 16+ are private */
   private nextBusNum = NUM_OUTPUT_CHANNELS
   private freeBuses: number[] = []
@@ -583,6 +586,12 @@ export class SuperSonicBridge {
     )
   }
 
+  /** FX that require rand_buf injection — matches Desktop SP's on_start hooks.
+   *  REF: synthinfo.rb:6960 FXSlicer, :7225 FXWobble, :7470 FXPanSlicer */
+  private static readonly RAND_BUF_FX = new Set([
+    'sonic-pi-fx_slicer', 'sonic-pi-fx_wobble', 'sonic-pi-fx_panslicer',
+  ])
+
   private applyFxImmediate(
     fullName: string,
     audioTime: number,
@@ -592,6 +601,19 @@ export class SuperSonicBridge {
   ): number {
     const nodeId = this.sonic!.nextNodeId()
     const paramList: (string | number)[] = ['in_bus', inBus, 'out_bus', outBus]
+    // Inject rand_buf for slicer/wobble/panslicer — mirrors on_start hook in synthinfo.rb.
+    // Lazy allocation: first use creates the buffer. Avoids init() timeout issues.
+    if (SuperSonicBridge.RAND_BUF_FX.has(fullName)) {
+      if (this.randBufId < 0) {
+        const bufNum = this.nextBufNum++
+        this.sonic!.send('/b_alloc', bufNum, 16, 1)
+        this.sonic!.send('/b_setn', bufNum, 0, 16,
+          0.23, -0.71, 0.52, -0.33, 0.89, -0.14, 0.67, -0.82,
+          0.41, -0.58, 0.76, -0.27, 0.93, -0.45, 0.18, -0.63)
+        this.randBufId = bufNum
+      }
+      paramList.push('rand_buf', this.randBufId)
+    }
     for (const key in params) {
       paramList.push(key, params[key])
     }

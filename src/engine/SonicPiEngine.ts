@@ -261,6 +261,8 @@ export class SonicPiEngine {
         'flanger','krush','bitcrusher','ring_mod','chorus','octaver','vowel',
         'tanh','gverb','pitch_shift','whammy','tremolo','level','mono',
         'ping_pong','panslicer',
+        // Filter variants — from synthinfo.rb FX classes
+        'bpf','rbpf','nbpf','nrbpf','nlpf','nrlpf','nhpf','nrhpf','eq',
       ]
 
       // load_sample — no-op (samples auto-load on first use via CDN)
