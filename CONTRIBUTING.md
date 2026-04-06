@@ -7,262 +7,174 @@ git clone https://github.com/MrityunjayBhardwaj/SonicPi.js
 cd SonicPi.js
 npm install
 npm run dev        # starts dev server at localhost:5173
-npm test           # runs vitest
+npm test           # runs vitest (703 tests)
 npm run typecheck  # runs tsc --noEmit
 ```
+
+## Architecture
+
+```
+Ruby DSL → TreeSitter AST → JS builder chains → Sandbox → Scheduler → AudioWorklet → Speaker
+```
+
+Five stages:
+
+1. **TreeSitter transpiler** (`TreeSitterTranspiler.ts`) — parses Ruby into an AST, walks it to emit JavaScript builder calls (`b.play(60)`, `b.sleep(0.5)`)
+2. **Sandbox** (`Sandbox.ts`) — wraps transpiled code in a `with()` proxy that blocks dangerous globals and routes all DSL calls through the builder
+3. **VirtualTimeScheduler** (`VirtualTimeScheduler.ts`) — resolves `sleep()` Promises to advance virtual time. Multiple `live_loop`s run concurrently, each on their own timeline
+4. **AudioInterpreter** (`AudioInterpreter.ts`) — executes each Step against SuperSonic (scsynth WASM) via OSC messages
+5. **SuperSonicBridge** (`SuperSonicBridge.ts`) — translates engine commands to scsynth OSC, manages synth nodes, bus routing, and group ordering
 
 ## Project Structure
 
 ```
 src/
-  engine/                       # Core engine (scheduler, DSL, transpiler, bridge)
-    __tests__/                  # Vitest tests
+  engine/                         # Core engine (standalone, no UI dependency)
+    __tests__/                    # Vitest tests (703)
     interpreters/
-      AudioInterpreter.ts      # Executes Steps against the audio backend
-      QueryInterpreter.ts      # Executes Steps for query/preview (no audio)
-    Program.ts                  # Step types (the "free monad" data layer)
-    ProgramBuilder.ts           # Fluent builder API that produces a Program
-    VirtualTimeScheduler.ts     # The core innovation -- scheduler-controlled Promises
-    Parser.ts                   # Recursive descent transpiler (Ruby DSL -> JS)
-    RubyTranspiler.ts           # Regex-based fallback transpiler
-    Transpiler.ts               # autoTranspile entry point (tries Parser first)
-    SuperSonicBridge.ts         # scsynth WASM bridge (via SuperSonic CDN)
-    SonicPiEngine.ts            # Main engine class
-    Ring.ts                     # ring, knit, range, line data structures
-    ChordScale.ts               # chord(), scale(), note() helpers
-    EuclideanRhythm.ts          # spread() -- Euclidean rhythm generator
-    SeededRandom.ts             # Deterministic PRNG for reproducible randomness
-    SoundEventStream.ts         # Event bus for sound events
-    Sandbox.ts                  # Proxy-based sandbox for user code
-    FriendlyErrors.ts           # Human-readable error messages
-    SynthParams.ts              # Synth parameter definitions
-    SampleCatalog.ts            # Sample name catalog
-    ...
-  app/                          # Standalone UI (vanilla TypeScript)
-    App.ts                      # Main application shell
-    Editor.ts                   # Code editor component
-    Scope.ts                    # Audio visualizer
-    Console.ts                  # Log output panel
-    Toolbar.ts                  # Play/stop controls
-docs/                           # Architecture documentation
-artifacts/                      # Research papers and reference material
+      AudioInterpreter.ts        # Executes Steps against scsynth
+      QueryInterpreter.ts        # Executes Steps without audio (preview/analysis)
+    Program.ts                   # Step types (the algebraic effect signatures)
+    ProgramBuilder.ts            # Fluent builder API that produces Step[]
+    VirtualTimeScheduler.ts      # Scheduler-controlled Promise resolution
+    TreeSitterTranspiler.ts      # Ruby DSL → JS via Tree-sitter AST
+    RubyTranspiler.ts            # autoTranspile entry point + wrapBareCode
+    SuperSonicBridge.ts          # scsynth WASM bridge (SuperSonic CDN)
+    SoundLayer.ts                # Parameter normalization (mirrors Desktop SP sound.rb)
+    SonicPiEngine.ts             # Main engine class — orchestrates everything
+    Sandbox.ts                   # Proxy-based sandbox for user code
+    FriendlyErrors.ts            # Human-readable error messages (20 patterns)
+    SynthParams.ts               # Per-synth/FX parameter catalogs
+    SampleCatalog.ts             # 197 sample names with categories
+    Ring.ts                      # ring, knit, range, line data structures
+    ChordScale.ts                # chord(), scale(), note() — 80 chords, 80 scales
+    EuclideanRhythm.ts           # spread() — Euclidean rhythm generator
+    SeededRandom.ts              # Mersenne Twister PRNG (matches Desktop SP)
+    config.ts                    # All hyperparameters with provenance
+  app/                           # Standalone UI (vanilla TypeScript, no framework)
+    App.ts                       # Application shell — layout, wiring, lifecycle
+    Editor.ts                    # CodeMirror 6 editor with autocomplete
+    Scope.ts                     # 5-mode audio visualizer (mono/stereo/lissajous/mirror/spectrum)
+    Console.ts                   # Log output panel
+    CueLog.ts                    # Live cue/sync event panel
+    Toolbar.ts                   # Play/Stop/Rec/Save/Load controls + buffer tabs
+    MenuBar.ts                   # View/Visuals/Samples/Prefs menus + Report Bug
+    HelpPanel.ts                 # Inline docs (311 entries)
+    SampleBrowser.ts             # Browse and preview samples
+    helpData.ts                  # Help database (functions + auto-generated synth/FX/sample entries)
 ```
 
 ## How to Add a New DSL Function
 
-This walkthrough uses a hypothetical `wobble` function as an example -- a synth effect that oscillates pitch. The same steps apply to any new function.
+Example: adding a hypothetical `wobble` function.
 
 ### Step 1: Add the Step type to `Program.ts`
 
-Every runtime action needs a Step variant. Add it to the `Step` union:
-
 ```typescript
-// in Program.ts
 export type Step =
-  | { tag: 'play'; note: number; opts: Record<string, number>; synth?: string }
-  | { tag: 'sample'; name: string; opts: Record<string, number> }
+  | { tag: 'play'; note: number; opts: Record<string, number> }
   // ... existing steps ...
-  | { tag: 'wobble'; rate: number; depth: number; opts: Record<string, number> }  // NEW
+  | { tag: 'wobble'; rate: number; depth: number }  // NEW
 ```
 
 ### Step 2: Add the builder method to `ProgramBuilder.ts`
 
-The builder is the fluent API that transpiled code calls. Add a method:
-
 ```typescript
-// in ProgramBuilder.ts
-wobble(rate: number = 4, depth: number = 0.5, opts: Record<string, number> = {}) {
-  this.steps.push({ tag: 'wobble', rate, depth, opts })
+wobble(rate: number = 4, depth: number = 0.5) {
+  this.steps.push({ tag: 'wobble', rate, depth })
   return this
 }
 ```
 
-### Step 3: Add the handler to `AudioInterpreter.ts`
-
-This is where the Step actually produces sound. Add a case in the step-processing switch:
+### Step 3: Handle in `AudioInterpreter.ts`
 
 ```typescript
 case 'wobble':
-  // Schedule the wobble effect via the bridge
+  // Schedule the effect via the bridge
   break
 ```
 
-### Step 4: Add the handler to `QueryInterpreter.ts`
-
-The query interpreter runs Programs without audio (for preview, analysis). Mirror the step:
+### Step 4: Handle in `QueryInterpreter.ts`
 
 ```typescript
 case 'wobble':
-  events.push({ type: 'wobble', time: currentTime, ... })
+  events.push({ type: 'wobble', time: currentTime })
   break
 ```
 
-### Step 5: Add parsing to `Parser.ts`
+### Step 5: Add to `TreeSitterTranspiler.ts`
 
-In the recursive descent parser, add recognition for the new function. Look at how existing functions like `play` or `sample` are handled in `parseStatement` or `parseExpression`, and follow the same pattern.
-
-The parser needs to:
-- Recognize `wobble` as a known function call
-- Parse its arguments
-- Emit `b.wobble(...)` in the output JavaScript
-
-### Step 6: Mirror in `RubyTranspiler.ts`
-
-Add `'wobble'` to the `BUILDER_FUNCTIONS` set at the top of the file:
+Add `'wobble'` to the `BUILDER_FUNCTIONS` set:
 
 ```typescript
 const BUILDER_FUNCTIONS = new Set([
-  'play', 'sleep', 'sample', 'sync',
-  // ... existing entries ...
+  'play', 'sleep', 'sample',
+  // ...
   'wobble',  // NEW
 ])
 ```
 
-The regex transpiler auto-prefixes any function in this set with `b.`, so simple functions often need no other changes. If `wobble` has special syntax (like blocks), add a dedicated regex rule.
+Simple functions (no blocks) just need this — the transpiler auto-prefixes with `b.`. If `wobble` takes a `do...end` block, add a dedicated handler following the pattern of `transpileWithBlock`.
 
-### Step 7: Add tests
+### Step 6: Add tests
 
-**Parser test** (`__tests__/Parser.test.ts`):
 ```typescript
+// TreeSitterTranspiler.test.ts
 it('transpiles wobble', () => {
-  const { code, errors } = parseAndTranspile('wobble 4, depth: 0.5')
-  expect(errors).toHaveLength(0)
-  expect(code).toContain('b.wobble(4')
+  const result = treeSitterTranspile('wobble 4, depth: 0.5')
+  expect(result.errors).toHaveLength(0)
+  expect(result.code).toContain('b.wobble(4')
 })
-```
 
-**Integration test** (`__tests__/RubyExamples.test.ts`):
-```typescript
+// RubyExamples.test.ts
 it('wobble in a live_loop', async () => {
   const { error } = await runCode(`
-live_loop :wobbler do
-  wobble 4, depth: 0.5
-  sleep 1
-end
-`)
+    live_loop :wobbler do
+      wobble 4, depth: 0.5
+      sleep 1
+    end
+  `)
   expect(error).toBeUndefined()
 })
 ```
 
-### Step 8: Run all tests
+### Step 7: Run all tests
 
 ```bash
-npm test
+npm test && npm run typecheck
 ```
-
-All tests must pass before submitting.
 
 ### When you can skip steps
 
-Not every function touches every layer:
-
-- **Build-time only** (like `density`): skip steps 1, 3, 4. The builder handles it internally by modifying sleep durations -- no Step is emitted.
-- **Transpiler-only** (like `define`): skip steps 1, 2, 3, 4. The transpiler rewrites it directly into JS constructs (functions), no builder involvement.
-- **Alias** (like mapping `play_pattern` to multiple `play` + `sleep` calls): might only need steps 2, 5, 6, 7.
-
-## How the Transpiler Works
-
-Sonic Pi code is Ruby. The engine runs JavaScript. Two transpilers bridge the gap:
-
-1. **Parser.ts** (primary) -- recursive descent parser
-   - Tokenizes the input into a token stream
-   - Parses using recursive descent following the grammar in the file header
-   - Emits JavaScript with `b.` prefixed builder calls
-   - Handles nested blocks (`do`/`end`), control flow (`if`/`unless`), loops (`.times`, `.each`)
-   - Produces friendly error messages with line numbers
-
-2. **RubyTranspiler.ts** (fallback) -- line-by-line regex
-   - Processes one line at a time with pattern matching
-   - Simpler but misses multi-line expressions and complex nesting
-   - Functions in the `BUILDER_FUNCTIONS` set get auto-prefixed with `b.`
-
-3. **Transpiler.ts** -- the entry point
-   - `autoTranspile()` tries Parser first, falls back to RubyTranspiler on failure
-   - Both produce the same output format: JavaScript code that calls builder methods
-
-Both transpilers must be updated when adding new syntax. The Parser handles it structurally; the RubyTranspiler usually just needs the function name added to `BUILDER_FUNCTIONS`.
+- **Build-time only** (like `density`): no Step needed — the builder modifies sleep durations internally
+- **Transpiler-only** (like `define`): no Step/builder — the transpiler rewrites directly to JS constructs
+- **Alias** (like `play_pattern`): only needs the builder method, which expands to existing Steps
 
 ## Testing
 
-### Commands
-
 ```bash
-npm test                                              # run all tests once
-npm run test:watch                                    # watch mode (re-runs on save)
-npx vitest run src/engine/__tests__/Parser.test.ts    # run a specific test file
-npm run test:e2e                                      # Playwright end-to-end tests
-npm run test:all                                      # vitest + playwright
+npm test                                                    # all 703 tests
+npx vitest run src/engine/__tests__/TreeSitterTranspiler.test.ts  # specific file
+npm run test:e2e                                            # Playwright browser tests
 ```
 
-### Test patterns
-
-**Parser tests** -- input Ruby code, verify the transpiled JS contains expected strings:
-```typescript
-const { code, errors } = parseAndTranspile(`
-live_loop :drums do
-  sample :bd_haus
-  sleep 0.5
-end
-`)
-expect(errors).toHaveLength(0)
-expect(code).toContain('b.sample("bd_haus")')
-```
-
-**ProgramBuilder tests** -- call builder methods, inspect the resulting Step array:
-```typescript
-const b = new ProgramBuilder()
-b.play(60).sleep(0.5)
-const steps = b.build()
-expect(steps[0]).toMatchObject({ tag: 'play', note: 60 })
-```
-
-**RubyExamples tests** -- full end-to-end: Ruby code is transpiled, built into a Program, and executed through the VirtualTimeScheduler to verify it runs without errors:
-```typescript
-const { error, events } = await runCode(`
-live_loop :test do
-  play 60
-  sleep 1
-end
-`)
-expect(error).toBeUndefined()
-```
-
-## Build
-
-```bash
-npm run build          # standard Vite build
-npm run build:single   # single HTML file (vite-plugin-singlefile)
-```
-
-The single-file build produces `dist/index.html` with all JS and CSS inlined -- zero external files except the SuperSonic CDN load. This is the primary distribution format.
-
-Build target is ES2022 (see `vite.build.config.ts`).
+CI runs `tsc --noEmit` + `vitest run` on every PR.
 
 ## Code Style
 
-- TypeScript strict mode
-- No framework -- vanilla TypeScript throughout
-- No semicolons
-- Single quotes for strings
-- 2-space indentation
+- TypeScript strict mode, no framework
+- No semicolons, single quotes, 2-space indent
+- Prefer `const` over `let`
 - Inline styles in app components (no CSS files)
-- Prefer `const` over `let`, avoid `var`
-- Type imports: `import type { X } from '...'` when importing only types
+- `import type { X }` for type-only imports
 
 ## PR Guidelines
 
-- One feature per commit
-- Conventional commit messages: `feat(dsl): add wobble function`, `fix(transpiler): handle nested unless blocks`
-- All tests must pass (`npm test` and `npm run typecheck`)
-- Update both Parser.ts and RubyTranspiler.ts when adding syntax
-- Update docs if adding user-facing features
+- One logical change per commit
+- Gitmoji prefix: `🐛 fix:`, `🎵 feat:`, `🔧 chore:`
+- All tests must pass
+- Update `TreeSitterTranspiler.ts` when adding syntax (it's the sole transpiler)
 
-## Architecture Reference
+## License
 
-For deeper understanding of the scheduling model, free monad architecture, and design decisions, see:
-- `artifacts/ref/THESIS.md` -- full build thesis
-- `artifacts/ref/SESSION_PROMPT.md` -- implementation guide with phase breakdown
-- `artifacts/ref/RESEARCH_SONIC_PI_INTERNALS.md` -- how desktop Sonic Pi works
-- `artifacts/ref/RESEARCH_JS_SCHEDULING.md` -- JS async patterns for the scheduler
-
-The core insight: `sleep()` returns a Promise that only the VirtualTimeScheduler can resolve. This gives JavaScript cooperative concurrency with virtual time -- no thread blocking required.
+MIT

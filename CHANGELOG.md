@@ -1,5 +1,43 @@
 # Changelog
 
+## v1.4.0
+
+### UI/UX
+- **Help panel** — fixed cursor word detection (CodeMirror ESM `wordAt()` bug), resizable with draggable splitter, 311 entries (33 functions + 37 synths + 34 FX + 207 samples generated from engine data)
+- **View menu** — all 5 panel toggles now work (scope, log, cue log, buttons, tabs)
+- **Cue Log** — wired to live cue/sync events from the scheduler, resizable with splitter
+- **Scope visualizer** — no longer overflows into log panel (overflow + flex display fix)
+- **Autocomplete tooltip** — dark-themed to match editor
+- **Resizable panels** — drag splitters on scope, log, cue log, help panel
+- **Report Bug button** — pre-filled GitHub issue with current code, browser, OS (no OAuth)
+- **Toolbar layout** — fixed vertical stacking bug caused by `display: ''` wiping inline flex
+- **New hero image** — 1500x701 screenshot
+
+### Error Handling
+- **Syntax errors block execution** — transpiler errors now return `{ error: SyntaxError }` instead of executing raw Ruby as JS
+- **Block validation** — `live_loop`, `define`, `with_fx`, `in_thread`, `at`, `time_warp`, `density` all emit parse errors when `do...end` block is missing
+- **Error line highlighting** — parse errors extract line numbers directly (no wrapper offset), runtime errors now also highlight the error line
+- **Sandbox line offsets** — dynamic `SANDBOX_WRAPPER_LINES` replaces hardcoded offset, fallback executor now enriches SyntaxErrors
+- **`engine.init()` failure** — wrapped in try/catch, shows error instead of silent UI freeze
+- **Hot-swap rollback** — `reEvaluate()` saves previous loop functions, restores on failure
+- **FriendlyErrors** — 20 patterns (was 18), parse error pattern bypasses wrapper offset logic
+- **TreeSitter not-ready message** — now says "try clicking Run again" instead of "call initTreeSitter()"
+
+### Examples
+- **Blade Runner x Techno** — added to advanced examples (10 synced loops, same as welcome buffer)
+
+### Infrastructure
+- **CI workflow** — type check + vitest on every PR and push to main (closes #9)
+- **CI + Deploy badges** in README
+- **Dependabot** — configured for npm (weekly) and GitHub Actions (monthly) (closes #10)
+- **GitHub Actions** — bumped to v6 (checkout + setup-node)
+- **TypeScript** — upgraded to 6.0.2
+- **v1.4.0 milestone** — 5 issues closed, 4 PRs merged
+- **KNOWN_LIMITATIONS.md** — corrected `osc_send` status (implemented, hook-based)
+- **Dev artifacts** — moved to `~/.anvideck/`, public repo is clean
+
+---
+
 ## v1.3.0
 
 ### Bug Fixes
