@@ -57,7 +57,7 @@ export interface TaskState {
 }
 
 export interface SchedulerEvent {
-  type: 'synth' | 'sample' | 'control'
+  type: 'synth' | 'sample' | 'control' | 'cue'
   taskId: string
   virtualTime: number
   audioTime: number
@@ -282,6 +282,15 @@ export class VirtualTimeScheduler {
     if (!task) return
 
     this.cueMap.set(name, { time: task.virtualTime, args })
+
+    // Emit cue event for UI (CueLog panel)
+    this.emitEvent({
+      type: 'cue',
+      taskId,
+      virtualTime: task.virtualTime,
+      audioTime: this.getAudioTime(),
+      params: { name, args },
+    })
 
     // Wake any tasks waiting for this cue
     const waiters = this.syncWaiters.get(name)

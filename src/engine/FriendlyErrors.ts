@@ -6,6 +6,7 @@
  */
 
 import { getSynthParams, getFxParams } from './SynthParams'
+import { SANDBOX_WRAPPER_LINES } from './Sandbox'
 
 export interface FriendlyError {
   title: string
@@ -61,12 +62,10 @@ function extractLineFromStack(err: Error, lineOffset: number): number | undefine
 
   if (syntaxMatch) {
     const raw = parseInt(syntaxMatch[1], 10)
-    // Subtract the wrapper function's lines (async IIFE wrapper + polyfills)
-    // The Sandbox wraps code in: with(__scope__) { return (async () => { ...polyfills... CODE })(); }
-    // Polyfills add ~7 lines before user code starts
-    const wrapperLines = 2 + lineOffset
+    // Use dynamically-computed wrapper line count from Sandbox
+    const wrapperLines = lineOffset > 0 ? lineOffset : SANDBOX_WRAPPER_LINES
     const adjusted = raw - wrapperLines
-    return adjusted > 0 ? adjusted : raw > 0 ? raw : undefined
+    return adjusted > 0 ? adjusted : raw > 0 ? 1 : undefined
   }
 
   // 2. Runtime errors — look for the eval frame in the stack
@@ -74,8 +73,9 @@ function extractLineFromStack(err: Error, lineOffset: number): number | undefine
                        stack.match(/eval.*?:(\d+):\d+/)
   if (runtimeMatch) {
     const raw = parseInt(runtimeMatch[1], 10)
-    const adjusted = raw - 2 - lineOffset
-    return adjusted > 0 ? adjusted : undefined
+    const wrapperLines = lineOffset > 0 ? lineOffset : SANDBOX_WRAPPER_LINES
+    const adjusted = raw - wrapperLines
+    return adjusted > 0 ? adjusted : 1
   }
 
   return undefined
@@ -116,7 +116,7 @@ function editDistance(a: string, b: string): number {
 /** Pattern matchers for common runtime errors. */
 const ERROR_PATTERNS: Array<{
   test: (msg: string) => boolean
-  transform: (msg: string, err: Error) => { title: string; message: string }
+  transform: (msg: string, err: Error) => { title: string; message: string; line?: number }
 }> = [
   // Unknown synth
   {
@@ -382,7 +382,27 @@ const ERROR_PATTERNS: Array<{
       }
     },
   },
-  // Syntax errors
+  // Parse errors from TreeSitter transpiler (contain "Parse error at line N")
+  {
+    test: (msg) => /parse error at line/i.test(msg),
+    transform: (msg) => {
+      // Extract all "Parse error at line N: ..." entries
+      const errors = msg.split(';').map(s => s.trim()).filter(Boolean)
+      const formatted = errors.map(e => `  ${e}`).join('\n')
+      // Extract line number from first error (already source-level, no offset needed)
+      const lineMatch = msg.match(/parse error at line (\d+)/i)
+      const line = lineMatch ? parseInt(lineMatch[1], 10) : undefined
+      return {
+        title: 'Syntax error — your code could not be parsed',
+        message: `${formatted}\n\nCheck for:\n` +
+          `  - Missing "do" after live_loop :name\n` +
+          `  - Unclosed do/end blocks\n` +
+          `  - Mismatched quotes or parentheses`,
+        line,
+      }
+    },
+  },
+  // Syntax errors (JS-level, from new Function())
   {
     test: (msg) => /syntaxerror|unexpected token|unexpected end/i.test(msg),
     transform: (msg) => ({
@@ -405,11 +425,11 @@ export function friendlyError(err: Error, lineOffset = 0): FriendlyError {
 
   for (const pattern of ERROR_PATTERNS) {
     if (pattern.test(msg)) {
-      const { title, message } = pattern.transform(msg, err)
+      const result = pattern.transform(msg, err)
       return {
-        title,
-        message,
-        line: extractLineFromStack(err, lineOffset),
+        title: result.title,
+        message: result.message,
+        line: result.line ?? extractLineFromStack(err, lineOffset),
         original: err,
       }
     }

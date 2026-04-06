@@ -31,6 +31,8 @@ const BUFFER_COUNT = 10
 
 export class Toolbar {
   private el: HTMLElement
+  private topRow!: HTMLElement
+  private bufRow!: HTMLElement
   private playBtn: HTMLButtonElement
   private stopBtn: HTMLButtonElement
   private recBtn: HTMLButtonElement
@@ -48,7 +50,8 @@ export class Toolbar {
     container.appendChild(this.el)
 
     // Top row: main controls
-    const topRow = this.createRow()
+    this.topRow = this.createRow()
+    const topRow = this.topRow
     topRow.style.borderBottom = '1px solid rgba(255,255,255,0.06)'
 
     // Logo
@@ -283,7 +286,8 @@ export class Toolbar {
     topRow.appendChild(zenBtn)
 
     // Bottom row: buffer tabs
-    const bufRow = this.createRow()
+    this.bufRow = this.createRow()
+    const bufRow = this.bufRow
     bufRow.style.padding = '0 0.75rem'
     bufRow.style.gap = '0'
 
@@ -612,6 +616,14 @@ export class Toolbar {
     })
 
     container.appendChild(row)
+  }
+
+  setButtonsVisible(visible: boolean): void {
+    this.topRow.style.display = visible ? 'flex' : 'none'
+  }
+
+  setTabsVisible(visible: boolean): void {
+    this.bufRow.style.display = visible ? 'flex' : 'none'
   }
 
   dispose(): void {

@@ -1,0 +1,5 @@
+# Collapse internal development artifacts in PR diffs
+artifacts/.anvi/** linguist-generated=true
+artifacts/ref/** linguist-generated=true
+artifacts/investigations/** linguist-generated=true
+artifacts/paper/** linguist-generated=true

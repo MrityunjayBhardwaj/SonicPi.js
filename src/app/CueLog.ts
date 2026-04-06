@@ -82,6 +82,11 @@ export class CueLog {
     this.runCount++
   }
 
+  /** Current run number. */
+  get currentRun(): number {
+    return this.runCount
+  }
+
   logCue(name: string, run: number, time: number): void {
     const entry: CueEntry = { name, run, time }
     this.entries.push(entry)

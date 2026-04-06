@@ -51,6 +51,7 @@ export class SonicPiEngine {
   private playing = false
   private runtimeErrorHandler: ((err: Error) => void) | null = null
   private printHandler: ((msg: string) => void) | null = null
+  private cueHandler: ((name: string, time: number) => void) | null = null
   private currentCode = ''
   private currentStratum: Stratum = Stratum.S1
   private bridgeOptions: SuperSonicBridgeOptions
@@ -198,6 +199,13 @@ export class SonicPiEngine {
           else console.error('[SonicPi]', msg)
         })
 
+        this.scheduler.onEvent((event) => {
+          if (event.type === 'cue' && this.cueHandler) {
+            const name = (event.params as { name: string }).name
+            this.cueHandler(name, event.audioTime)
+          }
+        })
+
         this.loopBuilders.clear()
         this.loopSeeds.clear()
       }
@@ -211,9 +219,9 @@ export class SonicPiEngine {
       } else {
         const result = autoTranspileDetailed(code)
         if (result.usedFallback) {
-          const warnMsg = `[Warning] Transpile issue: ${result.fallbackReason}`
-          if (this.printHandler) this.printHandler(warnMsg)
-          else console.warn('[SonicPi]', warnMsg)
+          // Parse errors — don't execute, return error to UI
+          const errorMsg = result.fallbackReason || 'Unknown syntax error'
+          return { error: new SyntaxError(errorMsg) }
         }
         transpiledCode = result.code
         this.transpileCache.set(code, transpiledCode)
@@ -820,6 +828,11 @@ export class SonicPiEngine {
   /** Register a handler for `puts` / `print` output from user code. */
   setPrintHandler(handler: (msg: string) => void): void {
     this.printHandler = handler
+  }
+
+  /** Register a handler for cue events (for the CueLog panel). */
+  setCueHandler(handler: (name: string, time: number) => void): void {
+    this.cueHandler = handler
   }
 
   /**

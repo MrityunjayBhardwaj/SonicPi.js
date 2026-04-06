@@ -416,6 +416,7 @@ export class App {
     this.editor.onStop(() => this.handleStop())
     this.editor.onZen(() => this.toggleZen())
     this.editor.onCursorWord((word) => this.helpPanel.updateWord(word))
+    this.helpPanel.getCurrentWord = () => this.editor.getCurrentWord()
 
     // Show buffer content indicators
     this.updateBufferIndicators()
@@ -665,6 +666,7 @@ export class App {
       border-bottom: 1px solid rgba(255,255,255,0.06);
       background: #0d1117;
       flex-shrink: 0;
+      overflow: hidden;
     `
     rightPanel.appendChild(scopeContainer)
     this.scope = new Scope(scopeContainer)
@@ -684,6 +686,7 @@ export class App {
         self.scope?.rebuildCanvases?.()
       }
     })
+    rightSplitter.className = 'spw-scope-splitter'
     rightPanel.appendChild(rightSplitter)
 
     // Menu bar — topmost element, above toolbar.
@@ -722,6 +725,23 @@ export class App {
       border-top: 1px solid rgba(255,255,255,0.06);
       flex-shrink: 0;
     `
+    // Load saved cue log height
+    try {
+      const savedH = localStorage.getItem('spw-split-cuelog')
+      if (savedH) cueLogContainer.style.height = `${parseInt(savedH)}px`
+    } catch {}
+
+    // --- Horizontal splitter (console <-> cue log) ---
+    const cueLogSplitter = createSplitter('horizontal', 'spw-split-cuelog', (delta) => {
+      const h = cueLogContainer.getBoundingClientRect().height - delta
+      if (h >= 60 && h <= rightPanel.getBoundingClientRect().height - 80) {
+        cueLogContainer.style.height = `${h}px`
+        try { localStorage.setItem('spw-split-cuelog', String(Math.round(h))) } catch {}
+      }
+    })
+    cueLogSplitter.className = 'spw-cuelog-splitter'
+    rightPanel.appendChild(cueLogSplitter)
+
     rightPanel.appendChild(cueLogContainer)
     this.cueLog = new CueLog(cueLogContainer)
 
@@ -844,14 +864,25 @@ export class App {
         this.engine.setRuntimeErrorHandler((err) => {
           const fe = friendlyError(err)
           this.console.logError(fe.title, fe.message)
+          if (fe.line) this.editor.highlightErrorLine(fe.line)
         })
 
         this.engine.setPrintHandler((msg) => {
           this.console.log(msg, 'info')
         })
 
+        this.engine.setCueHandler((name, time) => {
+          this.cueLog.logCue(name, this.cueLog.currentRun, time * 1000)
+        })
+
         this.console.logSystem('  Loading synthdefs + initialising scsynth...')
-        await this.engine.init()
+        try {
+          await this.engine.init()
+        } catch (initErr) {
+          this.console.logError('Engine init failed', String(initErr))
+          this.toolbar.setLoading(false)
+          return
+        }
         // Apply saved volume from prefs
         if (typeof savedPrefs.masterVolume === 'number') {
           this.engine.setVolume((savedPrefs.masterVolume as number) / 100)
@@ -1054,12 +1085,27 @@ export class App {
 
   private applyPanelVisibility(): void {
     const scope = this.root.querySelector('.spw-scope') as HTMLElement
+    const splitter = this.root.querySelector('.spw-scope-splitter') as HTMLElement
     const consoleEl = this.root.querySelector('.spw-console') as HTMLElement
     const cueLogEl = this.root.querySelector('.spw-cuelog') as HTMLElement
+    const cueLogSplitter = this.root.querySelector('.spw-cuelog-splitter') as HTMLElement
 
-    if (scope) scope.style.display = this.panelVisibility.scope !== false ? '' : 'none'
+    const scopeVisible = this.panelVisibility.scope !== false
+    if (scope) scope.style.display = scopeVisible ? 'flex' : 'none'
+    if (splitter) splitter.style.display = scopeVisible ? '' : 'none'
     if (consoleEl) consoleEl.style.display = this.panelVisibility.log !== false ? '' : 'none'
-    if (cueLogEl) cueLogEl.style.display = this.panelVisibility.cueLog !== false ? '' : 'none'
+    const cueLogVisible = this.panelVisibility.cueLog !== false
+    if (cueLogEl) cueLogEl.style.display = cueLogVisible ? '' : 'none'
+    if (cueLogSplitter) cueLogSplitter.style.display = cueLogVisible ? '' : 'none'
+
+    // Toolbar rows
+    this.toolbar.setButtonsVisible(this.panelVisibility.buttons !== false)
+    this.toolbar.setTabsVisible(this.panelVisibility.tabs !== false)
+
+    // Rebuild scope canvases after layout change
+    if (scopeVisible) {
+      requestAnimationFrame(() => this.scope?.rebuildCanvases?.())
+    }
   }
 
   // ---------------------------------------------------------------------------

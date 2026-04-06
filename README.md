@@ -6,7 +6,8 @@
   <img src="assets/hero.jpg" alt="Sonic Pi Web — live coding in the browser" width="100%">
 </p>
 
-[![CI](https://github.com/MrityunjayBhardwaj/SonicPi.js/actions/workflows/deploy.yml/badge.svg)](https://github.com/MrityunjayBhardwaj/SonicPi.js/actions)
+[![CI](https://github.com/MrityunjayBhardwaj/SonicPi.js/actions/workflows/ci.yml/badge.svg)](https://github.com/MrityunjayBhardwaj/SonicPi.js/actions/workflows/ci.yml)
+[![Deploy](https://github.com/MrityunjayBhardwaj/SonicPi.js/actions/workflows/deploy.yml/badge.svg)](https://github.com/MrityunjayBhardwaj/SonicPi.js/actions/workflows/deploy.yml)
 [![npm](https://img.shields.io/npm/v/@mjayb/sonicpijs)](https://www.npmjs.com/package/@mjayb/sonicpijs)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 

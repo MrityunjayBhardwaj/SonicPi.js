@@ -11,14 +11,8 @@ dist/
 # Vercel project config
 .vercel/
 
-# Artifacts — thesis, research, cognitive framework (not part of the product)
-artifacts/
-
 # Planning artifacts (internal)
 .planning/
-
-# Claude Code instructions (internal tooling, not part of the project)
-CLAUDE.md
 
 # Test results
 test-results/
@@ -33,3 +27,6 @@ playwright-report/
 
 # Browser diagnostic captures (internal observation tool)
 .captures/
+
+# Personal learnings (not part of the project)
+LEARNINGS.md

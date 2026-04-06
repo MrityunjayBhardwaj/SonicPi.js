@@ -211,7 +211,7 @@ export function autoTranspileDetailed(code: string): TranspileResult {
   code = wrapBareCode(code)
 
   if (!isTreeSitterReady()) {
-    throw new Error('[SonicPi] TreeSitter WASM not initialized — call initTreeSitter() first')
+    throw new Error('[SonicPi] TreeSitter parser not available — the audio engine may still be loading. Try clicking Run again.')
   }
 
   const tsResult = treeSitterTranspile(code)

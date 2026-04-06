@@ -9,18 +9,78 @@ import { HELP_DB, type HelpEntry } from './helpData'
 
 export class HelpPanel {
   private container: HTMLElement
+  private handle: HTMLElement
+  private dragging = false
   private visible = false
   private content: HTMLElement
   private currentWord = ''
 
   /** Callbacks for external wiring (e.g. cursor change from Editor). */
   onVisibilityChange: ((visible: boolean) => void) | null = null
+  /** Called on show to get the current word under cursor. */
+  getCurrentWord: (() => string) | null = null
 
   constructor(parent: HTMLElement) {
+    // Restore saved height
+    let savedHeight = 150
+    try {
+      const h = localStorage.getItem('spw-help-height')
+      if (h) savedHeight = Math.max(80, Math.min(500, parseInt(h, 10)))
+    } catch { /* ignore */ }
+
+    // Drag handle (splitter)
+    this.handle = document.createElement('div')
+    this.handle.style.cssText = `
+      height: 5px;
+      cursor: ns-resize;
+      background: transparent;
+      flex-shrink: 0;
+      display: none;
+      position: relative;
+    `
+    // Visual indicator line
+    const indicator = document.createElement('div')
+    indicator.style.cssText = `
+      position: absolute;
+      left: 0; right: 0; top: 2px;
+      height: 1px;
+      background: rgba(255,255,255,0.08);
+      transition: background 0.15s;
+    `
+    this.handle.appendChild(indicator)
+    this.handle.addEventListener('mouseenter', () => { indicator.style.background = 'rgba(232,82,124,0.5)' })
+    this.handle.addEventListener('mouseleave', () => { if (!this.dragging) indicator.style.background = 'rgba(255,255,255,0.08)' })
+
+    // Drag logic
+    this.handle.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      this.dragging = true
+      indicator.style.background = 'rgba(232,82,124,0.7)'
+      const startY = e.clientY
+      const startH = this.container.getBoundingClientRect().height
+
+      const onMove = (ev: MouseEvent) => {
+        const delta = startY - ev.clientY // dragging up = bigger
+        const newH = Math.max(80, Math.min(500, startH + delta))
+        this.container.style.height = `${newH}px`
+      }
+      const onUp = () => {
+        this.dragging = false
+        indicator.style.background = 'rgba(255,255,255,0.08)'
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+        try { localStorage.setItem('spw-help-height', String(Math.round(this.container.getBoundingClientRect().height))) } catch { /* ignore */ }
+      }
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
+    })
+
+    parent.appendChild(this.handle)
+
     this.container = document.createElement('div')
     this.container.className = 'spw-help-panel'
     this.container.style.cssText = `
-      height: 150px;
+      height: ${savedHeight}px;
       overflow-y: auto;
       background: #161b22;
       border-top: 1px solid rgba(255,255,255,0.08);
@@ -41,12 +101,17 @@ export class HelpPanel {
 
   show(): void {
     this.visible = true
+    this.handle.style.display = 'block'
     this.container.style.display = 'block'
     this.onVisibilityChange?.(true)
+    // Immediately show help for the word under cursor
+    const word = this.getCurrentWord?.() ?? ''
+    if (word) this.updateWord(word)
   }
 
   hide(): void {
     this.visible = false
+    this.handle.style.display = 'none'
     this.container.style.display = 'none'
     this.onVisibilityChange?.(false)
   }
@@ -113,6 +178,7 @@ export class HelpPanel {
   }
 
   dispose(): void {
+    this.handle.remove()
     this.container.remove()
   }
 }
