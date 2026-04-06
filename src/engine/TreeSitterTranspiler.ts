@@ -1378,8 +1378,14 @@ function transpileLiveLoop(
     }
   }
 
+  if (!blockNode) {
+    const line = node.startPosition?.row != null ? node.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: live_loop :${name} is missing 'do ... end' block`)
+    return `/* parse error: live_loop :${name} missing block */`
+  }
+
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
-  const bodyStr = blockNode ? transpileBlockBody(blockNode, bodyCtx) : ''
+  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
 
   // sync: option — pass as registration option (one-time sync before first iteration),
   // NOT as b.sync() inside the body (which would re-sync every iteration).
