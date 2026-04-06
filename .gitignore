@@ -11,6 +11,9 @@ dist/
 # Vercel project config
 .vercel/
 
+# Reference docs, ground truth, source code (moved to ~/.anvideck)
+artifacts/ref/
+
 # Planning artifacts (internal)
 .planning/
 

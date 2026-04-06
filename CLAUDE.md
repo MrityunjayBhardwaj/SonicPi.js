@@ -4,24 +4,27 @@ Browser-native reimplementation of Sonic Pi's temporal scheduling model in JavaS
 This has never been done before. You are building the first one.
 
 ### Required Reading (in order)
-1. `artifacts/ref/THESIS.md` — Full build thesis (architecture, math, implementation outline)
-2. `artifacts/ref/SESSION_PROMPT.md` — Implementation guide with phase breakdown and time budget
-3. `artifacts/ref/RESEARCH_SONIC_PI_INTERNALS.md` — How desktop Sonic Pi works internally
-4. `artifacts/ref/RESEARCH_JS_SCHEDULING.md` — JS async patterns for the scheduler
-5. `artifacts/ref/RESEARCH_SUPERSONIC.md` — SuperSonic (scsynth WASM) API reference
-6. `artifacts/ref/RESEARCH_MATH_FOUNDATIONS.md` — Formal math (temporal monad, free monad, stratified isomorphism)
+> **Note:** Reference docs live in `~/.anvideck/projects/sonicPiWeb/ref/` (not in the repo).
+1. `ref/THESIS.md` — Full build thesis (architecture, math, implementation outline)
+2. `ref/SESSION_PROMPT.md` — Implementation guide with phase breakdown and time budget
+3. `ref/RESEARCH_SONIC_PI_INTERNALS.md` — How desktop Sonic Pi works internally
+4. `ref/RESEARCH_JS_SCHEDULING.md` — JS async patterns for the scheduler
+5. `ref/RESEARCH_SUPERSONIC.md` — SuperSonic (scsynth WASM) API reference
+6. `ref/RESEARCH_MATH_FOUNDATIONS.md` — Formal math (temporal monad, free monad, stratified isomorphism)
 
 ### Ground Truth Documents (code-level pipeline traces with file:line citations)
-7. `artifacts/ref/GROUND_TRUTH_SONIC_PI_WEB.md` — **Our engine** end-to-end: Ruby code → transpile → sandbox → ProgramBuilder → AudioInterpreter → SoundLayer → OSC → audio
-8. `artifacts/ref/GROUND_TRUTH_SUPERSONIC.md` — SuperSonic end-to-end: send() → transport → AudioWorklet → WASM → audio
-9. `artifacts/ref/GROUND_TRUTH_DESKTOP_SP.md` — Desktop Sonic Pi end-to-end: eval → normalize → sleep → OSC → scsynth
-10. `artifacts/ref/GROUND_TRUTH_SONIC_TAU.md` — Sonic Tau end-to-end: editor → compiler → SPSC → AudioWorklet VM → OSC → audio
-11. `artifacts/ref/GROUND_TRUTH_META_PROMPT.md` — The meta-prompt that generated Ground Truth docs
+7. `ref/GROUND_TRUTH_SONIC_PI_WEB.md` — **Our engine** end-to-end: Ruby code → transpile → sandbox → ProgramBuilder → AudioInterpreter → SoundLayer → OSC → audio
+8. `ref/GROUND_TRUTH_SUPERSONIC.md` — SuperSonic end-to-end: send() → transport → AudioWorklet → WASM → audio
+9. `ref/GROUND_TRUTH_DESKTOP_SP.md` — Desktop Sonic Pi end-to-end: eval → normalize → sleep → OSC → scsynth
+10. `ref/GROUND_TRUTH_SONIC_TAU.md` — Sonic Tau end-to-end: editor → compiler → SPSC → AudioWorklet VM → OSC → audio
+11. `ref/GROUND_TRUTH_META_PROMPT.md` — The meta-prompt that generated Ground Truth docs
 
 ### Reference Source Code (downloaded locally)
-- `artifacts/ref/sources/supersonic/` — SuperSonic JS source from GitHub (22 files, ~11K lines)
-- `artifacts/ref/sources/desktop-sp/` — Desktop Sonic Pi Ruby source (7 files, ~17K lines)
-- `artifacts/ref/sources/sonic-tau/` — Sonic Tau demo JS source (7 files, ~25K lines)
+- `ref/sources/supersonic/` — SuperSonic JS source from GitHub (22 files, ~11K lines)
+- `ref/sources/desktop-sp/` — Desktop Sonic Pi Ruby source (7 files, ~17K lines)
+- `ref/sources/sonic-tau/` — Sonic Tau demo JS source (7 files, ~25K lines)
+
+> All `ref/` paths above resolve to `~/.anvideck/projects/sonicPiWeb/ref/`.
 
 ### The Core Innovation
 `sleep()` returns a Promise that ONLY the VirtualTimeScheduler can resolve.
@@ -152,7 +155,7 @@ GROUND_TRUTH_SUPERSONIC.md    ← SuperSonic pipeline (external, opaque past WAS
 GROUND_TRUTH_DESKTOP_SP.md    ← Desktop Sonic Pi pipeline (the reference we match)
 GROUND_TRUTH_SONIC_TAU.md     ← Sonic Tau pipeline (comparison architecture)
     ↓ cite
-External source code          ← artifacts/ref/sources/{supersonic,desktop-sp,sonic-tau}/
+External source code          ← ~/.anvideck/projects/sonicPiWeb/ref/sources/{supersonic,desktop-sp,sonic-tau}/
 ```
 
 Catalogue REFs point to our own source. External GT docs are consulted on demand when verifying parity claims or debugging at system boundaries. If a catalogue entry lacks a REF, it is ungrounded — add one.
@@ -161,7 +164,7 @@ Catalogue REFs point to our own source. External GT docs are consulted on demand
 Before forming ANY hypothesis about a bug:
 1. Read the relevant Ground Truth document (internal: `GROUND_TRUTH_SONIC_PI_WEB.md`, external: the relevant system's GT doc)
 2. Cite the specific code block supporting your hypothesis
-3. If no Ground Truth doc covers the area, create one using `artifacts/ref/GROUND_TRUTH_META_PROMPT.md`
+3. If no Ground Truth doc covers the area, create one using `~/.anvideck/projects/sonicPiWeb/ref/GROUND_TRUTH_META_PROMPT.md`
 
 ### Provenance Chain (every fix must trace back)
 ```
@@ -225,7 +228,7 @@ Catalogue REFs point to our own `src/engine/*.ts` files. For the full pipeline t
 
 7. **Temporal structure reveals param bugs that level analysis misses.** RMS and peak comparisons showed the clap+FX was "1.8x louder" but didn't reveal WHY. Spectrogram analysis showed the echo timing pattern was completely different — echoes at 250ms instead of 115ms. This pointed directly at FX BPM scaling. When spectrograms match in frequency content but differ in temporal pattern, check time-based param handling.
 
-8. **Check ALL code paths when adding optimizations — especially overflow/error paths.** Adding rAF batching to Console.log() fixed the normal path but missed Console.rebuild() which ran on buffer overflow — recreating 500 DOM elements synchronously. 12 experiments investigated exotic causes before finding the bypass. **Rule: grep for ALL callers of the unoptimized function.** Full case study: `artifacts/ref/CASE_STUDY_PERFORMANCE_INVESTIGATION.md`
+8. **Check ALL code paths when adding optimizations — especially overflow/error paths.** Adding rAF batching to Console.log() fixed the normal path but missed Console.rebuild() which ran on buffer overflow — recreating 500 DOM elements synchronously. 12 experiments investigated exotic causes before finding the bypass. **Rule: grep for ALL callers of the unoptimized function.** Full case study: `~/.anvideck/projects/sonicPiWeb/ref/CASE_STUDY_PERFORMANCE_INVESTIGATION.md`
 
 9. **Measure the actual hot function before theorizing.** A single `performance.now()` wrapper would have found the bottleneck in minutes. Profile first, theorize second.
 

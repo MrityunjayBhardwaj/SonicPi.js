@@ -8,6 +8,7 @@ If you're contributing, you can safely ignore this directory.
 ## Contents
 
 - `.anvi/` — Diagnostic catalogues (error patterns, invariants, lifecycle patterns, project focus)
-- `ref/` — Research documents, ground truth pipeline traces, reference source code
 - `investigations/` — Debugging session logs and experiment records
 - `paper/` — Academic/design writing
+
+> `ref/` (research docs, ground truth traces, reference source code) lives in `~/.anvideck/projects/sonicPiWeb/ref/` — not tracked in this repo.
