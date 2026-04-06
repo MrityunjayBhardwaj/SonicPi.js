@@ -309,6 +309,12 @@ export class Editor {
   highlightErrorLine(line: number | null): void {
     // Remove previous error highlight
     if (this.errorLineEl) {
+      // If it's a marker with a styled element reference, restore styles
+      const styledEl = (this.errorLineEl as any)._styledEl as HTMLElement | undefined
+      if (styledEl) {
+        styledEl.style.background = ''
+        styledEl.style.borderLeft = ''
+      }
       this.errorLineEl.remove()
       this.errorLineEl = null
     }
@@ -316,20 +322,35 @@ export class Editor {
     if (line === null) return
 
     if (this.view) {
-      // CodeMirror: inject a style for the error line
       const doc = this.view.state.doc.toString()
       const lines = doc.split('\n')
       if (line > 0 && line <= lines.length) {
+        // Compute char offset to scroll to the error line
         let charOffset = 0
         for (let i = 0; i < line - 1; i++) charOffset += lines[i].length + 1
-        // Add a CSS rule targeting the line
-        const style = document.createElement('style')
-        style.textContent = `.cm-line:nth-child(${line}) { background: rgba(232,82,124,0.15) !important; border-left: 3px solid #E8527C !important; }`
-        this.container.appendChild(style)
-        this.errorLineEl = style
+        try { this.view.dispatch({ selection: { anchor: charOffset } }) } catch { /* ignore scroll errors */ }
+
+        // Style the .cm-line element directly
+        const cmLines = this.container.querySelectorAll('.cm-line')
+        const targetEl = cmLines[line - 1] as HTMLElement | undefined
+        if (targetEl) {
+          targetEl.style.background = 'rgba(232,82,124,0.15)'
+          targetEl.style.borderLeft = '3px solid #E8527C'
+          const marker = document.createElement('span')
+          marker.style.display = 'none'
+          this.container.appendChild(marker)
+          this.errorLineEl = marker
+          ;(marker as any)._styledEl = targetEl
+        } else {
+          // Fallback: CSS nth-child
+          const style = document.createElement('style')
+          style.textContent = `.cm-line:nth-child(${line}) { background: rgba(232,82,124,0.15) !important; border-left: 3px solid #E8527C !important; }`
+          this.container.appendChild(style)
+          this.errorLineEl = style
+        }
       }
     } else if (this.fallbackTextarea) {
-      // Textarea: can't highlight lines, but we can show in console
+      // Textarea: can't highlight lines
     }
   }
 

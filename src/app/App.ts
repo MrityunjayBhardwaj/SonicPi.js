@@ -876,7 +876,13 @@ export class App {
         })
 
         this.console.logSystem('  Loading synthdefs + initialising scsynth...')
-        await this.engine.init()
+        try {
+          await this.engine.init()
+        } catch (initErr) {
+          this.console.logError('Engine init failed', String(initErr))
+          this.toolbar.setLoading(false)
+          return
+        }
         // Apply saved volume from prefs
         if (typeof savedPrefs.masterVolume === 'number') {
           this.engine.setVolume((savedPrefs.masterVolume as number) / 100)

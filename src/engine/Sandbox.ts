@@ -16,6 +16,13 @@
  * Works in all browsers, no strict mode issues.
  */
 
+/**
+ * Number of lines the sandbox wrapper adds before user code.
+ * Set dynamically on first executor creation. Used by FriendlyErrors
+ * to map JS error line numbers back to user source lines.
+ */
+export let SANDBOX_WRAPPER_LINES = 37 // initial estimate, updated on first createIsolatedExecutor
+
 /** Globals that are blocked in user code. */
 export const BLOCKED_GLOBALS = [
   'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource',
@@ -165,7 +172,9 @@ export function createIsolatedExecutor(
   const wrappedCode = `with(__scope__) { return (async () => {\n${mergePolyfill}${stringRingPolyfill}${arrayAtPolyfill}${spOperatorPolyfill}${transpiledCode}\n})(); }`
 
   // Count polyfill lines so we can map error line numbers back to user code
+  // 2 = new Function wrapper (1) + with/async IIFE wrapper (1)
   const polyfillLineCount = (mergePolyfill + stringRingPolyfill + arrayAtPolyfill + spOperatorPolyfill).split('\n').length
+  SANDBOX_WRAPPER_LINES = 2 + polyfillLineCount
 
   try {
     const fn = new Function('__scope__', wrappedCode)
@@ -188,9 +197,10 @@ export function createIsolatedExecutor(
                         msg.match(/line\s+(\d+)/i)
       if (lineMatch) {
         const jsLine = parseInt(lineMatch[1], 10)
-        // Subtract wrapper: 1 (with+async) + polyfill lines + 1 (function wrapper)
-        const sourceLine = jsLine - 1 - polyfillLineCount
-        const enriched = new SyntaxError(`${msg} (line ${sourceLine > 0 ? sourceLine : jsLine})`)
+        // Subtract: 1 (new Function wrapper) + 1 (with+async IIFE) + polyfill lines
+        const wrapperLines = 2 + polyfillLineCount
+        const sourceLine = jsLine - wrapperLines
+        const enriched = new SyntaxError(`${msg} (line ${sourceLine > 0 ? sourceLine : 1})`)
         enriched.stack = e.stack
         throw enriched
       }
@@ -199,8 +209,25 @@ export function createIsolatedExecutor(
     // Non-syntax error (e.g., CSP violation) — fallback to plain executor
     console.warn('[SonicPi] Sandbox unavailable — running without global blocking')
     const asyncBody = `return (async () => {\n${transpiledCode}\n})();`
-    const fn = new Function(...dslParamNames, asyncBody)
-    return { execute: fn as (...args: unknown[]) => Promise<void>, scopeHandle }
+    try {
+      const fn = new Function(...dslParamNames, asyncBody)
+      return { execute: fn as (...args: unknown[]) => Promise<void>, scopeHandle }
+    } catch (fallbackErr) {
+      // Fallback also failed — enrich and re-throw
+      if (fallbackErr instanceof SyntaxError) {
+        const fbMsg = fallbackErr.message
+        const fbMatch = (fallbackErr.stack?.match(/<anonymous>:(\d+):\d+/) ??
+                        fbMsg.match(/line\s+(\d+)/i))
+        if (fbMatch) {
+          const raw = parseInt(fbMatch[1], 10)
+          const adjusted = raw - 2 // subtract async IIFE wrapper (no polyfills in fallback)
+          const enriched = new SyntaxError(`${fbMsg} (line ${adjusted > 0 ? adjusted : 1})`)
+          enriched.stack = fallbackErr.stack
+          throw enriched
+        }
+      }
+      throw fallbackErr
+    }
   }
 }
 

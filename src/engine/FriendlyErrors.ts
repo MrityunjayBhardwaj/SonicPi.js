@@ -6,6 +6,7 @@
  */
 
 import { getSynthParams, getFxParams } from './SynthParams'
+import { SANDBOX_WRAPPER_LINES } from './Sandbox'
 
 export interface FriendlyError {
   title: string
@@ -61,12 +62,10 @@ function extractLineFromStack(err: Error, lineOffset: number): number | undefine
 
   if (syntaxMatch) {
     const raw = parseInt(syntaxMatch[1], 10)
-    // Subtract the wrapper function's lines (async IIFE wrapper + polyfills)
-    // The Sandbox wraps code in: with(__scope__) { return (async () => { ...polyfills... CODE })(); }
-    // Polyfills add ~7 lines before user code starts
-    const wrapperLines = 2 + lineOffset
+    // Use dynamically-computed wrapper line count from Sandbox
+    const wrapperLines = lineOffset > 0 ? lineOffset : SANDBOX_WRAPPER_LINES
     const adjusted = raw - wrapperLines
-    return adjusted > 0 ? adjusted : raw > 0 ? raw : undefined
+    return adjusted > 0 ? adjusted : raw > 0 ? 1 : undefined
   }
 
   // 2. Runtime errors — look for the eval frame in the stack
@@ -74,8 +73,9 @@ function extractLineFromStack(err: Error, lineOffset: number): number | undefine
                        stack.match(/eval.*?:(\d+):\d+/)
   if (runtimeMatch) {
     const raw = parseInt(runtimeMatch[1], 10)
-    const adjusted = raw - 2 - lineOffset
-    return adjusted > 0 ? adjusted : undefined
+    const wrapperLines = lineOffset > 0 ? lineOffset : SANDBOX_WRAPPER_LINES
+    const adjusted = raw - wrapperLines
+    return adjusted > 0 ? adjusted : 1
   }
 
   return undefined

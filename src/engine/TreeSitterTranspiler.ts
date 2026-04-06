@@ -1408,14 +1408,20 @@ function transpileDefine(
 
   ctx.definedFunctions.add(name)
 
+  if (!blockNode) {
+    const line = node.startPosition?.row != null ? node.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: define :${name} is missing 'do ... end' block`)
+    return `/* parse error: define :${name} missing block */`
+  }
+
   // Get block parameters (|a, b = default|)
-  const params = blockNode?.namedChildren.find((c: any) => c.type === 'block_parameters')
+  const params = blockNode.namedChildren.find((c: any) => c.type === 'block_parameters')
   const paramStr = params
     ? params.namedChildren.map((c: any) => transpileNode(c, ctx)).join(', ')
     : ''
 
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
-  const bodyStr = blockNode ? transpileBlockBody(blockNode, bodyCtx) : ''
+  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
 
   return `function ${name}(b${paramStr ? ', ' + paramStr : ''}) {\n${bodyStr}\n${ctx.indent}}`
 }
@@ -1443,6 +1449,12 @@ function transpileWithBlock(
     }
   }
 
+  if (!blockNode) {
+    const line = argsNode?.startPosition?.row != null ? argsNode.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: ${methodName} is missing 'do ... end' block`)
+    return `/* parse error: ${methodName} missing block */`
+  }
+
   const prefix = ctx.insideLoop ? 'b.' : ''
 
   // Inside a loop, the block body is inside ProgramBuilder context (insideLoop: true).
@@ -1451,7 +1463,7 @@ function transpileWithBlock(
   const bodyCtx: TranspileContext = ctx.insideLoop
     ? { ...ctx, insideLoop: true }
     : { ...ctx }  // keep insideLoop false — live_loops inside will set their own
-  const bodyStr = blockNode ? transpileBlockBody(blockNode, bodyCtx) : ''
+  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
 
   const optsStr = opts.length > 0 ? `{ ${opts.join(', ')} }` : ''
   const posStr = positional.join(', ')
@@ -1476,9 +1488,15 @@ function transpileWithBlock(
 function transpileInThread(
   argsNode: any, blockNode: any, ctx: TranspileContext
 ): string {
+  if (!blockNode) {
+    const line = argsNode?.startPosition?.row != null ? argsNode.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: in_thread is missing 'do ... end' block`)
+    return `/* parse error: in_thread missing block */`
+  }
+
   const prefix = ctx.insideLoop ? 'b.' : ''
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
-  const bodyStr = blockNode ? transpileBlockBody(blockNode, bodyCtx) : ''
+  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
 
   // Check for name: option
   const args = argsNode?.namedChildren ?? []
@@ -1499,6 +1517,12 @@ function transpileInThread(
 function transpileAt(
   argsNode: any, blockNode: any, ctx: TranspileContext
 ): string {
+  if (!blockNode) {
+    const line = argsNode?.startPosition?.row != null ? argsNode.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: at is missing 'do ... end' block`)
+    return `/* parse error: at missing block */`
+  }
+
   const args = argsNode?.namedChildren ?? []
   const positional = args.filter((a: any) => a.type !== 'pair').map((a: any) => transpileNode(a, ctx))
 
@@ -1508,9 +1532,9 @@ function transpileAt(
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
 
   // Get block parameters
-  const params = blockNode?.namedChildren.find((c: any) => c.type === 'block_parameters')
+  const params = blockNode.namedChildren.find((c: any) => c.type === 'block_parameters')
   const paramNames = params?.namedChildren.map((c: any) => c.text) ?? []
-  const bodyStr = blockNode ? transpileBlockBody(blockNode, bodyCtx) : ''
+  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
 
   const paramStr = paramNames.length > 0 ? ', ' + paramNames.join(', ') : ''
   return `${prefix}at(${timesArr}, ${valuesArr}, (b${paramStr}) => {\n${bodyStr}\n${ctx.indent}})`
@@ -1519,22 +1543,34 @@ function transpileAt(
 function transpileTimeWarp(
   argsNode: any, blockNode: any, ctx: TranspileContext
 ): string {
+  if (!blockNode) {
+    const line = argsNode?.startPosition?.row != null ? argsNode.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: time_warp is missing 'do ... end' block`)
+    return `/* parse error: time_warp missing block */`
+  }
+
   const offset = argsNode?.namedChildren[0]
     ? transpileNode(argsNode.namedChildren[0], ctx)
     : '0'
   const prefix = ctx.insideLoop ? 'b.' : ''
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
-  const bodyStr = blockNode ? transpileBlockBody(blockNode, bodyCtx) : ''
+  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
   return `${prefix}at([${offset}], null, (b) => {\n${bodyStr}\n${ctx.indent}})`
 }
 
 function transpileDensity(
   argsNode: any, blockNode: any, ctx: TranspileContext
 ): string {
+  if (!blockNode) {
+    const line = argsNode?.startPosition?.row != null ? argsNode.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: density is missing 'do ... end' block`)
+    return `/* parse error: density missing block */`
+  }
+
   const factor = argsNode?.namedChildren[0]
     ? transpileNode(argsNode.namedChildren[0], ctx)
     : '1'
-  const bodyStr = blockNode ? transpileBlockBody(blockNode, ctx) : ''
+  const bodyStr = transpileBlockBody(blockNode, ctx)
   const bRef = ctx.insideLoop ? 'b' : '__densityB'
   const lines = ['{']
   if (!ctx.insideLoop) lines.push(`  const ${bRef} = { density: 1 }`)
