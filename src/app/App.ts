@@ -864,6 +864,7 @@ export class App {
         this.engine.setRuntimeErrorHandler((err) => {
           const fe = friendlyError(err)
           this.console.logError(fe.title, fe.message)
+          if (fe.line) this.editor.highlightErrorLine(fe.line)
         })
 
         this.engine.setPrintHandler((msg) => {
