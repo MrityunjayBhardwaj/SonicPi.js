@@ -382,7 +382,23 @@ const ERROR_PATTERNS: Array<{
       }
     },
   },
-  // Syntax errors
+  // Parse errors from TreeSitter transpiler (contain "Parse error at line N")
+  {
+    test: (msg) => /parse error at line/i.test(msg),
+    transform: (msg) => {
+      // Extract all "Parse error at line N: ..." entries
+      const errors = msg.split(';').map(s => s.trim()).filter(Boolean)
+      const formatted = errors.map(e => `  ${e}`).join('\n')
+      return {
+        title: 'Syntax error — your code could not be parsed',
+        message: `${formatted}\n\nCheck for:\n` +
+          `  - Missing "do" after live_loop :name\n` +
+          `  - Unclosed do/end blocks\n` +
+          `  - Mismatched quotes or parentheses`,
+      }
+    },
+  },
+  // Syntax errors (JS-level, from new Function())
   {
     test: (msg) => /syntaxerror|unexpected token|unexpected end/i.test(msg),
     transform: (msg) => ({

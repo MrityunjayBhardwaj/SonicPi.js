@@ -219,9 +219,9 @@ export class SonicPiEngine {
       } else {
         const result = autoTranspileDetailed(code)
         if (result.usedFallback) {
-          const warnMsg = `[Warning] Transpile issue: ${result.fallbackReason}`
-          if (this.printHandler) this.printHandler(warnMsg)
-          else console.warn('[SonicPi]', warnMsg)
+          // Parse errors — don't execute, return error to UI
+          const errorMsg = result.fallbackReason || 'Unknown syntax error'
+          return { error: new SyntaxError(errorMsg) }
         }
         transpiledCode = result.code
         this.transpileCache.set(code, transpiledCode)
