@@ -38,6 +38,7 @@ export class ProgramBuilder {
   private _synthDefaults: Record<string, number> = {}
   private _sampleDefaults: Record<string, number> = {}
   private _debug: boolean = true
+  private _argBpmScaling: boolean = true
 
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
     this.rng = new SeededRandom(seed)
@@ -77,6 +78,7 @@ export class ProgramBuilder {
     const cleanOpts = { ...this._synthDefaults, ...opts } as Record<string, number>
     delete (cleanOpts as Record<string, unknown>)._srcLine
     delete (cleanOpts as Record<string, unknown>).synth
+    if (!this._argBpmScaling) cleanOpts._argBpmScaling = 0
     this._lastRef = this.nextRef++
     this.steps.push({
       tag: 'play',
@@ -114,6 +116,7 @@ export class ProgramBuilder {
     // Merge sample defaults first, then overlay explicit opts
     const cleanOpts = { ...this._sampleDefaults, ...opts } as Record<string, number>
     delete (cleanOpts as Record<string, unknown>)._srcLine
+    if (!this._argBpmScaling) cleanOpts._argBpmScaling = 0
     this.steps.push({ tag: 'sample', name, opts: cleanOpts, srcLine })
     return this
   }
@@ -145,7 +148,8 @@ export class ProgramBuilder {
   }
 
   control(nodeRef: number, params: Record<string, number>): this {
-    this.steps.push({ tag: 'control', nodeRef, params })
+    const p = !this._argBpmScaling ? { ...params, _argBpmScaling: 0 } : params
+    this.steps.push({ tag: 'control', nodeRef, params: p })
     return this
   }
 
@@ -171,8 +175,10 @@ export class ProgramBuilder {
     const inner = new ProgramBuilder(this.rng.next() * 0xFFFFFFFF)
     inner.currentSynth = this.currentSynth
     inner.densityFactor = this.densityFactor
+    inner._argBpmScaling = this._argBpmScaling
     fn(inner, fxRef)
-    this.steps.push({ tag: 'fx', name, opts, body: inner.build(), nodeRef: fxRef })
+    const fxOpts = !this._argBpmScaling ? { ...opts, _argBpmScaling: 0 } : opts
+    this.steps.push({ tag: 'fx', name, opts: fxOpts, body: inner.build(), nodeRef: fxRef })
     return this
   }
 
@@ -180,6 +186,7 @@ export class ProgramBuilder {
     const inner = new ProgramBuilder(this.rng.next() * 0xFFFFFFFF)
     inner.currentSynth = this.currentSynth
     inner.densityFactor = this.densityFactor
+    inner._argBpmScaling = this._argBpmScaling
     buildFn(inner)
     this.steps.push({ tag: 'thread', body: inner.build() })
     return this
@@ -192,6 +199,7 @@ export class ProgramBuilder {
       const inner = new ProgramBuilder(this.rng.next() * 0xFFFFFFFF)
       inner.currentSynth = this.currentSynth
       inner.densityFactor = this.densityFactor
+      inner._argBpmScaling = this._argBpmScaling
       if (offset > 0) inner.sleep(offset)
       buildFn(inner, val)
       this.steps.push({ tag: 'thread', body: inner.build() })
@@ -417,6 +425,25 @@ export class ProgramBuilder {
   /** Enable/disable debug output. In browser, this is a no-op flag. */
   use_debug(enabled: boolean): this {
     this._debug = enabled
+    return this
+  }
+
+  /**
+   * Control whether time params (release, attack, phase, etc.) are automatically
+   * BPM-scaled. Default: true (matching Desktop Sonic Pi).
+   * With false, time params are treated as seconds, not beats.
+   */
+  use_arg_bpm_scaling(enabled: boolean): this {
+    this._argBpmScaling = enabled
+    return this
+  }
+
+  /** Temporarily set arg_bpm_scaling for a block, then restore. */
+  with_arg_bpm_scaling(enabled: boolean, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._argBpmScaling
+    this._argBpmScaling = enabled
+    buildFn(this)
+    this._argBpmScaling = prev
     return this
   }
 

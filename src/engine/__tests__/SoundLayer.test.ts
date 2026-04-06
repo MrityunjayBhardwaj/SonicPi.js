@@ -6,6 +6,7 @@ import {
   normalizeFxParams,
   selectSamplePlayer,
 } from '../SoundLayer'
+import { ProgramBuilder } from '../ProgramBuilder'
 
 // ---------------------------------------------------------------------------
 // BPM scaling (G_NEW.1)
@@ -563,5 +564,127 @@ describe('validateAndClamp', () => {
     const p = normalizeFxParams('reverb', { room: 2, damp: -1 }, 60)
     expect(p.room).toBe(1)
     expect(p.damp).toBe(0)
+  })
+})
+
+describe('use_arg_bpm_scaling', () => {
+  it('default: time params ARE BPM-scaled', () => {
+    const p = normalizePlayParams('beep', { release: 1, attack: 0.5 }, 120)
+    expect(p.release).toBe(0.5)
+    expect(p.attack).toBe(0.25)
+  })
+
+  it('_argBpmScaling: 0 skips BPM scaling for play params', () => {
+    const p = normalizePlayParams('beep', { release: 1, attack: 0.5, _argBpmScaling: 0 }, 120)
+    expect(p.release).toBe(1)
+    expect(p.attack).toBe(0.5)
+  })
+
+  it('_argBpmScaling: 0 skips BPM scaling for sample params', () => {
+    const p = normalizeSampleParams({ release: 1, attack: 0.2, _argBpmScaling: 0 }, 130)
+    expect(p.release).toBe(1)
+    expect(p.attack).toBe(0.2)
+  })
+
+  it('_argBpmScaling: 0 skips BPM scaling for control params', () => {
+    const p = normalizeControlParams({ amp_slide: 1, amp: 0.5, _argBpmScaling: 0 }, 120)
+    expect(p.amp_slide).toBe(1)  // would be 0.5 with scaling
+    expect(p.amp).toBe(0.5)
+  })
+
+  it('_argBpmScaling: 0 skips BPM scaling for FX params', () => {
+    const p = normalizeFxParams('echo', { phase: 0.25, decay: 2, _argBpmScaling: 0 }, 130)
+    expect(p.phase).toBe(0.25)  // would be ~0.115 with scaling
+    expect(p.decay).toBe(2)     // would be ~0.923 with scaling
+  })
+
+  it('_argBpmScaling flag is stripped from output', () => {
+    const p = normalizePlayParams('beep', { release: 1, _argBpmScaling: 0 }, 120)
+    expect('_argBpmScaling' in p).toBe(false)
+  })
+
+  it('still injects synth time defaults even when BPM scaling is off', () => {
+    // With arg_bpm_scaling false, defaults should still be injected (in beats/seconds)
+    // but NOT scaled by BPM.
+    const p = normalizePlayParams('beep', { note: 60, _argBpmScaling: 0 }, 130)
+    expect(p.release).toBe(1)  // injected default, not scaled
+  })
+
+  it('_argBpmScaling does not trigger complex sample player', () => {
+    expect(selectSamplePlayer({ amp: 1, _argBpmScaling: 0 })).toBe('sonic-pi-basic_stereo_player')
+  })
+})
+
+describe('ProgramBuilder use_arg_bpm_scaling', () => {
+  it('default: play steps have no _argBpmScaling flag', () => {
+    const b = new ProgramBuilder()
+    b.play(60)
+    const steps = b.build()
+    expect(steps[0].tag).toBe('play')
+    if (steps[0].tag === 'play') {
+      expect('_argBpmScaling' in steps[0].opts).toBe(false)
+    }
+  })
+
+  it('use_arg_bpm_scaling(false) injects _argBpmScaling: 0 into play opts', () => {
+    const b = new ProgramBuilder()
+    b.use_arg_bpm_scaling(false)
+    b.play(60)
+    const steps = b.build()
+    if (steps[0].tag === 'play') {
+      expect(steps[0].opts._argBpmScaling).toBe(0)
+    }
+  })
+
+  it('use_arg_bpm_scaling(false) injects _argBpmScaling: 0 into sample opts', () => {
+    const b = new ProgramBuilder()
+    b.use_arg_bpm_scaling(false)
+    b.sample('bd_haus')
+    const steps = b.build()
+    if (steps[0].tag === 'sample') {
+      expect(steps[0].opts._argBpmScaling).toBe(0)
+    }
+  })
+
+  it('with_arg_bpm_scaling scopes the flag', () => {
+    const b = new ProgramBuilder()
+    b.play(60) // default: no flag
+    b.with_arg_bpm_scaling(false, (b2) => {
+      b2.play(62) // flag present
+    })
+    b.play(64) // default again: no flag
+    const steps = b.build()
+    if (steps[0].tag === 'play') expect('_argBpmScaling' in steps[0].opts).toBe(false)
+    if (steps[1].tag === 'play') expect(steps[1].opts._argBpmScaling).toBe(0)
+    if (steps[2].tag === 'play') expect('_argBpmScaling' in steps[2].opts).toBe(false)
+  })
+
+  it('use_arg_bpm_scaling(true) after false removes the flag', () => {
+    const b = new ProgramBuilder()
+    b.use_arg_bpm_scaling(false)
+    b.play(60) // flag present
+    b.use_arg_bpm_scaling(true)
+    b.play(62) // no flag
+    const steps = b.build()
+    if (steps[0].tag === 'play') expect(steps[0].opts._argBpmScaling).toBe(0)
+    if (steps[1].tag === 'play') expect('_argBpmScaling' in steps[1].opts).toBe(false)
+  })
+
+  it('propagates to with_fx opts and inner builder', () => {
+    const b = new ProgramBuilder()
+    b.use_arg_bpm_scaling(false)
+    b.with_fx('echo', { phase: 0.25 }, (inner) => {
+      inner.play(60)
+      return inner
+    })
+    const steps = b.build()
+    if (steps[0].tag === 'fx') {
+      expect(steps[0].opts._argBpmScaling).toBe(0)
+      // Inner play step should also have the flag
+      const innerPlay = steps[0].body[0]
+      if (innerPlay.tag === 'play') {
+        expect(innerPlay.opts._argBpmScaling).toBe(0)
+      }
+    }
   })
 })

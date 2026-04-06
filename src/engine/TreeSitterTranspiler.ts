@@ -303,6 +303,8 @@ const BUILDER_METHODS = new Set([
   'use_synth_defaults', 'use_sample_defaults', 'with_bpm', 'with_synth',
   // Debug
   'use_debug',
+  // BPM scaling control
+  'use_arg_bpm_scaling', 'with_arg_bpm_scaling',
   // Utility
   'factor_q', 'bools', 'play_pattern_timed', 'sample_duration',
   'hz_to_midi', 'midi_to_hz', 'quantise', 'quantize', 'octs',
@@ -325,9 +327,9 @@ const BUILDER_METHODS = new Set([
  */
 const TOP_LEVEL_SCOPE = new Set([
   'live_loop', 'stop_loop', 'define',
-  'use_bpm', 'use_synth', 'use_random_seed',
+  'use_bpm', 'use_synth', 'use_random_seed', 'use_arg_bpm_scaling',
   'in_thread', 'at', 'density',
-  'with_fx',
+  'with_fx', 'with_arg_bpm_scaling',
   // Global store
   'set', 'get',
   // Sample catalog
@@ -976,7 +978,7 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     }
 
     // with_fx :name, opts do ... end
-    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose') {
+    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose' || methodName === 'with_arg_bpm_scaling') {
       return transpileWithBlock(methodName, argsNode, blockNode, ctx)
     }
 

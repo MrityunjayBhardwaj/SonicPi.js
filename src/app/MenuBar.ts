@@ -27,6 +27,8 @@ export class MenuBar {
   private container: HTMLElement
   private onToggleScope: (mode: ScopeMode) => void
   private getActiveModes: () => Set<ScopeMode>
+  private onTogglePanel: (panel: string, visible: boolean) => void
+  private getPanelVisibility: () => Record<string, boolean>
   private activeDropdown: HTMLElement | null = null
 
   constructor(
@@ -34,10 +36,14 @@ export class MenuBar {
     options: {
       onToggleScope: (mode: ScopeMode) => void
       getActiveModes: () => Set<ScopeMode>
+      onTogglePanel: (panel: string, visible: boolean) => void
+      getPanelVisibility: () => Record<string, boolean>
     }
   ) {
     this.onToggleScope = options.onToggleScope
     this.getActiveModes = options.getActiveModes
+    this.onTogglePanel = options.onTogglePanel
+    this.getPanelVisibility = options.getPanelVisibility
 
     this.container = document.createElement('div')
     this.container.style.cssText = `
@@ -54,6 +60,9 @@ export class MenuBar {
       position: relative;
       z-index: 10;
     `
+
+    // View menu (before Visuals)
+    this.addMenu('View', () => this.buildViewMenu())
 
     // Visuals menu
     this.addMenu('Visuals', () => this.buildVisualsMenu())
@@ -120,6 +129,116 @@ export class MenuBar {
         (btn as HTMLElement).style.color = '#8b949e'
       }
     }
+  }
+
+  private buildViewMenu(): HTMLElement {
+    const dropdown = document.createElement('div')
+    dropdown.style.cssText = `
+      position: fixed;
+      background: #1c2128;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      padding: 0.4rem 0;
+      min-width: 180px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      z-index: 1000;
+      font-family: inherit;
+    `
+
+    const panelItems: Array<{ key: string; label: string }> = [
+      { key: 'log', label: 'Show Log' },
+      { key: 'cueLog', label: 'Show Cue Log' },
+      { key: 'scope', label: 'Show Scope' },
+    ]
+
+    const uiItems: Array<{ key: string; label: string }> = [
+      { key: 'buttons', label: 'Show Buttons' },
+      { key: 'tabs', label: 'Show Tabs' },
+    ]
+
+    const checkboxes = new Map<string, HTMLSpanElement>()
+
+    const updateCheckboxes = () => {
+      const vis = this.getPanelVisibility()
+      for (const [key, check] of checkboxes) {
+        const isOn = vis[key] !== false
+        check.textContent = isOn ? '✓' : ''
+        check.style.color = isOn ? '#fff' : 'transparent'
+        check.style.background = isOn ? '#5EBDAB' : 'none'
+        check.style.borderColor = isOn ? '#5EBDAB' : 'rgba(255,255,255,0.2)'
+      }
+    }
+
+    const addItem = (key: string, label: string) => {
+      const vis = this.getPanelVisibility()
+      const isOn = vis[key] !== false
+      const item = document.createElement('div')
+      item.style.cssText = `
+        display: flex;
+        align-items: center;
+        padding: 0.3rem 0.8rem;
+        cursor: pointer;
+        font-size: 0.7rem;
+        color: #c9d1d9;
+        gap: 0.5rem;
+        transition: background 0.1s;
+        user-select: none;
+      `
+      item.addEventListener('mouseenter', () => {
+        item.style.background = 'rgba(255,255,255,0.06)'
+      })
+      item.addEventListener('mouseleave', () => {
+        item.style.background = 'none'
+      })
+
+      const check = document.createElement('span')
+      check.style.cssText = `
+        width: 14px; height: 14px;
+        border: 1px solid ${isOn ? '#5EBDAB' : 'rgba(255,255,255,0.2)'};
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.6rem;
+        flex-shrink: 0;
+        background: ${isOn ? '#5EBDAB' : 'none'};
+        color: ${isOn ? '#fff' : 'transparent'};
+        transition: all 0.15s;
+      `
+      check.textContent = isOn ? '✓' : ''
+      checkboxes.set(key, check)
+
+      const labelEl = document.createElement('span')
+      labelEl.textContent = label
+
+      item.appendChild(check)
+      item.appendChild(labelEl)
+
+      item.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const currentVis = this.getPanelVisibility()
+        const newState = !(currentVis[key] !== false)
+        this.onTogglePanel(key, newState)
+        updateCheckboxes()
+      })
+
+      dropdown.appendChild(item)
+    }
+
+    for (const { key, label } of panelItems) addItem(key, label)
+
+    // Separator
+    const sep = document.createElement('div')
+    sep.style.cssText = `
+      height: 1px;
+      background: rgba(255,255,255,0.08);
+      margin: 0.3rem 0.6rem;
+    `
+    dropdown.appendChild(sep)
+
+    for (const { key, label } of uiItems) addItem(key, label)
+
+    return dropdown
   }
 
   private buildVisualsMenu(): HTMLElement {

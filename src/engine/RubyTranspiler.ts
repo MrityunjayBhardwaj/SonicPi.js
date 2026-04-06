@@ -99,7 +99,7 @@ function wrapBareCode(code: string): string {
       }
 
       // Top-level settings
-      if (/^\s*(use_bpm|use_synth|use_random_seed)\s/.test(line)) {
+      if (/^\s*(use_bpm|use_synth|use_random_seed|use_arg_bpm_scaling)\s/.test(line)) {
         topLevel.push(line)
         continue
       }
@@ -129,7 +129,7 @@ function wrapBareCode(code: string): string {
 
   for (const line of lines) {
     const trimmed = line.trim()
-    if (/^\s*(use_bpm|use_synth|use_random_seed)\s/.test(line)) {
+    if (/^\s*(use_bpm|use_synth|use_random_seed|use_arg_bpm_scaling)\s/.test(line)) {
       topLevel.push(line)
     } else {
       body.push(line)

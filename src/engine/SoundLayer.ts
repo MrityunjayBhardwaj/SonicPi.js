@@ -180,6 +180,7 @@ const STRIP_PARAMS = new Set([
   'beat_stretch', // handled by translateSampleOpts before this stage
   'pitch_stretch',
   'rpitch',
+  '_argBpmScaling', // use_arg_bpm_scaling flag — consumed by normalize, not sent to scsynth
 ])
 
 /** All individual slide params that `slide:` expands to. */
@@ -218,6 +219,7 @@ export function normalizePlayParams(
   bpm: number,
   warnFn?: (msg: string) => void,
 ): Record<string, number> {
+  const shouldScaleBpm = !('_argBpmScaling' in params && !params._argBpmScaling)
   let p = { ...params }
   p = calculateSustain(p)
   p = expandSlideParam(p)
@@ -228,7 +230,7 @@ export function normalizePlayParams(
   p = aliasSynthParams(synthName, p)
   p = mungeSynthOpts(synthName, p)
   p = validateAndClamp(p, warnFn)
-  p = scaleTimeParamsToBpm(p, bpm)
+  if (shouldScaleBpm) p = scaleTimeParamsToBpm(p, bpm)
   return p
 }
 
@@ -242,12 +244,13 @@ export function normalizeSampleParams(
   bpm: number,
   warnFn?: (msg: string) => void,
 ): Record<string, number> {
+  const shouldScaleBpm = !('_argBpmScaling' in params && !params._argBpmScaling)
   let p = { ...params }
   p = calculateSustain(p)
   p = stripNonScynthParams(p)
   p = injectSampleDefaults(p)
   p = validateAndClamp(p, warnFn)
-  p = scaleTimeParamsToBpm(p, bpm)
+  if (shouldScaleBpm) p = scaleTimeParamsToBpm(p, bpm)
   return p
 }
 
@@ -261,10 +264,11 @@ export function normalizeControlParams(
   bpm: number,
   warnFn?: (msg: string) => void,
 ): Record<string, number> {
+  const shouldScaleBpm = !('_argBpmScaling' in params && !params._argBpmScaling)
   let p = { ...params }
   p = stripNonScynthParams(p)
   p = validateAndClamp(p, warnFn)
-  p = scaleTimeParamsToBpm(p, bpm)
+  if (shouldScaleBpm) p = scaleTimeParamsToBpm(p, bpm)
   return p
 }
 
@@ -289,12 +293,13 @@ export function normalizeFxParams(
   bpm: number,
   warnFn?: (msg: string) => void,
 ): Record<string, number> {
+  const shouldScaleBpm = !('_argBpmScaling' in params && !params._argBpmScaling)
   let p = { ...params }
   p = stripNonScynthParams(p)
   p = injectFxTimeDefaults(fxName, p)
   p = resolveSymbolDefaults(p)
   p = validateAndClamp(p, warnFn)
-  p = scaleTimeParamsToBpm(p, bpm)
+  if (shouldScaleBpm) p = scaleTimeParamsToBpm(p, bpm)
   return p
 }
 
@@ -648,7 +653,7 @@ const SIMPLE_SAMPLER_ARGS = new Set([
   // Internal params (stripped before sending to scsynth)
   'on', 'duration', 'pitch_stretch',
   // Our internal params
-  '_srcLine', 'out_bus',
+  '_srcLine', 'out_bus', '_argBpmScaling',
 ])
 
 /**

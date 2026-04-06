@@ -261,7 +261,9 @@ export class Editor {
     try {
       const runKeymap = cm.keymap.of([
         { key: 'Mod-Enter', run: () => { this.onRunCallback?.(); return true } },
+        { key: 'Alt-r', run: () => { this.onRunCallback?.(); return true } },
         { key: 'Escape', run: () => { this.onStopCallback?.(); return true } },
+        { key: 'Alt-s', run: () => { this.onStopCallback?.(); return true } },
         {
           key: 'Mod-/',
           run: (view: EditorView) => {
@@ -338,7 +340,15 @@ export class Editor {
         e.preventDefault()
         this.onRunCallback?.()
       }
+      if (e.altKey && e.key === 'r') {
+        e.preventDefault()
+        this.onRunCallback?.()
+      }
       if (e.key === 'Escape') {
+        e.preventDefault()
+        this.onStopCallback?.()
+      }
+      if (e.altKey && e.key === 's') {
         e.preventDefault()
         this.onStopCallback?.()
       }

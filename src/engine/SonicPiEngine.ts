@@ -223,6 +223,9 @@ export class SonicPiEngine {
 
       const topLevelUseBpm = (bpm: number) => { defaultBpm = bpm }
       const topLevelUseSynth = (name: string) => { defaultSynth = name }
+      // Top-level use_arg_bpm_scaling — no-op at top level (inside live_loops, b.use_arg_bpm_scaling handles it)
+      const topLevelUseArgBpmScaling = (_enabled: boolean) => { /* no-op */ }
+      const topLevelWithArgBpmScaling = (_enabled: boolean, fn: () => void) => { fn() }
 
       // Collection map for re-evaluate hot-swap path
       const pendingLoops = new Map<string, () => Promise<void>>()
@@ -625,6 +628,7 @@ export class SonicPiEngine {
       const dslNames = [
         'b',
         'live_loop', 'with_fx', 'use_bpm', 'use_synth', 'use_random_seed',
+        'use_arg_bpm_scaling', 'with_arg_bpm_scaling',
         'in_thread', 'at', 'density',
         'ring', 'knit', 'range', 'line', 'spread',
         'chord', 'scale', 'chord_invert', 'note', 'note_range',
@@ -656,6 +660,7 @@ export class SonicPiEngine {
       const dslValues = [
         topLevelBuilder,
         fxAwareWrappedLiveLoop, topLevelWithFx, topLevelUseBpm, topLevelUseSynth, topLevelUseRandomSeed,
+        topLevelUseArgBpmScaling, topLevelWithArgBpmScaling,
         topLevelInThread, topLevelAt, topLevelDensity,
         ring, knit, range, line, spread,
         chord, scale, chord_invert, note, note_range,

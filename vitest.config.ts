@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    exclude: ['tests/**', 'node_modules/**', 'packages/**'],
+    exclude: ['tests/**', 'node_modules/**', 'packages/**', '.claude/**'],
     setupFiles: ['src/engine/__tests__/setup.ts'],
   },
 })

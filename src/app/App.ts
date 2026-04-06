@@ -13,6 +13,7 @@ import { Scope } from './Scope'
 import { Console } from './Console'
 import { Toolbar } from './Toolbar'
 import { MenuBar } from './MenuBar'
+import { CueLog } from './CueLog'
 
 // Sonic Pi's actual welcome buffer
 const WELCOME_CODE = `# Welcome to SonicPi.js
@@ -52,7 +53,9 @@ const WELCOME_LOG = [
   '',
   '  Shortcuts:',
   '    Ctrl+Enter  Run code',
+  '    Alt+R       Run code',
   '    Escape      Stop all',
+  '    Alt+S       Stop all',
   '',
   '  Happy live coding!',
   '',
@@ -65,9 +68,13 @@ export class App {
   private editor!: Editor
   private scope!: Scope
   private console!: Console
+  private cueLog!: CueLog
   private toolbar!: Toolbar
   private playing = false
   private root: HTMLElement
+  private panelVisibility: Record<string, boolean> = {
+    log: true, cueLog: true, scope: true, buttons: true, tabs: true,
+  }
 
   // Buffer management — 10 buffers like Sonic Pi
   private buffers: string[] = Array(BUFFER_COUNT).fill('')
@@ -80,6 +87,10 @@ export class App {
   constructor(root: HTMLElement) {
     this.root = root
     this.loadBuffers()
+    try {
+      const saved = localStorage.getItem('spw-panel-visibility')
+      if (saved) this.panelVisibility = { ...this.panelVisibility, ...JSON.parse(saved) }
+    } catch { /* ignore */ }
     this.buildLayout()
   }
 
@@ -267,6 +278,8 @@ export class App {
       new MenuBar(this.root, {
         onToggleScope: (mode) => this.scope.toggleMode(mode),
         getActiveModes: () => this.scope.getActiveModes(),
+        onTogglePanel: (panel, visible) => this.togglePanel(panel, visible),
+        getPanelVisibility: () => this.panelVisibility,
       })
       // Move menu bar before main content
       const menuEl = this.root.lastElementChild!
@@ -275,11 +288,23 @@ export class App {
 
     // Console
     const consoleContainer = document.createElement('div')
+    consoleContainer.className = 'spw-console'
     consoleContainer.style.cssText = `
       flex: 1; min-height: 0; overflow: hidden;
     `
     rightPanel.appendChild(consoleContainer)
     this.console = new Console(consoleContainer)
+
+    // Cue Log
+    const cueLogContainer = document.createElement('div')
+    cueLogContainer.className = 'spw-cuelog'
+    cueLogContainer.style.cssText = `
+      height: 120px; min-height: 60px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    `
+    rightPanel.appendChild(cueLogContainer)
+    this.cueLog = new CueLog(cueLogContainer)
 
     // Responsive
     const mq = window.matchMedia('(max-width: 700px)')
@@ -300,6 +325,9 @@ export class App {
     }
     apply(mq.matches)
     mq.addEventListener('change', (e) => apply(e.matches))
+
+    // Apply saved panel visibility
+    this.applyPanelVisibility()
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
@@ -388,6 +416,7 @@ export class App {
 
       const code = this.editor.getValue()
       this.console.newRun()
+      this.cueLog.newRun()
       this.editor.highlightErrorLine(null) // clear previous errors
 
       const result = await this.engine.evaluate(code)
@@ -493,12 +522,29 @@ export class App {
     this.console.logSystem('  Session log exported.')
   }
 
+  private togglePanel(panel: string, visible: boolean): void {
+    this.panelVisibility[panel] = visible
+    try { localStorage.setItem('spw-panel-visibility', JSON.stringify(this.panelVisibility)) } catch { /* ignore */ }
+    this.applyPanelVisibility()
+  }
+
+  private applyPanelVisibility(): void {
+    const scope = this.root.querySelector('.spw-scope') as HTMLElement
+    const consoleEl = this.root.querySelector('.spw-console') as HTMLElement
+    const cueLogEl = this.root.querySelector('.spw-cuelog') as HTMLElement
+
+    if (scope) scope.style.display = this.panelVisibility.scope !== false ? '' : 'none'
+    if (consoleEl) consoleEl.style.display = this.panelVisibility.log !== false ? '' : 'none'
+    if (cueLogEl) cueLogEl.style.display = this.panelVisibility.cueLog !== false ? '' : 'none'
+  }
+
   dispose(): void {
     this.handleStop()
     this.engine?.dispose()
     this.editor.dispose()
     this.scope.dispose()
     this.console.dispose()
+    this.cueLog.dispose()
     this.toolbar.dispose()
   }
 }
