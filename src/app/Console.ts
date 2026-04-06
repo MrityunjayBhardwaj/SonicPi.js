@@ -20,6 +20,12 @@ export class Console {
   private body: HTMLElement
   private entries: LogEntry[] = []
   private autoScroll = true
+
+  /** Set auto-scroll behavior. */
+  setAutoScroll(on: boolean): void { this.autoScroll = on }
+
+  /** Get auto-scroll state. */
+  getAutoScroll(): boolean { return this.autoScroll }
   private runCount = 0
   private startTime = 0
   /** Pending entries waiting for next animation frame flush (#73 — DOM throttling). */

@@ -318,6 +318,17 @@ export class Editor {
   /** Register a callback for fullscreen/zen mode (F11). */
   onZen(callback: () => void): void { this.onZenCallback = callback }
 
+  /** Get the current font size. */
+  getFontSize(): number { return this.currentFontSize }
+
+  /** Toggle line number gutter visibility. */
+  setLineNumbers(show: boolean): void {
+    if (this.view) {
+      const gutters = this.view.dom.querySelector('.cm-lineNumbers') as HTMLElement | null
+      if (gutters) gutters.style.display = show ? '' : 'none'
+    }
+  }
+
   /** Change editor font size by delta px. Persists to localStorage. */
   changeFontSize(delta: number): void {
     this.currentFontSize = Math.max(10, Math.min(24, this.currentFontSize + delta))

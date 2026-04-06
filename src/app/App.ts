@@ -277,6 +277,8 @@ export class App {
   private selectedMidiInputs = new Set<string>()
   /** Set of selected MIDI output device IDs (tracked locally for UI state). */
   private selectedMidiOutputs = new Set<string>()
+  /** User preferences persisted to localStorage. */
+  private prefs: Record<string, number | boolean> = {}
 
   constructor(root: HTMLElement) {
     this.root = root
@@ -285,7 +287,95 @@ export class App {
       const saved = localStorage.getItem('spw-panel-visibility')
       if (saved) this.panelVisibility = { ...this.panelVisibility, ...JSON.parse(saved) }
     } catch { /* ignore */ }
+    this.loadPrefs()
     this.buildLayout()
+  }
+
+  // ---------------------------------------------------------------------------
+  // Preferences
+  // ---------------------------------------------------------------------------
+
+  private loadPrefs(): void {
+    try {
+      const saved = localStorage.getItem('spw-prefs')
+      if (saved) this.prefs = JSON.parse(saved)
+    } catch { /* ignore */ }
+  }
+
+  private savePrefs(): void {
+    try { localStorage.setItem('spw-prefs', JSON.stringify(this.prefs)) } catch { /* ignore */ }
+  }
+
+  private applyPref(key: string, value: number | boolean): void {
+    this.prefs[key] = value
+    this.savePrefs()
+
+    switch (key) {
+      // Audio
+      case 'masterVolume':
+        if (this.engine) this.engine.setVolume((value as number) / 100)
+        break
+      case 'mixerPreAmp':
+      case 'mixerAmp':
+        // These require re-sending mixer params — applied on next play
+        break
+
+      // Visuals
+      case 'scopeLineWidth':
+        this.scope.setLineWidth(value as number)
+        break
+      case 'scopeGlow':
+        this.scope.setGlow(value as number)
+        break
+      case 'scopeTrail':
+        this.scope.setTrail((value as number) / 100)
+        break
+      case 'scopeHue':
+        this.scope.setHueShift(value as number)
+        break
+
+      // Editor
+      case 'autoScrollLog':
+        this.console.setAutoScroll(value as boolean)
+        break
+      case 'showLineNumbers':
+        this.editor.setLineNumbers(value as boolean)
+        break
+
+      // Performance
+      case 'schedAheadTime':
+        // Applied on next engine init
+        break
+    }
+  }
+
+  private getPrefs(): Record<string, number | boolean> {
+    return {
+      masterVolume: 80,
+      mixerPreAmp: 0.3,
+      mixerAmp: 1.2,
+      scopeLineWidth: 2,
+      scopeGlow: 4,
+      scopeTrail: 25,
+      scopeHue: 0,
+      fontSize: this.editor?.getFontSize?.() ?? 14,
+      autoScrollLog: true,
+      showLineNumbers: true,
+      schedAheadTime: 0.3,
+      ...this.prefs,
+    }
+  }
+
+  /** Apply all saved prefs on startup (after UI is built). */
+  private applyAllPrefs(): void {
+    const p = this.getPrefs()
+    // Apply visual prefs immediately
+    this.scope.setLineWidth(p.scopeLineWidth as number)
+    this.scope.setGlow(p.scopeGlow as number)
+    this.scope.setTrail((p.scopeTrail as number) / 100)
+    this.scope.setHueShift(p.scopeHue as number)
+    if (p.autoScrollLog === false) this.console.setAutoScroll(false)
+    if (p.showLineNumbers === false) this.editor.setLineNumbers(false)
   }
 
   /** Load buffers from localStorage, falling back to welcome code. */
@@ -351,6 +441,9 @@ export class App {
         }
       }
     })
+
+    // Apply saved preferences
+    this.applyAllPrefs()
 
     // Show welcome log
     for (const line of WELCOME_LOG) {
@@ -605,6 +698,10 @@ export class App {
       onLog: (msg) => this.console.logSystem(msg),
       onToggleHelp: () => this.helpPanel.toggle(),
       isHelpVisible: () => this.helpPanel.isVisible,
+      prefs: {
+        onPrefsChange: (key, value) => this.applyPref(key, value),
+        getPrefs: () => this.getPrefs(),
+      },
     })
     // Move menu bar to the very top (before toolbar)
     const menuEl = this.root.lastElementChild!
@@ -740,8 +837,10 @@ export class App {
           this.console.logSystem('  Running without audio (events will still log).')
         }
 
+        const savedPrefs = this.getPrefs()
         this.engine = new SonicPiEngine({
           bridge: SuperSonicClass ? { SuperSonicClass: SuperSonicClass as never } : {},
+          schedAheadTime: typeof savedPrefs.schedAheadTime === 'number' ? savedPrefs.schedAheadTime as number : undefined,
         })
 
         this.engine.setRuntimeErrorHandler((err) => {
@@ -755,6 +854,10 @@ export class App {
 
         this.console.logSystem('  Loading synthdefs + initialising scsynth...')
         await this.engine.init()
+        // Apply saved volume from prefs
+        if (typeof savedPrefs.masterVolume === 'number') {
+          this.engine.setVolume((savedPrefs.masterVolume as number) / 100)
+        }
         await this.sessionLog.initSigning()
         // Expose engine for diagnostics (thread monitor, metrics)
         ;(globalThis as Record<string, unknown>).__spw_engine = this.engine

@@ -24,6 +24,11 @@ const SCOPE_COLORS: Record<ScopeMode, string> = {
   spectrum: '#FF00FF',
 }
 
+export interface PrefsCallbacks {
+  onPrefsChange?: (key: string, value: number | boolean) => void
+  getPrefs?: () => Record<string, number | boolean>
+}
+
 export class MenuBar {
   private container: HTMLElement
   private onToggleScope: (mode: ScopeMode) => void
@@ -34,6 +39,7 @@ export class MenuBar {
   private isHelpVisible: (() => boolean) | null
   private activeDropdown: HTMLElement | null = null
   readonly sampleUploader: SampleUploader
+  private prefsCallbacks: PrefsCallbacks
 
   constructor(
     parent: HTMLElement,
@@ -45,6 +51,7 @@ export class MenuBar {
       onLog?: (msg: string) => void
       onToggleHelp?: () => void
       isHelpVisible?: () => boolean
+      prefs?: PrefsCallbacks
     }
   ) {
     this.onToggleScope = options.onToggleScope
@@ -53,6 +60,7 @@ export class MenuBar {
     this.getPanelVisibility = options.getPanelVisibility
     this.onToggleHelp = options.onToggleHelp ?? null
     this.isHelpVisible = options.isHelpVisible ?? null
+    this.prefsCallbacks = options.prefs ?? {}
 
     this.container = document.createElement('div')
     this.container.style.cssText = `
@@ -80,6 +88,7 @@ export class MenuBar {
       { onLog: options.onLog },
     )
     this.addMenu('Samples', () => this.buildSamplesMenu())
+    this.addMenu('Prefs', () => this.buildPrefsMenu())
 
     // Close dropdown on outside click
     document.addEventListener('click', (e) => {
@@ -482,6 +491,179 @@ export class MenuBar {
     })
 
     dropdown.appendChild(item)
+    return dropdown
+  }
+
+  private buildPrefsMenu(): HTMLElement {
+    const dropdown = document.createElement('div')
+    dropdown.style.cssText = `
+      position: fixed;
+      background: #1c2128;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      padding: 0.4rem 0;
+      width: 300px;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      z-index: 1000;
+      font-family: inherit;
+    `
+
+    const prefs = this.prefsCallbacks.getPrefs?.() ?? {}
+    const onChange = (key: string, value: number | boolean) => {
+      this.prefsCallbacks.onPrefsChange?.(key, value)
+    }
+
+    const addSection = (title: string) => {
+      const header = document.createElement('div')
+      header.textContent = title
+      header.style.cssText = `
+        padding: 0.4rem 0.8rem 0.2rem;
+        font-size: 0.55rem;
+        color: #484f58;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      `
+      dropdown.appendChild(header)
+    }
+
+    const addSlider = (label: string, key: string, min: number, max: number, step: number, defaultVal: number, unit?: string) => {
+      const row = document.createElement('div')
+      row.style.cssText = `
+        display: flex;
+        align-items: center;
+        padding: 0.25rem 0.8rem;
+        font-size: 0.68rem;
+        color: #c9d1d9;
+        gap: 0.4rem;
+      `
+      const lbl = document.createElement('span')
+      lbl.textContent = label
+      lbl.style.cssText = 'flex: 1; white-space: nowrap;'
+
+      const valLabel = document.createElement('span')
+      const currentVal = typeof prefs[key] === 'number' ? prefs[key] as number : defaultVal
+      valLabel.textContent = `${currentVal}${unit ?? ''}`
+      valLabel.style.cssText = 'font-size: 0.6rem; color: #8b949e; min-width: 32px; text-align: right;'
+
+      const input = document.createElement('input')
+      input.type = 'range'
+      input.min = String(min)
+      input.max = String(max)
+      input.step = String(step)
+      input.value = String(currentVal)
+      input.style.cssText = 'width: 120px; height: 3px; accent-color: #E8527C; cursor: pointer;'
+
+      input.addEventListener('input', () => {
+        const v = parseFloat(input.value)
+        valLabel.textContent = `${v}${unit ?? ''}`
+        onChange(key, v)
+      })
+
+      row.appendChild(lbl)
+      row.appendChild(valLabel)
+      row.appendChild(input)
+      dropdown.appendChild(row)
+    }
+
+    const addCheckbox = (label: string, key: string, defaultVal: boolean) => {
+      const row = document.createElement('div')
+      row.style.cssText = `
+        display: flex;
+        align-items: center;
+        padding: 0.25rem 0.8rem;
+        cursor: pointer;
+        font-size: 0.68rem;
+        color: #c9d1d9;
+        gap: 0.5rem;
+        transition: background 0.1s;
+        user-select: none;
+      `
+      row.addEventListener('mouseenter', () => { row.style.background = 'rgba(255,255,255,0.06)' })
+      row.addEventListener('mouseleave', () => { row.style.background = 'none' })
+
+      const isOn = typeof prefs[key] === 'boolean' ? prefs[key] as boolean : defaultVal
+
+      const check = document.createElement('span')
+      check.style.cssText = `
+        width: 14px; height: 14px;
+        border: 1px solid ${isOn ? '#E8527C' : 'rgba(255,255,255,0.2)'};
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.6rem;
+        flex-shrink: 0;
+        background: ${isOn ? '#E8527C' : 'none'};
+        color: ${isOn ? '#fff' : 'transparent'};
+        transition: all 0.15s;
+      `
+      check.textContent = isOn ? '\u2713' : ''
+
+      const lbl = document.createElement('span')
+      lbl.textContent = label
+
+      row.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const nowOn = check.textContent !== '\u2713'
+        check.textContent = nowOn ? '\u2713' : ''
+        check.style.color = nowOn ? '#fff' : 'transparent'
+        check.style.background = nowOn ? '#E8527C' : 'none'
+        check.style.borderColor = nowOn ? '#E8527C' : 'rgba(255,255,255,0.2)'
+        onChange(key, nowOn)
+      })
+
+      row.appendChild(check)
+      row.appendChild(lbl)
+      dropdown.appendChild(row)
+    }
+
+    const addReadonly = (label: string, value: string) => {
+      const row = document.createElement('div')
+      row.style.cssText = `
+        display: flex;
+        align-items: center;
+        padding: 0.25rem 0.8rem;
+        font-size: 0.68rem;
+        color: #8b949e;
+        gap: 0.4rem;
+      `
+      const lbl = document.createElement('span')
+      lbl.textContent = label
+      lbl.style.cssText = 'flex: 1;'
+      const val = document.createElement('span')
+      val.textContent = value
+      val.style.cssText = 'font-size: 0.6rem; color: #484f58;'
+      row.appendChild(lbl)
+      row.appendChild(val)
+      dropdown.appendChild(row)
+    }
+
+    // --- Audio ---
+    addSection('Audio')
+    addSlider('Master Volume', 'masterVolume', 0, 100, 1, 80, '%')
+    addSlider('Mixer Pre-Amp', 'mixerPreAmp', 0.1, 1.0, 0.05, 0.3)
+    addSlider('Mixer Amp', 'mixerAmp', 0.5, 3.0, 0.1, 1.2)
+
+    // --- Visuals ---
+    addSection('Visuals')
+    addSlider('Scope Line Width', 'scopeLineWidth', 1, 6, 0.5, 2, 'px')
+    addSlider('Scope Glow', 'scopeGlow', 0, 20, 1, 4, 'px')
+    addSlider('Scope Trail', 'scopeTrail', 0, 95, 5, 25, '%')
+    addSlider('Scope Hue Shift', 'scopeHue', 0, 360, 5, 0, '\u00B0')
+
+    // --- Editor ---
+    addSection('Editor')
+    addReadonly('Font Size', `${typeof prefs['fontSize'] === 'number' ? prefs['fontSize'] : 14}px (use A\u2212/A+ buttons)`)
+    addCheckbox('Auto-scroll log', 'autoScrollLog', true)
+    addCheckbox('Show line numbers', 'showLineNumbers', true)
+
+    // --- Performance ---
+    addSection('Performance')
+    addSlider('Schedule Ahead', 'schedAheadTime', 0.05, 0.5, 0.05, 0.3, 's')
+    addReadonly('Max Loop Budget', '100,000 iterations')
+
     return dropdown
   }
 
