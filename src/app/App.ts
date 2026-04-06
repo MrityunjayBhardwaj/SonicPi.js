@@ -221,7 +221,7 @@ end`
 // Welcome log — credits and shortcuts
 const WELCOME_LOG = [
   '',
-  '  Sonic Pi Web v1.3.0',
+  '  Sonic Pi Web v1.4.0',
   '',
   '  -------------------------------------------------------',
   '  Standing on the shoulders of giants:',
