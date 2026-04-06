@@ -284,6 +284,27 @@ export class Editor {
   /** Register a callback for cursor word changes (used by HelpPanel). */
   onCursorWord(callback: (word: string) => void): void { this.onCursorWordChange = callback }
 
+  /** Return the word currently under the cursor (for Help panel on-show). */
+  getCurrentWord(): string {
+    if (this.view) {
+      const doc = this.view.state.doc.toString()
+      const pos = this.view.state.selection?.main?.from ?? 0
+      let start = pos, end = pos
+      while (start > 0 && /\w/.test(doc[start - 1])) start--
+      while (end < doc.length && /\w/.test(doc[end])) end++
+      return start < end ? doc.slice(start, end) : ''
+    }
+    if (this.fallbackTextarea) {
+      const val = this.fallbackTextarea.value
+      const pos = this.fallbackTextarea.selectionStart
+      let start = pos, end = pos
+      while (start > 0 && /\w/.test(val[start - 1])) start--
+      while (end < val.length && /\w/.test(val[end])) end++
+      return start < end ? val.slice(start, end) : ''
+    }
+    return ''
+  }
+
   /** Highlight an error line (1-based). Call with null to clear. */
   highlightErrorLine(line: number | null): void {
     // Remove previous error highlight
@@ -597,22 +618,11 @@ export class Editor {
         const u = update as { selectionSet?: boolean; state: EditorState }
         if (!u.selectionSet || !this.onCursorWordChange) return
         const pos = u.state.selection?.main?.from ?? 0
-        // Use wordAt if available, otherwise extract manually
-        if (typeof u.state.wordAt === 'function') {
-          const wordRange = u.state.wordAt(pos)
-          if (wordRange) {
-            this.onCursorWordChange(wordRange.text)
-          } else {
-            this.onCursorWordChange('')
-          }
-        } else {
-          // Manual extraction from doc text
-          const doc = u.state.doc.toString()
-          let start = pos, end = pos
-          while (start > 0 && /\w/.test(doc[start - 1])) start--
-          while (end < doc.length && /\w/.test(doc[end])) end++
-          this.onCursorWordChange(start < end ? doc.slice(start, end) : '')
-        }
+        const doc = u.state.doc.toString()
+        let start = pos, end = pos
+        while (start > 0 && /\w/.test(doc[start - 1])) start--
+        while (end < doc.length && /\w/.test(doc[end])) end++
+        this.onCursorWordChange(start < end ? doc.slice(start, end) : '')
       })
       extensions.push(cursorListener)
     } catch { /* cursor listener failed — help panel won't update */ }

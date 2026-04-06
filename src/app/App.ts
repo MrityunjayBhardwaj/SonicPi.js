@@ -416,6 +416,7 @@ export class App {
     this.editor.onStop(() => this.handleStop())
     this.editor.onZen(() => this.toggleZen())
     this.editor.onCursorWord((word) => this.helpPanel.updateWord(word))
+    this.helpPanel.getCurrentWord = () => this.editor.getCurrentWord()
 
     // Show buffer content indicators
     this.updateBufferIndicators()

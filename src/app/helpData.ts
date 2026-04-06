@@ -2,8 +2,12 @@
  * Help database for the Sonic Pi DSL — used by autocomplete and Help Panel.
  *
  * Each entry has a signature, short description, parameter list, and example.
- * Coverage: the ~30 most-used Sonic Pi functions.
+ * Functions are hand-written below. Synths, FX, and samples are generated
+ * dynamically from engine data at the bottom of this file.
  */
+
+import { SYNTH_PARAMS, FX_PARAMS } from '../engine/SynthParams'
+import { getAllSamples } from '../engine/SampleCatalog'
 
 export interface HelpParam {
   name: string
@@ -381,4 +385,140 @@ end`,
   stop
 end`,
   },
+}
+
+// ---------------------------------------------------------------------------
+// Synth descriptions (brief, for help panel)
+// ---------------------------------------------------------------------------
+const SYNTH_DESCRIPTIONS: Record<string, string> = {
+  beep: 'Simple sine wave — clean, pure tone.',
+  saw: 'Classic sawtooth wave — bright, buzzy.',
+  sine: 'Pure sine wave — smooth, no harmonics.',
+  square: 'Square wave — hollow, retro sound.',
+  tri: 'Triangle wave — softer than square.',
+  pulse: 'Pulse wave with adjustable width.',
+  noise: 'White noise generator.',
+  pnoise: 'Pink noise — less high frequency than white.',
+  bnoise: 'Brown noise — deep, rumbling.',
+  gnoise: 'Grey noise — perceptually flat.',
+  cnoise: 'Clip noise — random +1/-1 values.',
+  prophet: 'Detuned saw pair — thick, analog feel. Inspired by the Prophet synth.',
+  tb303: 'Acid bass — squelchy filter, classic 303 sound.',
+  supersaw: 'Multiple detuned saws — huge, wide lead.',
+  dsaw: 'Detuned saw pair.',
+  dpulse: 'Detuned pulse pair.',
+  dtri: 'Detuned triangle pair.',
+  pluck: 'Karplus-Strong plucked string.',
+  pretty_bell: 'FM bell — bright, shimmery.',
+  piano: 'Velocity-sensitive piano.',
+  fm: 'FM synthesis — two-operator FM.',
+  mod_fm: 'Modulated FM synthesis.',
+  mod_saw: 'Amplitude-modulated sawtooth.',
+  mod_pulse: 'Amplitude-modulated pulse.',
+  mod_tri: 'Amplitude-modulated triangle.',
+  chipbass: '8-bit bass — retro game style.',
+  chiplead: '8-bit lead — retro game style.',
+  chipnoise: '8-bit noise — retro game style.',
+  dark_ambience: 'Dark, atmospheric pad with ring modulation.',
+  hollow: 'Hollow resonant sound with noise.',
+  growl: 'Growling bass synth.',
+  zawa: 'Phasing wave with controllable shape.',
+  blade: 'Vangelis-style pad with vibrato — lush, cinematic.',
+  tech_saws: 'Multiple detuned saws — big techno lead.',
+  sound_in: 'Live audio input (mono).',
+  sound_in_stereo: 'Live audio input (stereo).',
+}
+
+// ---------------------------------------------------------------------------
+// FX descriptions
+// ---------------------------------------------------------------------------
+const FX_DESCRIPTIONS: Record<string, string> = {
+  reverb: 'Room reverb — adds space and depth.',
+  echo: 'Echo/delay with feedback and decay.',
+  delay: 'Simple delay line.',
+  distortion: 'Waveshaping distortion — gritty, overdriven.',
+  slicer: 'Amplitude slicer — rhythmic gating.',
+  wobble: 'Wobble bass filter — LFO-controlled cutoff.',
+  ixi_techno: 'Techno-style resonant filter sweep.',
+  compressor: 'Dynamic range compressor.',
+  rlpf: 'Resonant low-pass filter.',
+  rhpf: 'Resonant high-pass filter.',
+  hpf: 'High-pass filter.',
+  lpf: 'Low-pass filter.',
+  normaliser: 'Audio normaliser — keeps level consistent.',
+  pan: 'Stereo panner.',
+  band_eq: 'Band equalizer — boost/cut a frequency.',
+  flanger: 'Flanger — sweeping comb filter.',
+  krush: 'Lo-fi crusher with filter.',
+  bitcrusher: 'Bit depth and sample rate reducer.',
+  ring_mod: 'Ring modulation — metallic, bell-like.',
+  chorus: 'Chorus — thickens with modulated delay.',
+  octaver: 'Octave doubler — adds sub and super octaves.',
+  vowel: 'Vowel formant filter.',
+  tanh: 'Hyperbolic tangent distortion — warm saturation.',
+  gverb: 'Large-space reverb with spread control.',
+  pitch_shift: 'Pitch shifter — transpose audio up/down.',
+  whammy: 'Whammy bar effect — granular pitch bend.',
+  tremolo: 'Tremolo — amplitude modulation.',
+  record: 'Record audio to a buffer.',
+  sound_out: 'Route audio to a specific output.',
+  sound_out_stereo: 'Route stereo audio to a specific output.',
+  level: 'Volume control — adjusts amplitude.',
+  mono: 'Mono mixer — collapses stereo to mono.',
+  autotuner: 'Auto-tune to nearest note.',
+}
+
+// ---------------------------------------------------------------------------
+// Generate synth entries
+// ---------------------------------------------------------------------------
+for (const [name, specific] of Object.entries(SYNTH_PARAMS)) {
+  if (name === '_common' || HELP_DB[name]) continue
+  const common = SYNTH_PARAMS._common ?? []
+  const allParams = [...common, ...specific]
+  const desc = SYNTH_DESCRIPTIONS[name] || `${name} synth.`
+  HELP_DB[name] = {
+    signature: `use_synth :${name}`,
+    description: desc,
+    params: allParams.map(p => ({ name: p, type: 'number', desc: '' })),
+    example: `use_synth :${name}\nplay :c4, release: 0.5`,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Generate FX entries
+// ---------------------------------------------------------------------------
+for (const [name, specific] of Object.entries(FX_PARAMS)) {
+  if (name === '_common' || HELP_DB[name]) continue
+  const common = FX_PARAMS._common ?? []
+  const allParams = [...common, ...specific]
+  const desc = FX_DESCRIPTIONS[name] || `${name} effect.`
+  HELP_DB[name] = {
+    signature: `with_fx :${name}, opts do ... end`,
+    description: desc,
+    params: allParams.map(p => ({ name: p, type: 'number', desc: '' })),
+    example: `with_fx :${name} do\n  play :c4\n  sleep 1\nend`,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Generate sample entries
+// ---------------------------------------------------------------------------
+for (const s of getAllSamples()) {
+  if (HELP_DB[s.name]) continue
+  HELP_DB[s.name] = {
+    signature: `sample :${s.name}`,
+    description: `${s.category} sample.`,
+    params: [
+      { name: 'amp', type: 'number', default: '1', desc: 'Volume (0-5)' },
+      { name: 'rate', type: 'number', default: '1', desc: 'Playback rate (negative = reverse)' },
+      { name: 'pan', type: 'number', default: '0', desc: 'Stereo pan (-1 to 1)' },
+      { name: 'attack', type: 'number', default: '0', desc: 'Fade-in time in beats' },
+      { name: 'release', type: 'number', desc: 'Fade-out time in beats' },
+      { name: 'start', type: 'number', default: '0', desc: 'Start position (0-1)' },
+      { name: 'finish', type: 'number', default: '1', desc: 'End position (0-1)' },
+      { name: 'rpitch', type: 'number', default: '0', desc: 'Relative pitch in semitones' },
+      { name: 'cutoff', type: 'number', desc: 'Low-pass filter cutoff (0-130)' },
+    ],
+    example: `sample :${s.name}`,
+  }
 }
