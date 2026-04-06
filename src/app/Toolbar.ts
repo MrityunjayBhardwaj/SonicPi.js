@@ -619,11 +619,11 @@ export class Toolbar {
   }
 
   setButtonsVisible(visible: boolean): void {
-    this.topRow.style.display = visible ? '' : 'none'
+    this.topRow.style.display = visible ? 'flex' : 'none'
   }
 
   setTabsVisible(visible: boolean): void {
-    this.bufRow.style.display = visible ? '' : 'none'
+    this.bufRow.style.display = visible ? 'flex' : 'none'
   }
 
   dispose(): void {
