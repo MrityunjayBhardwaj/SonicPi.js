@@ -291,6 +291,7 @@ export async function runProgram(
         }, {
           bpm: task.bpm,
           synth: task.currentSynth,
+          outBus: task.outBus,
         })
         break
       }

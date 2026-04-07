@@ -120,7 +120,9 @@ import { MIXER, AUDIO_IO } from './config'
 export class SuperSonicBridge {
   private sonic: SuperSonic | null = null
   private loadedSynthDefs = new Set<string>()
+  private pendingSynthDefLoads = new Map<string, Promise<void>>()
   private loadedSamples = new Map<string, number>()
+  private pendingSampleLoads = new Map<string, Promise<number>>()
   /** Sample duration cache — populated asynchronously on first load via Web Audio decode. */
   private sampleDurations = new Map<string, number>()
   private resolvedSampleBaseURL = 'https://unpkg.com/supersonic-scsynth-samples@latest/samples/'
@@ -376,25 +378,38 @@ export class SuperSonicBridge {
     this.messageQueue.length = 0
   }
 
-  private async ensureSynthDefLoaded(name: string): Promise<void> {
+  private ensureSynthDefLoaded(name: string): Promise<void> {
     const fullName = name.startsWith('sonic-pi-') ? name : `sonic-pi-${name}`
-    if (this.loadedSynthDefs.has(fullName)) return
+    if (this.loadedSynthDefs.has(fullName)) return Promise.resolve()
+    // Return existing in-flight promise to avoid duplicate loads
+    const pending = this.pendingSynthDefLoads.get(fullName)
+    if (pending) return pending
     if (!this.sonic) throw new Error('SuperSonic not initialized')
-    await this.sonic.loadSynthDef(fullName)
-    this.loadedSynthDefs.add(fullName)
+    const p = this.sonic.loadSynthDef(fullName).then(() => {
+      this.loadedSynthDefs.add(fullName)
+      this.pendingSynthDefLoads.delete(fullName)
+    })
+    this.pendingSynthDefLoads.set(fullName, p)
+    return p
   }
 
-  private async ensureSampleLoaded(name: string): Promise<number> {
+  private ensureSampleLoaded(name: string): Promise<number> {
     const existing = this.loadedSamples.get(name)
-    if (existing !== undefined) return existing
+    if (existing !== undefined) return Promise.resolve(existing)
+    // Return existing in-flight promise to avoid duplicate loads + buffer leak
+    const pending = this.pendingSampleLoads.get(name)
+    if (pending) return pending
     if (!this.sonic) throw new Error('SuperSonic not initialized')
-
     const bufNum = this.nextBufNum++
-    await this.sonic.loadSample(bufNum, `${name}.flac`)
-    this.loadedSamples.set(name, bufNum)
-    // Cache duration asynchronously — ready for the next loop iteration.
-    this.fetchSampleDuration(name).catch(() => {})
-    return bufNum
+    const p = this.sonic.loadSample(bufNum, `${name}.flac`).then(() => {
+      this.loadedSamples.set(name, bufNum)
+      this.pendingSampleLoads.delete(name)
+      this.fetchSampleDuration(name).catch(err =>
+        console.warn(`[SonicPi] Could not determine duration for ${name}: ${err.message}`))
+      return bufNum
+    })
+    this.pendingSampleLoads.set(name, p)
+    return p
   }
 
   /**
@@ -742,9 +757,9 @@ export class SuperSonicBridge {
     return this.nextBusNum++
   }
 
-  /** Release a private audio bus back to the pool. */
+  /** Release a private audio bus back to the pool. Guards against duplicate frees. */
   freeBus(busNum: number): void {
-    this.freeBuses.push(busNum)
+    if (!this.freeBuses.includes(busNum)) this.freeBuses.push(busNum)
   }
 
   /**

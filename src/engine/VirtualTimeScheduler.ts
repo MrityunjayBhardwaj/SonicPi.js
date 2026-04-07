@@ -141,6 +141,7 @@ export class VirtualTimeScheduler {
   registerLoop(name: string, asyncFn: () => Promise<void>, options?: {
     bpm?: number
     synth?: string
+    outBus?: number
   }): void {
     const existing = this.tasks.get(name)
     if (existing && existing.running) {
@@ -155,7 +156,7 @@ export class VirtualTimeScheduler {
       bpm: options?.bpm ?? 60,
       density: 1,
       currentSynth: options?.synth ?? 'beep',
-      outBus: 0,
+      outBus: options?.outBus ?? 0,
       asyncFn,
       running: true,
     }

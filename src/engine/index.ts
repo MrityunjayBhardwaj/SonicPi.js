@@ -5,10 +5,10 @@ export { SonicPiEngine } from './SonicPiEngine'
 export type { EngineComponents } from './SonicPiEngine'
 
 // Music theory helpers — available inside live_loop via the DSL and externally
-export { ring } from './Ring'
+export { ring, knit, range, line } from './Ring'
 export { spread } from './EuclideanRhythm'
-export { noteToMidi, midiToFreq, noteToFreq } from './NoteToFreq'
-export { chord, scale, chord_invert, note, note_range, chord_names, scale_names } from './ChordScale'
+export { noteToMidi, midiToFreq, noteToFreq, hzToMidi } from './NoteToFreq'
+export { chord, scale, chord_invert, note, note_range, chord_degree, degree, chord_names, scale_names } from './ChordScale'
 
 // Event types
 export type { SoundEvent } from './SoundEventStream'
