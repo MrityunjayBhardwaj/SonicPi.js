@@ -127,12 +127,20 @@ function wrapBareCode(code: string): string {
   }
 
   // No live_loops at all — wrap in a one-shot live_loop with stop
+  // Only hoist use_synth/use_bpm/etc. that are at depth 0 (not inside blocks)
   const topLevel: string[] = []
   const body: string[] = []
+  let hoistDepth = 0
 
   for (const line of lines) {
     const trimmed = line.trim()
-    if (/^\s*(use_bpm|use_synth|use_random_seed|use_arg_bpm_scaling)\s/.test(line)) {
+    // Track block depth for hoisting decisions
+    if (/^(in_thread|with_fx|at|time_warp|density|define)\s/.test(trimmed)) hoistDepth++
+    else if (/\bdo\s*(\|.*\|)?\s*$/.test(trimmed) && hoistDepth > 0) hoistDepth++
+    else if (/^(if|unless|case|begin|loop|while|until|for)\s/.test(trimmed) && hoistDepth > 0) hoistDepth++
+    if (trimmed === 'end' && hoistDepth > 0) hoistDepth--
+
+    if (hoistDepth === 0 && /^\s*(use_bpm|use_synth|use_random_seed|use_arg_bpm_scaling)\s/.test(line)) {
       topLevel.push(line)
     } else {
       body.push(line)
