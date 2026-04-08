@@ -162,8 +162,8 @@ end`)
   sleep 0.25
 end`)
       expect(result.ok).toBe(true)
-      expect(result.code).toContain('b.ring(60, 64, 67)')
-      expect(result.code).toContain('.at(b.tick())')
+      expect(result.code).toContain('__b.ring(60, 64, 67)')
+      expect(result.code).toContain('.at(__b.tick())')
     })
 
     it('scale and choose', () => {
@@ -307,9 +307,9 @@ live_loop :groove do
   sleep 0.5
 end`)
       expect(result.ok).toBe(true)
-      expect(result.code).toContain('function bass_hit(b)')
-      // Call to defined function should inject b
-      expect(result.code).toContain('bass_hit(b)')
+      expect(result.code).toContain('function bass_hit(__b)')
+      // Call to defined function should inject __b
+      expect(result.code).toContain('bass_hit(__b)')
     })
   })
 
@@ -380,7 +380,7 @@ live_loop :t do
   sleep 4
 end`)
       expect(result.ok).toBe(true)
-      expect(result.code).toContain('function ocean(b, num, amp_mul = 1)')
+      expect(result.code).toContain('function ocean(__b, num, amp_mul = 1)')
     })
 
     it('begin/rescue', () => {
@@ -1066,7 +1066,7 @@ end`)
   sleep 1
 end`)
       expect(result.ok).toBe(true)
-      expect(result.code).toContain('?.at(b.look())')
+      expect(result.code).toContain('?.at(__b.look())')
     })
   })
 })

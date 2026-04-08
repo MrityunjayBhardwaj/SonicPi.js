@@ -659,7 +659,7 @@ export class SonicPiEngine {
 
       // Build DSL parameter names and values for the executor
       const dslNames = [
-        'b',
+        '__b',
         'live_loop', 'with_fx', 'use_bpm', 'use_synth', 'use_random_seed',
         'use_arg_bpm_scaling', 'with_arg_bpm_scaling',
         'in_thread', 'at', 'density',
