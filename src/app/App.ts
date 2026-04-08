@@ -16,6 +16,7 @@ import { MenuBar } from './MenuBar'
 import { CueLog } from './CueLog'
 import { SampleBrowser } from './SampleBrowser'
 import { HelpPanel } from './HelpPanel'
+import { APP_VERSION } from './version'
 
 // Welcome buffer — the Blade Runner Ecstasy Edit
 const WELCOME_CODE = `# =====================================================
@@ -221,7 +222,7 @@ end`
 // Welcome log — credits and shortcuts
 const WELCOME_LOG = [
   '',
-  '  Sonic Pi Web v1.4.0',
+  `  Sonic Pi Web v${APP_VERSION}`,
   '',
   '  -------------------------------------------------------',
   '  Standing on the shoulders of giants:',

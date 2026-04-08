@@ -66,14 +66,42 @@ git checkout -b chore/v1.X.Y-beta.N
 ```
 
 ### 2. Update ALL version surfaces in a single commit
-Edit each of these to the new version string (same literal string in all five):
+Edit each of these to the new version string (same literal string everywhere):
 - [ ] `package.json` → `"version": "1.X.Y-beta.N"`
 - [ ] `src/app/version.ts` → `export const APP_VERSION = '1.X.Y-beta.N'`
 - [ ] `CHANGELOG.md` → add `## v1.X.Y-beta.N` section at top with bugfix list
-- [ ] `ROADMAP.md` → update the Released table row if applicable
+- [ ] `ROADMAP.md` → update the Prereleases table row
 - [ ] `README.md` → update if the version is referenced inline (usually not)
 
-Composition pair (dharana §10): `package.json` and `src/app/version.ts` MUST change in the same commit. If the diff shows only one, the UI footer will lie.
+Then regenerate the lockfile (it records the package's own version on lines 3, 9):
+```bash
+npm install --package-lock-only
+```
+If you skip this, `npm ci` in CI will fail — the lockfile's recorded version won't match `package.json`.
+
+**Composition pair (dharana §10):** `package.json`, `src/app/version.ts`, and `package-lock.json` MUST all change in the same commit. The first two are enforced mechanically by `src/app/__tests__/version.test.ts`; the lockfile is enforced by npm during `npm ci`. All other version-consuming surfaces (App.ts welcome log, CHANGELOG header, etc.) read from `APP_VERSION` — no hardcoded version strings anywhere in `src/`.
+
+### 2a. Audit for stale references to the OLD version
+Before committing, grep `src/` for any hardcoded references to the version you're replacing. This is the **most discriminating check** — if the old version appears literally anywhere in `src/`, it's a stale reference that will drift when the release ships.
+
+```bash
+# Replace 1.4.0 with whichever version you're BUMPING FROM (the currently-deployed version)
+OLD_VERSION="1.4.0"
+grep -rnF "$OLD_VERSION" src/ --include="*.ts"
+```
+Expected: **empty output**. Any hit is a stale reference that must either:
+- Be refactored to import `APP_VERSION` from `src/app/version.ts`, OR
+- Be updated to the new version literally (rare — usually a code smell)
+
+**Known false-positive surfaces to also check** (third-party dependency version pins that legitimately hardcode a version, NOT our app version):
+- `src/engine/cdn-manifest.ts` — CodeMirror and other CDN dependency versions
+- `src/engine/config.ts` — may reference external spec versions
+
+These are external version pins, not our app version. Visually confirm each hit fits that pattern.
+
+**Why grep for the OLD version, not a generic regex?** A generic version-shaped regex (e.g., `\d+\.\d+\.\d+`) produces dozens of false positives from CDN pins, MIDI protocol versions, sample rates, etc. Grepping for the literal previous version (e.g., `1.4.0`) finds exactly the surfaces that need updating and nothing else.
+
+**Historical allowlist:** `CHANGELOG.md` and `ROADMAP.md` will always contain historical version references (v1.0.0, v1.1.0, etc.) — those are part of the release history and should NOT be scrubbed.
 
 ### 3. Verify locally
 ```bash
