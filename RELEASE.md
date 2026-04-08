@@ -30,7 +30,9 @@ patch:        1.N.1, 1.N.2, ...
 
 ---
 
-## Cycle transition gates (from dharana §10)
+## Release cycle transition criteria
+
+Derived from dharana §10 (Release Engineering Boundary). All criteria below are observable Lokāyata gates — things you can measure, not things you feel.
 
 ### Beta → RC — ALL FOUR must hold
 1. **Curve flat:** zero new bugs reported in the last 2 consecutive beta cycles

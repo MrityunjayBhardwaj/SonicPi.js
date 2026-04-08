@@ -35,7 +35,8 @@ test.describe('version label — distribution boundary observation (dharana §10
   test('renders in the top-right of the menu bar with the package.json version', async ({ page }) => {
     await page.goto('/')
     // Menu bar renders early; give the app a moment to mount.
-    await page.waitForTimeout(500)
+    // Match p0-smoke.spec.ts convention — 500ms was flaky on slow CI.
+    await page.waitForTimeout(2000)
 
     // The version label is a button whose textContent is `v${APP_VERSION}`.
     // We look it up by its aria-label prefix, which is stable and unique.
@@ -49,7 +50,8 @@ test.describe('version label — distribution boundary observation (dharana §10
 
   test('aria-label carries the full SonicPi.js version string', async ({ page }) => {
     await page.goto('/')
-    await page.waitForTimeout(500)
+    // Match p0-smoke.spec.ts convention — 500ms was flaky on slow CI.
+    await page.waitForTimeout(2000)
 
     const versionLabel = page.locator('button[aria-label^="SonicPi.js v"]')
     const aria = await versionLabel.getAttribute('aria-label')

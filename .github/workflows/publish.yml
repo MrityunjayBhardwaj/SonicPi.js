@@ -44,39 +44,73 @@ jobs:
         # Prereleases go to the `beta` dist-tag. Stable releases use
         # the default `latest` tag. This conditional is LOAD-BEARING —
         # without it, prereleases would silently become `latest`.
+        #
+        # Release metadata is passed via env vars, NOT inlined via
+        # ${{ ... }} expression substitution. Expression substitution
+        # text-interpolates the value into the shell script before
+        # execution, which is a shell injection vector if the value
+        # contains metacharacters. Env vars are the GitHub-recommended
+        # safe pattern for consuming release event data in `run` blocks.
+        # See: docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
-          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+          if [ "$IS_PRERELEASE" = "true" ]; then
             echo "Publishing prerelease to 'beta' dist-tag"
             npm publish --access public --tag beta
           else
             echo "Publishing stable release to 'latest' dist-tag"
             npm publish --access public
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Verify dist-tags match expectation
         # "Observe THEIR side" — don't trust that the publish command
         # worked, verify what the registry actually serves. Dharana §10
         # calls this the Level-3 check for the distribution boundary.
-        # Give npm a few seconds to propagate before querying.
+        #
+        # npm registry propagation is best-effort and timing-variable.
+        # Instead of a single sleep + query, retry with exponential
+        # backoff (5s → 10s → 20s, total up to ~35s). If the expected
+        # version doesn't appear on the expected dist-tag within that
+        # window, the publish is considered inconsistent and we fail
+        # the workflow so the release manager can investigate.
+        #
+        # All release metadata is consumed via env vars (see above step
+        # for the security rationale).
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
-          sleep 10
-          echo "Current dist-tags on @mjayb/sonicpijs:"
-          npm view @mjayb/sonicpijs dist-tags
+          # Strip leading 'v' if present (tag 'v1.5.0-beta.0' → version '1.5.0-beta.0').
+          EXPECTED_VERSION="${TAG_NAME#v}"
 
-          EXPECTED_VERSION="${{ github.event.release.tag_name }}"
-          EXPECTED_VERSION="${EXPECTED_VERSION#v}"
-
-          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+          if [ "$IS_PRERELEASE" = "true" ]; then
             EXPECTED_TAG="beta"
           else
             EXPECTED_TAG="latest"
           fi
 
-          ACTUAL=$(npm view "@mjayb/sonicpijs@$EXPECTED_TAG" version)
-          if [ "$ACTUAL" != "$EXPECTED_VERSION" ]; then
-            echo "::error::dist-tag '$EXPECTED_TAG' points to '$ACTUAL', expected '$EXPECTED_VERSION'"
-            exit 1
-          fi
-          echo "✓ dist-tag '$EXPECTED_TAG' correctly points to '$EXPECTED_VERSION'"
+          echo "Expecting dist-tag '$EXPECTED_TAG' to point to version '$EXPECTED_VERSION'"
+          echo "Current dist-tags on @mjayb/sonicpijs:"
+          npm view @mjayb/sonicpijs dist-tags || true
+
+          # Retry with exponential backoff — propagation may take 5-30s.
+          for DELAY in 5 10 20; do
+            echo "Waiting ${DELAY}s for npm registry to propagate..."
+            sleep "$DELAY"
+
+            ACTUAL=$(npm view "@mjayb/sonicpijs@$EXPECTED_TAG" version 2>/dev/null || echo "")
+
+            if [ "$ACTUAL" = "$EXPECTED_VERSION" ]; then
+              echo "✓ dist-tag '$EXPECTED_TAG' correctly points to '$EXPECTED_VERSION'"
+              exit 0
+            fi
+
+            echo "  dist-tag '$EXPECTED_TAG' currently points to '$ACTUAL' (expected '$EXPECTED_VERSION'), retrying..."
+          done
+
+          echo "::error::After 35s of retries, dist-tag '$EXPECTED_TAG' still does not point to '$EXPECTED_VERSION'"
+          echo "::error::Last observed value: '$ACTUAL'"
+          echo "::error::Manual verification required: npm view @mjayb/sonicpijs dist-tags"
+          exit 1

@@ -38,11 +38,56 @@ describe('version composition pair (dharana §10)', () => {
     // Catches the "both files say 'banana'" failure mode that the
     // equality test alone can't see. The regex enforces the cycle
     // convention from dharana §10: only alpha/beta/rc prerelease
-    // suffixes, zero-indexed counters, no build metadata.
+    // suffixes, counters without leading zeros, no build metadata.
     expect(APP_VERSION).toMatch(SEMVER_RE)
   })
 
   it('package.json version must be a valid semver string', () => {
     expect(pkg.version).toMatch(SEMVER_RE)
+  })
+
+  it('semver regex rejects invalid versions (self-check)', () => {
+    // Belt-and-suspenders: verify the regex actually discriminates.
+    // Without this, a regex that accidentally matches everything
+    // (e.g., `/.*/ `) would pass the positive cases silently.
+    const invalid = [
+      'banana',           // not a version at all
+      '1.5',              // too few parts
+      '1.5.0.0',          // too many parts
+      '01.0.0',           // leading zero
+      '1.05.0',           // leading zero in middle
+      '1.5.0-dev',        // unknown cycle (only alpha/beta/rc allowed)
+      'v1.5.0',           // v-prefix doesn't belong in package.json
+      '1.5.0-beta',       // prerelease suffix without counter
+      '1.5.0-beta.',      // prerelease suffix with empty counter
+      '1.5.0-beta.0.1',   // too many prerelease parts
+      '1.5.0+build.1',    // build metadata not allowed
+      '1.5.0-beta.0+x',   // prerelease + build metadata
+      '',                 // empty string
+    ]
+    for (const version of invalid) {
+      expect(version, `expected "${version}" to fail semver check`).not.toMatch(SEMVER_RE)
+    }
+  })
+
+  it('semver regex accepts valid versions (self-check)', () => {
+    // Mirror of the negative case — verify the regex ALSO accepts
+    // versions we'd plausibly ship in the future, not just the
+    // current APP_VERSION.
+    const valid = [
+      '0.0.0',
+      '1.0.0',
+      '1.5.0',
+      '10.20.30',
+      '1.5.0-alpha.0',
+      '1.5.0-beta.0',
+      '1.5.0-beta.1',
+      '1.5.0-beta.42',
+      '1.5.0-rc.0',
+      '2.0.0-alpha.99',
+    ]
+    for (const version of valid) {
+      expect(version, `expected "${version}" to pass semver check`).toMatch(SEMVER_RE)
+    }
   })
 })
