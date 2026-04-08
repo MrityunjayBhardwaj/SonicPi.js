@@ -566,9 +566,7 @@ export class SonicPiEngine {
       const set = (key: string | symbol, value: unknown): void => {
         this.globalStore.set(key, value)
       }
-      const get = new Proxy({} as Record<string | symbol, unknown>, {
-        get: (_target, key) => this.globalStore.get(key) ?? null,
-      })
+      const get = (key: string | symbol): unknown => this.globalStore.get(key) ?? null
 
       // ----- MIDI input readers -----
       const get_cc = (controller: number, channel: number = 1): number =>
