@@ -56,7 +56,10 @@ function wrapBareCode(code: string): string {
     else if (/^(if|unless|case|begin|loop|while|until|for)\s/.test(t) && bareCheckDepth > 0) bareCheckDepth++
     if (t === 'end' && bareCheckDepth > 0) bareCheckDepth--
     if (bareCheckDepth === 0) {
-      if (/^\s*(play|sleep|sample)\s/.test(l) || /^\s*(\d+\.times\s+do|.*\.each\s+do)\s*/.test(l)) {
+      // Bare DSL calls that need to be wrapped in an implicit live_loop so
+      // the ProgramBuilder `__b` is in scope (use_synth_defaults, play_pattern_timed, etc.)
+      if (/^\s*(play|sleep|sample|synth|control|cue|sync|play_chord|play_pattern|play_pattern_timed|use_synth_defaults|use_sample_defaults|use_transpose)\s/.test(l) ||
+          /^\s*(\d+\.times\s+do|.*\.each\s+do)\s*/.test(l)) {
         hasBareCode = true
         break
       }
@@ -121,7 +124,7 @@ function wrapBareCode(code: string): string {
       bareCode.push(line)
     }
 
-    const hasActualBare = bareCode.some(l => /^\s*(play|sleep|sample)\s/.test(l))
+    const hasActualBare = bareCode.some(l => /^\s*(play|sleep|sample|synth|control|cue|sync|play_chord|play_pattern|play_pattern_timed|use_synth_defaults|use_sample_defaults|use_transpose)\s/.test(l))
     if (!hasActualBare) return code
 
     return [
