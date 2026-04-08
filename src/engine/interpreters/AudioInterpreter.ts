@@ -194,9 +194,10 @@ export async function runProgram(
         break
 
       case 'fx': {
+        const reps = (step.opts.reps as number) ?? 1
         if (!ctx.bridge) {
           // No audio — just run inner program
-          await runProgram(step.body, ctx, fxCounter)
+          for (let rep = 0; rep < reps; rep++) await runProgram(step.body, ctx, fxCounter)
           break
         }
         const fxIndex = fxCounter.value++
@@ -220,7 +221,7 @@ export async function runProgram(
           }
           task.outBus = existing.bus
           try {
-            await runProgram(step.body, ctx, fxCounter)
+            for (let rep = 0; rep < reps; rep++) await runProgram(step.body, ctx, fxCounter)
           } finally {
             task.outBus = prevOutBus
             ctx.bridge.flushMessages()
@@ -254,7 +255,7 @@ export async function runProgram(
               outBus: prevOutBus,
             }
             ctx.reusableFx.set(fxKey, state)
-            await runProgram(step.body, ctx, fxCounter)
+            for (let rep = 0; rep < reps; rep++) await runProgram(step.body, ctx, fxCounter)
           } finally {
             task.outBus = prevOutBus
             ctx.bridge.flushMessages()

@@ -695,6 +695,8 @@ export class SonicPiEngine {
         'use_osc', 'osc', 'osc_send',
         // Sample BPM
         'use_sample_bpm',
+        // Debug (no-op in browser — silences log output in Desktop SP)
+        'use_debug',
       ]
       const dslValues = [
         topLevelBuilder,
@@ -731,6 +733,8 @@ export class SonicPiEngine {
         use_osc, osc, topLevelOscSend,
         // Sample BPM
         (name: string) => topLevelBuilder.use_sample_bpm(name),
+        // Debug (no-op in browser)
+        (_val?: boolean) => { /* no-op — use_debug controls log verbosity in Desktop SP */ },
       ]
 
       const codeWarnings = validateCode(transpiledCode)

@@ -181,6 +181,8 @@ const STRIP_PARAMS = new Set([
   'pitch_stretch',
   'rpitch',
   '_argBpmScaling', // use_arg_bpm_scaling flag — consumed by normalize, not sent to scsynth
+  'reps',          // with_fx repeat count — consumed by AudioInterpreter
+  'kill_delay',    // with_fx kill delay — consumed by AudioInterpreter
 ])
 
 /** All individual slide params that `slide:` expands to. */

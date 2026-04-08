@@ -34,3 +34,4 @@ playwright-report/
 
 # Personal learnings (not part of the project)
 LEARNINGS.md
+tests/book-examples/

@@ -414,6 +414,24 @@ export class ProgramBuilder {
     return this
   }
 
+  /** Temporarily set synth defaults for a block, then restore. */
+  with_synth_defaults(opts: Record<string, number>, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._synthDefaults
+    this._synthDefaults = { ...opts }
+    buildFn(this)
+    this._synthDefaults = prev
+    return this
+  }
+
+  /** Temporarily set sample defaults for a block, then restore. */
+  with_sample_defaults(opts: Record<string, number>, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._sampleDefaults
+    this._sampleDefaults = { ...opts }
+    buildFn(this)
+    this._sampleDefaults = prev
+    return this
+  }
+
   // --- BPM block ---
 
   /** Temporarily set BPM for a block. Sleeps inside are scaled. Restores previous BPM after. */
@@ -439,6 +457,12 @@ export class ProgramBuilder {
   }
 
   // --- Debug ---
+
+  /** Permanently set density factor — divides sleep times. */
+  use_density(factor: number): this {
+    this.densityFactor = factor
+    return this
+  }
 
   /** Run block with density factor — divides sleep times. */
   with_density(factor: number, buildFn: (b: ProgramBuilder) => void): this {

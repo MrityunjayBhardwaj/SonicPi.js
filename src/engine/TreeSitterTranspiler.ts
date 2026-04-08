@@ -222,7 +222,8 @@ const BUILDER_METHODS = new Set([
   // Transpose
   'use_transpose', 'with_transpose',
   // Synth defaults / BPM / synth blocks
-  'use_synth_defaults', 'use_sample_defaults', 'with_bpm', 'with_synth',
+  'use_synth_defaults', 'use_sample_defaults', 'with_synth_defaults', 'with_sample_defaults',
+  'with_bpm', 'with_synth', 'use_density',
   // Debug
   'use_debug',
   // BPM scaling control
@@ -1175,10 +1176,10 @@ function transpileReceiverMethodCall(
     return `${recStr}.butlast()`
   }
 
-  // .take(n) → .slice(0, n)
+  // .take(n) — Ring has native take()
   if (method === 'take') {
     const args = argsNode ? transpileArgList(argsNode, ctx) : ''
-    return `${recStr}.slice(0, ${args})`
+    return `${recStr}.take(${args})`
   }
 
   // .pick(n) → b.pick(receiver, n)
