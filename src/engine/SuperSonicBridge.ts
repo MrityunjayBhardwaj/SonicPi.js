@@ -687,8 +687,11 @@ export class SuperSonicBridge {
 
     const audioCtx = this.sonic.audioContext
     const source = audioCtx.createMediaStreamSource(stream)
-    // Connect to the analyser node (which feeds into master gain → destination)
-    source.connect(this.analyserNode ?? audioCtx.destination)
+    // Connect mic INTO the scsynth AudioWorkletNode so SoundIn.ar(bus) can
+    // read it. The synthdef `sonic-pi-sound_in` reads from bus 0 (hardware
+    // input), which maps to the WorkletNode's first input channel (#152).
+    const workletNode = this.sonic.node as AudioNode
+    source.connect(workletNode)
 
     this.liveAudioStreams.set(name, { stream, source })
   }

@@ -81,6 +81,13 @@ export async function runProgram(
         const nodeRef = nextNodeRef++
 
         if (ctx.bridge) {
+          // Auto-start mic input when sound_in / sound_in_stereo is used (#152).
+          // getUserMedia is async but idempotent — only requests permission once.
+          if (synth === 'sound_in' || synth === 'sound_in_stereo') {
+            ctx.bridge.startLiveAudio(synth, { stereo: synth === 'sound_in_stereo' })
+              .catch((err: Error) => ctx.printHandler?.(`Mic input failed: ${err.message}`))
+          }
+
           // Mutate step.opts directly — normalizePlayParams copies internally.
           // Avoids 3 object spreads per event that cause GC pressure (#75).
           step.opts.note = step.note
@@ -153,6 +160,12 @@ export async function runProgram(
       case 'useBpm':
         currentBpm = step.bpm
         if (task) task.bpm = step.bpm
+        break
+
+      case 'useRealTime':
+        // Set schedule-ahead to 0 for responsive MIDI input (#149).
+        // Desktop SP Ch 11.1: use_real_time disables latency for current thread.
+        ctx.schedAheadTime = 0
         break
 
       case 'control': {

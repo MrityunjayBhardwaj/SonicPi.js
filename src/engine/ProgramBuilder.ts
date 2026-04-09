@@ -479,6 +479,12 @@ export class ProgramBuilder {
     return this
   }
 
+  /** Set schedule-ahead time to 0 for this thread — responsive MIDI input (#149). */
+  use_real_time(): this {
+    this.steps.push({ tag: 'useRealTime' })
+    return this
+  }
+
   /**
    * Control whether time params (release, attack, phase, etc.) are automatically
    * BPM-scaled. Default: true (matching Desktop Sonic Pi).

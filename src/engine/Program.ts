@@ -23,6 +23,7 @@ export type Step =
   | { tag: 'stop' }
   | { tag: 'kill'; nodeRef: number }
   | { tag: 'oscSend'; host: string; port: number; path: string; args: unknown[] }
+  | { tag: 'useRealTime' }
 
 export type Program = Step[]
 

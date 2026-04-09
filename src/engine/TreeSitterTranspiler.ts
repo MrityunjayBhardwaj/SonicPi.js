@@ -224,8 +224,8 @@ const BUILDER_METHODS = new Set([
   // Synth defaults / BPM / synth blocks
   'use_synth_defaults', 'use_sample_defaults', 'with_synth_defaults', 'with_sample_defaults',
   'with_bpm', 'with_synth', 'use_density',
-  // Debug
-  'use_debug',
+  // Debug + latency
+  'use_debug', 'use_real_time',
   // BPM scaling control
   'use_arg_bpm_scaling', 'with_arg_bpm_scaling',
   // Utility

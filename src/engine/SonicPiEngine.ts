@@ -141,13 +141,19 @@ export class SonicPiEngine {
 
     await Promise.all([bridgeInit, treeSitterInit])
 
-    // Wire MIDI input events → scheduler cues so `sync '/midi/note_on'` works.
-    // The handler reads this.scheduler at fire-time (always the current scheduler).
+    // Wire MIDI input events → scheduler cues.
+    // Desktop SP format: `/midi:device_name:channel/event_type` (#151).
+    // We use `*` as the device name since WebMIDI device names don't match
+    // Desktop SP's naming convention. Also fire the short `/midi/event_type`
+    // for backward compatibility — both forms resolve via wildcard sync (#150).
     this.midiBridge.onMidiEvent((event) => {
       const sched = this.scheduler
       if (!sched) return
-      const cueName = `/midi/${event.type}`
-      sched.fireCue(cueName, '__midi__', [event])
+      const ch = event.channel ?? 1
+      // Desktop SP format: /midi:*:channel/type
+      sched.fireCue(`/midi:*:${ch}/${event.type}`, '__midi__', [event])
+      // Short format for backward compatibility
+      sched.fireCue(`/midi/${event.type}`, '__midi__', [event])
     })
 
     this.initialized = true
@@ -695,6 +701,8 @@ export class SonicPiEngine {
         'use_sample_bpm',
         // Debug (no-op in browser — silences log output in Desktop SP)
         'use_debug',
+        // Latency — set schedule-ahead to 0 for responsive MIDI input (#149)
+        'use_real_time',
       ]
       const dslValues = [
         topLevelBuilder,
@@ -733,6 +741,8 @@ export class SonicPiEngine {
         (name: string) => topLevelBuilder.use_sample_bpm(name),
         // Debug (no-op in browser)
         (_val?: boolean) => { /* no-op — use_debug controls log verbosity in Desktop SP */ },
+        // Latency — no-op at top level; inside loops it's handled by ProgramBuilder + AudioInterpreter
+        () => { /* use_real_time: no-op at top level — only meaningful inside live_loops (#149) */ },
       ]
 
       const codeWarnings = validateCode(transpiledCode)
