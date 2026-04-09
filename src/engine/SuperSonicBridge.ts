@@ -139,6 +139,8 @@ export class SuperSonicBridge {
   private freeBuses: number[] = []
   /** Live audio (mic/line-in) streams keyed by name */
   private liveAudioStreams = new Map<string, { stream: MediaStream, source: MediaStreamAudioSourceNode }>()
+  /** Names whose startLiveAudio getUserMedia is currently in-flight — race lock (#152) */
+  private pendingLiveAudio = new Set<string>()
   /** Per-track AnalyserNodes keyed by track name */
   private trackAnalysers = new Map<string, AnalyserNode>()
   /** Track name → scsynth bus pair (stereo, starting at bus 2) */
@@ -666,34 +668,68 @@ export class SuperSonicBridge {
   }
 
   /**
+   * Returns true if a live audio stream under this name is currently active
+   * OR mid-acquisition. Used by AudioInterpreter to avoid re-starting the
+   * mic on every `synth :sound_in` dispatch inside a live_loop (#152).
+   */
+  isLiveAudioStreaming(name: string): boolean {
+    return this.liveAudioStreams.has(name) || this.pendingLiveAudio.has(name)
+  }
+
+  /**
    * Start capturing live audio from the system input (microphone/line-in).
-   * The stream is connected to the master analyser → gain → speakers chain.
-   * Disables browser audio processing for clean pass-through.
+   * The stream is connected to the scsynth AudioWorkletNode so SoundIn.ar
+   * inside the `sonic-pi-sound_in` synthdef can read the mic signal.
+   *
+   * **Idempotent and race-safe** (#152): if a stream already exists under
+   * this name, or a `getUserMedia` call is in-flight for it, returns
+   * immediately. Without this the AudioInterpreter's per-dispatch auto-start
+   * would tear down and re-acquire the mic ~10×/sec inside a live_loop,
+   * making the browser indicator flicker and the audio drop out.
    */
   async startLiveAudio(name: string, opts?: { stereo?: boolean }): Promise<void> {
     if (!this.sonic) throw new Error('SuperSonic not initialized')
 
-    // If already running under this name, stop it first
-    this.stopLiveAudio(name)
+    // Already running or mid-acquisition — skip. Callers that genuinely want
+    // to reconfigure (mono ↔ stereo) must stopLiveAudio(name) first.
+    if (this.liveAudioStreams.has(name) || this.pendingLiveAudio.has(name)) return
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: opts?.stereo ? 2 : 1,
-      } as MediaTrackConstraints,
-    })
+    this.pendingLiveAudio.add(name)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: opts?.stereo ? 2 : 1,
+        } as MediaTrackConstraints,
+      })
 
-    const audioCtx = this.sonic.audioContext
-    const source = audioCtx.createMediaStreamSource(stream)
-    // Connect mic INTO the scsynth AudioWorkletNode so SoundIn.ar(bus) can
-    // read it. The synthdef `sonic-pi-sound_in` reads from bus 0 (hardware
-    // input), which maps to the WorkletNode's first input channel (#152).
-    const workletNode = this.sonic.node as AudioNode
-    source.connect(workletNode)
+      // Another caller may have stopped/disposed during the await — bail out
+      // if we're no longer supposed to be acquiring.
+      if (!this.pendingLiveAudio.has(name)) {
+        stream.getTracks().forEach(t => t.stop())
+        return
+      }
 
-    this.liveAudioStreams.set(name, { stream, source })
+      const audioCtx = this.sonic.audioContext
+      const source = audioCtx.createMediaStreamSource(stream)
+      // Connect mic INTO the scsynth AudioWorkletNode so SoundIn.ar(bus) can
+      // read it. The synthdef `sonic-pi-sound_in` reads from bus 0 (hardware
+      // input), which maps to the WorkletNode's first input channel (#152).
+      //
+      // SuperSonic's `.node` is a wrapper object (see its docs/GUIDE.md:80 —
+      // `micSource.connect(supersonic.node.input)`). The real AudioNode lives
+      // at `.input`; using `.node` directly throws "Overload resolution failed".
+      // Mirror the pattern already used in init() at line 242.
+      const nodeWrapper = this.sonic.node as unknown as Record<string, AudioNode>
+      const workletNode = nodeWrapper.input ?? (this.sonic.node as unknown as AudioNode)
+      source.connect(workletNode)
+
+      this.liveAudioStreams.set(name, { stream, source })
+    } finally {
+      this.pendingLiveAudio.delete(name)
+    }
   }
 
   /** Stop a named live audio stream and release its resources. */
@@ -703,6 +739,22 @@ export class SuperSonicBridge {
       entry.source.disconnect()
       entry.stream.getTracks().forEach(t => t.stop())
       this.liveAudioStreams.delete(name)
+    }
+  }
+
+  /**
+   * Stop every active live audio stream and release mic tracks (#152).
+   * Called on engine stop so the browser's mic indicator clears and the
+   * mic stops feeding scsynth's input channel between runs.
+   *
+   * Also clears pendingLiveAudio so any in-flight getUserMedia call
+   * detects the cancellation after its await and tears down the stream
+   * it just acquired instead of racing past the stop.
+   */
+  stopAllLiveAudio(): void {
+    this.pendingLiveAudio.clear()
+    for (const name of Array.from(this.liveAudioStreams.keys())) {
+      this.stopLiveAudio(name)
     }
   }
 
@@ -833,9 +885,7 @@ export class SuperSonicBridge {
 
   dispose(): void {
     // Stop all live audio streams
-    for (const name of this.liveAudioStreams.keys()) {
-      this.stopLiveAudio(name)
-    }
+    this.stopAllLiveAudio()
     if (this.masterGainNode) {
       this.masterGainNode.disconnect()
       this.masterGainNode = null

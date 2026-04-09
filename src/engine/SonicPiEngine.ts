@@ -233,6 +233,21 @@ export class SonicPiEngine {
         this.transpileCache.set(code, transpiledCode)
       }
 
+      // Reconcile live audio (mic) streams against the new code (#152).
+      // On hot-swap, if the old code used `synth :sound_in` but the new one
+      // doesn't, the mic would otherwise stay connected and the browser's
+      // recording indicator would stay lit across the edit. Check the
+      // transpiled source for each sound_in variant; stop any stream whose
+      // name no longer appears.
+      if (this.bridge) {
+        const stillUsed = {
+          sound_in: /['"]sound_in['"]/.test(transpiledCode),
+          sound_in_stereo: /['"]sound_in_stereo['"]/.test(transpiledCode),
+        }
+        if (!stillUsed.sound_in) this.bridge.stopLiveAudio('sound_in')
+        if (!stillUsed.sound_in_stereo) this.bridge.stopLiveAudio('sound_in_stereo')
+      }
+
       // Top-level DSL state
       let defaultBpm = 60
       let defaultSynth = 'beep'
@@ -835,6 +850,9 @@ export class SonicPiEngine {
     // Free all scsynth nodes for clean silence
     if (this.bridge) {
       this.bridge.freeAllNodes()
+      // Release mic / line-in tracks so the browser's recording indicator
+      // clears and nothing keeps feeding scsynth's input channel (#152).
+      this.bridge.stopAllLiveAudio()
     }
     this.nodeRefMap.clear()
 

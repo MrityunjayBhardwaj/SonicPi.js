@@ -81,9 +81,14 @@ export async function runProgram(
         const nodeRef = nextNodeRef++
 
         if (ctx.bridge) {
-          // Auto-start mic input when sound_in / sound_in_stereo is used (#152).
-          // getUserMedia is async but idempotent — only requests permission once.
-          if (synth === 'sound_in' || synth === 'sound_in_stereo') {
+          // Auto-start mic input on the FIRST dispatch of sound_in per run (#152).
+          // The live_loop re-dispatches every ~100ms; without this gate the mic
+          // would churn (stop → getUserMedia → reconnect) 10×/sec and the
+          // browser's recording indicator would flicker. The bridge is already
+          // idempotent + race-safe, but the cheap sync check here also avoids
+          // spamming "Mic input failed" from the .catch on every dispatch.
+          if ((synth === 'sound_in' || synth === 'sound_in_stereo') &&
+              !ctx.bridge.isLiveAudioStreaming(synth)) {
             ctx.bridge.startLiveAudio(synth, { stereo: synth === 'sound_in_stereo' })
               .catch((err: Error) => ctx.printHandler?.(`Mic input failed: ${err.message}`))
           }
