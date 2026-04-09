@@ -114,8 +114,12 @@ function wrapBareCode(code: string): string {
         continue
       }
 
-      // Top-level settings (only at depth 0)
-      if (/^\s*(use_bpm|use_synth|use_random_seed|use_arg_bpm_scaling|use_sample_bpm)\s/.test(line)) {
+      // Top-level settings (only at depth 0).
+      // `use_synth` is NOT hoisted — it is flow-sensitive (users change it
+      // between plays), so hoisting it above the wrapper would collapse
+      // every play to the last use_synth value (#164). The other settings
+      // here are commutative with position and safe to hoist.
+      if (/^\s*(use_bpm|use_random_seed|use_arg_bpm_scaling|use_sample_bpm)\s/.test(line)) {
         topLevel.push(line)
         continue
       }
@@ -140,7 +144,11 @@ function wrapBareCode(code: string): string {
   }
 
   // No live_loops at all — wrap in a one-shot live_loop with stop
-  // Only hoist use_synth/use_bpm/etc. that are at depth 0 (not inside blocks)
+  // Only hoist use_bpm/use_random_seed/etc. that are at depth 0 (not inside blocks).
+  // `use_synth` is NOT hoisted — it is flow-sensitive (users change it between
+  // plays), so hoisting it above the wrapper would collapse every play to the
+  // last use_synth value (#164). The other settings here are commutative with
+  // position and safe to hoist.
   const topLevel: string[] = []
   const body: string[] = []
   let hoistDepth = 0
@@ -153,7 +161,7 @@ function wrapBareCode(code: string): string {
     else if (/^(if|unless|case|begin|loop|while|until|for)\s/.test(trimmed) && hoistDepth > 0) hoistDepth++
     if (trimmed === 'end' && hoistDepth > 0) hoistDepth--
 
-    if (hoistDepth === 0 && /^\s*(use_bpm|use_synth|use_random_seed|use_arg_bpm_scaling|use_sample_bpm)\s/.test(line)) {
+    if (hoistDepth === 0 && /^\s*(use_bpm|use_random_seed|use_arg_bpm_scaling|use_sample_bpm)\s/.test(line)) {
       topLevel.push(line)
     } else {
       body.push(line)

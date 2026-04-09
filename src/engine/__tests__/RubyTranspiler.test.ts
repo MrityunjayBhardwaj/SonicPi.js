@@ -105,6 +105,49 @@ end`
       expect(result.code).toContain('use_bpm')
     })
 
+    // Regression for #164 — wrapBareCode used to hoist `use_synth` to the top
+    // level as text, pre-transforming my later TreeSitter fix. Top-level
+    // `use_synth :a; play 60; use_synth :b; play 60` then collapsed to all-b
+    // because only the last hoisted `use_synth(...)` call mutated the sandbox's
+    // defaultSynth, which the live_loop read at iteration start. This test
+    // drives the full autoTranspileDetailed pipeline (wrapBareCode → TreeSitter)
+    // and asserts `use_synth` flows inline with the plays — NOT above the wrapper.
+    it('top-level use_synth does NOT hoist through the wrapBareCode preprocessor', () => {
+      const code = `use_synth :saw\nplay 60\nuse_synth :prophet\nplay 60`
+      const result = autoTranspileDetailed(code)
+      expect(result.usedFallback).toBe(false)
+      const out = result.code
+      const wrapperStart = out.indexOf('live_loop("__run_once"')
+      expect(wrapperStart).toBeGreaterThanOrEqual(0)
+      const before = out.slice(0, wrapperStart)
+      const inside = out.slice(wrapperStart)
+      // Both use_synth calls must be inside the run_once wrapper, not above it.
+      expect(before).not.toContain('use_synth("saw")')
+      expect(before).not.toContain('use_synth("prophet")')
+      expect(inside).toContain('use_synth("saw")')
+      expect(inside).toContain('use_synth("prophet")')
+      // Saw before first play, prophet before second play.
+      const sawIdx = inside.indexOf('use_synth("saw")')
+      const firstPlayIdx = inside.indexOf('play(60', sawIdx)
+      const prophetIdx = inside.indexOf('use_synth("prophet")', firstPlayIdx)
+      const secondPlayIdx = inside.indexOf('play(60', prophetIdx)
+      expect(sawIdx).toBeLessThan(firstPlayIdx)
+      expect(firstPlayIdx).toBeLessThan(prophetIdx)
+      expect(prophetIdx).toBeLessThan(secondPlayIdx)
+    })
+
+    it('use_bpm and use_random_seed still hoist above the wrapper (commutative)', () => {
+      const code = `use_bpm 120\nuse_random_seed 42\nplay 60`
+      const result = autoTranspileDetailed(code)
+      expect(result.usedFallback).toBe(false)
+      const out = result.code
+      const wrapperStart = out.indexOf('live_loop("__run_once"')
+      expect(wrapperStart).toBeGreaterThanOrEqual(0)
+      const before = out.slice(0, wrapperStart)
+      expect(before).toContain('use_bpm(120)')
+      expect(before).toContain('use_random_seed(42)')
+    })
+
     it('wraps bare code alongside existing live_loops', () => {
       const code = `play 60
 sleep 1
