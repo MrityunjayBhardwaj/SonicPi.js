@@ -59,6 +59,11 @@ These features are wired and Level-2 verified (events, logs, WAV-free E2E tests)
 
   Scheduling: queue for v1.5.x post-beta.2, NOT a release blocker. Beta community testing may find issues in the current sandbox that drive a real fix prioritization.
 
+#### Test tooling
+- [ ] **Add `--batch` flag to `tools/capture.ts`** — batch-run a directory of `.rb` files through `captureRun(browser, code, opts)` with one shared Chromium session instead of one browser per file. Currently `capture.ts` spawns a fresh browser per file, which makes regression runs against `tests/book-examples/` (46 files) take ~15 min. A batch mode that reuses the browser + engine (pay CDN + scsynth boot once, hot-swap between files) cuts that to ~3-4 min and still does per-file WAV capture + peak/RMS/clipping stats — the same Level 3 output `capture.ts` already produces for single files. The `captureRun` signature already takes a `browser` parameter precisely for this; someone planned batch mode and never wired the iterator. Unblocks a "re-run the beta.0 regression set" pre-release gate that's practical to run on every release candidate.
+
+  Blocks this pattern (deliberate anti-pattern worth documenting): during v1.5.0-beta.2 prep I wrote a stripped-down batch runner (`tools/verify-book-examples.ts`, deleted in the same commit that added this roadmap item) that reused one browser but dropped WAV analysis entirely — Level 2 only. Getting speed by dropping fidelity is the wrong tradeoff for a release gate. The right fix is batch mode INSIDE `capture.ts`, not a second tool.
+
 #### Other
 - [ ] Polish items from the v1.5.0 beta testing feedback loop (TBD based on community reports)
 
