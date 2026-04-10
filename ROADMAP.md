@@ -64,6 +64,20 @@ These features are wired and Level-2 verified (events, logs, WAV-free E2E tests)
 
   Blocks this pattern (deliberate anti-pattern worth documenting): during v1.5.0-beta.2 prep I wrote a stripped-down batch runner (`tools/verify-book-examples.ts`, deleted in the same commit that added this roadmap item) that reused one browser but dropped WAV analysis entirely — Level 2 only. Getting speed by dropping fidelity is the wrong tradeoff for a release gate. The right fix is batch mode INSIDE `capture.ts`, not a second tool.
 
+#### Release hygiene — mechanical gates for anvideck path leaks
+- [ ] **Pre-commit hook + issue/PR template lint for anvideck path references in user-facing content.** The project's dev artifacts live in an external private directory (Ground Truth docs, catalogues, investigations, research), and both `CHANGELOG.md` (v1.4.0 release notes) and the repo's design explicitly claim "the public repo is clean." The discipline is currently enforced by human memory — which fails. Concrete instances in v1.5.0-beta.2 prep alone: issue #167 body referenced the full external path to a SuperSonic doc when a `samaaron/supersonic` upstream reference would have been equally informative and not leaked the directory structure; issue #171 body referenced the external catalogue path for SP37 when a generic "acceptance criterion" phrasing would have carried the same meaning without the leak. Both were caught and redacted retroactively, but retroactive fixes don't clean up the git history, don't clean up subscriber email notifications, and don't scale as more contributors file issues and PRs.
+
+  This is another instance of SP37 Subtype B (documentation-promised discipline, no mechanical enforcement). The cure is the same as the beta.2 composition-pair test: turn the discipline into a mechanical gate that fails closed.
+
+  **Proposed enforcement (three layers, cheap to build):**
+  1. **Pre-commit hook** — grep every staged `.md` file for external-directory patterns (e.g., `~/` paths pointing outside the repo, external dev-artifact directory names, `GROUND_TRUTH_`, `/ref/sources/`, etc.). Block the commit if found. **Exemption list:** `CLAUDE.md` is the designed exception — it intentionally contains those references so Claude Code knows where to find private dev context. Everything else fails closed.
+  2. **GitHub Actions lint step** — same grep as a CI check on PRs, belt-and-suspenders for contributors who bypass the hook. Runs on `.md`, `.yml`, issue templates, and PR template files.
+  3. **`gh issue create` / `gh pr create` wrapper** — optional shell wrapper or `.bashrc` function that scans the `--body` argument for the same patterns before invoking `gh`, surfacing a "are you sure?" prompt. Catches the dominant failure mode (typing external paths directly into an issue body) at the earliest possible moment. Not CI-enforceable since it's a client-side convenience.
+
+  **Acceptance criterion:** removing any layer of the enforcement while re-adding a known-leaking issue body (e.g., the pre-redaction text of #167 or #171) must cause a visible failure. If the failure is silent, the enforcement is not real.
+
+  **Priority:** low urgency (nothing critical leaked), high value per hour of work. The composition-pair test that caught the beta.2 `APP_VERSION` drift took ~30 minutes to write and saved a broken release. This is the same shape of fix.
+
 #### Other
 - [ ] Polish items from the v1.5.0 beta testing feedback loop (TBD based on community reports)
 
