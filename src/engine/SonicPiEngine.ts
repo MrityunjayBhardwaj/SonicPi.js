@@ -334,10 +334,12 @@ export class SonicPiEngine {
           syncTarget = (builderFnOrOpts.sync as string) ?? null
           builderFn = maybeFn!
         }
-        // Allocate track bus for per-loop AnalyserNode (visualization only).
-        // Synths write to bus 0 so the scsynth mixer (Limiter.ar, gain staging) processes them.
-        // Track buses are NOT used as outBus — that would bypass the mixer entirely.
-        this.bridge?.allocateTrackBus(name)
+        // Per-loop audio isolation: create a monitor synth that reads this
+        // loop's private loopBus and fans out to bus 0 (mixer) + trackBus
+        // (per-track AnalyserNode for scope visualization). Synths in this
+        // loop write to loopBus via task.outBus; the monitor ensures audio
+        // still reaches the mixer without bypassing it. See issue #177.
+        const loopBus = this.bridge?.createLoopMonitor(name) ?? 0
 
         // Store builder function for capture path
         this.loopBuilders.set(name, builderFn)
@@ -450,7 +452,7 @@ export class SonicPiEngine {
           if (task) {
             task.bpm = defaultBpm
             task.currentSynth = defaultSynth
-            task.outBus = 0
+            task.outBus = loopBus
           }
         }
       }
@@ -810,13 +812,14 @@ export class SonicPiEngine {
         // Commit: hot-swap same-named, stop removed, start new
         scheduler.reEvaluate(pendingLoops, { bpm: defaultBpm, synth: defaultSynth })
 
-        // Apply per-loop defaults (synths write to bus 0 for mixer processing)
+        // Apply per-loop defaults (synths write to their loop's private bus
+        // so the monitor can fan out to master + per-track analyser)
         for (const [name, defaults] of pendingDefaults) {
           const task = scheduler.getTask(name)
           if (task) {
             task.bpm = defaults.bpm
             task.currentSynth = defaults.synth
-            task.outBus = 0
+            task.outBus = this.bridge?.getLoopBus(name) ?? 0
           }
         }
 

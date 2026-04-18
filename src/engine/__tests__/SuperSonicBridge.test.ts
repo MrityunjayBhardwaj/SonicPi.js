@@ -78,10 +78,10 @@ describe('SuperSonicBridge', () => {
 
     expect(mockSonic.init).toHaveBeenCalled()
     expect(mockSonic.loadSynthDefs).toHaveBeenCalled()
-    // Mixer group at head of root, FX before mixer, synths before FX
+    // Mixer group at head of root, monitors before mixer, FX before monitors, synths before FX
     const sendCalls = mockSonic.send.mock.calls
     const gNewCalls = sendCalls.filter((c: unknown[]) => c[0] === '/g_new')
-    expect(gNewCalls.length).toBe(3) // mixer group, FX group, synths group
+    expect(gNewCalls.length).toBe(4) // mixer group, monitors group (102), FX group (101), synths group (100)
     // Mixer synthdef loaded and triggered
     expect(mockSonic.loadSynthDef).toHaveBeenCalledWith('sonic-pi-mixer')
     expect(mockSonic.sync).toHaveBeenCalled()

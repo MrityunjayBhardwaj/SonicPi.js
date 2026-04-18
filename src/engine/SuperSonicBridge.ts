@@ -8,11 +8,12 @@
 
 import { audioTimeToNTP, encodeSingleBundle as fallbackEncodeSingleBundle, encodeBundle as fallbackEncodeBundle } from './osc'
 import { normalizeSampleParams, selectSamplePlayer, translateSampleOpts } from './SoundLayer'
+import { buildTrackMonitorSynthDef } from './buildTrackMonitorSynthDef'
 
 // SuperSonic types — declared here since we load it at runtime via CDN
 interface SuperSonic {
   init(): Promise<void>
-  send(address: string, ...args: (string | number)[]): void
+  send(address: string, ...args: (string | number | Uint8Array)[]): void
   sendOSC(data: Uint8Array, options?: Record<string, unknown>): void
   loadSynthDef(name: string): Promise<void>
   loadSynthDefs(names: string[]): Promise<void>
@@ -150,6 +151,10 @@ export class SuperSonicBridge {
   private splitter: ChannelSplitterNode | null = null
   private masterMerger: ChannelMergerNode | null = null
   private masterGainNode: GainNode | null = null
+  /** Per-loop monitor state: loopBus (internal routing) + monitorNodeId (scsynth node) */
+  private loopMonitors = new Map<string, { loopBus: number; monitorNodeId: number }>()
+  /** Whether the track-monitor SynthDef has been loaded via /d_recv */
+  private monitorSynthDefLoaded = false
   /** scsynth mixer node ID — for controlling master volume via /n_set */
   private mixerNodeId = 0
   /** Optional callback for OSC trace logging — receives formatted trace strings like desktop Sonic Pi. */
@@ -210,12 +215,22 @@ export class SuperSonicBridge {
     }
 
     // Create scsynth group structure matching Sonic Pi's studio.rb:
-    //   STUDIO-MIXER (head of root) → STUDIO-FX (before mixer) → STUDIO-SYNTHS (before FX)
-    // Execution order: synths → FX → mixer (head-to-tail, depth-first)
+    //   STUDIO-MIXER (head of root) → MONITORS → STUDIO-FX → STUDIO-SYNTHS
+    // Execution order: synths (100) → FX (101) → monitors (102) → mixer
+    //
+    // Group 102 (monitors) sits BETWEEN FX and mixer so monitors read
+    // loopBus AFTER FX has written to it. This gives post-FX per-loop
+    // audio taps — the scope shows what the user actually hears.
     const mixerGroupId = this.sonic.nextNodeId()
     this.sonic.send('/g_new', mixerGroupId, 0, 0)  // mixer group at head of root
-    this.sonic.send('/g_new', 101, 2, mixerGroupId) // FX group before mixer
+    this.sonic.send('/g_new', 102, 2, mixerGroupId) // monitors group before mixer
+    this.sonic.send('/g_new', 101, 2, 102)          // FX group before monitors
     this.sonic.send('/g_new', 100, 2, 101)          // synths group before FX
+
+    // Load the track-monitor SynthDef via /d_recv — hand-compiled binary,
+    // no CDN dependency. Must load BEFORE any /s_new for it (SP5 trap).
+    this.sonic.send('/d_recv', buildTrackMonitorSynthDef())
+    this.monitorSynthDefLoaded = true
 
     // Load and create the master mixer synth — same synthdef as desktop Sonic Pi.
     // Signal chain: in_bus+out_bus → pre_amp → HPF → LPF → Limiter.ar(0.99) → LeakDC → amp → ReplaceOut
@@ -806,6 +821,90 @@ export class SuperSonicBridge {
     return this.trackAnalysers
   }
 
+  // ── Per-loop audio isolation (monitor synths) ────────────────
+  //
+  // Each live_loop gets:
+  //   1. A loopBus (internal scsynth bus, from the 128-bus pool)
+  //   2. A monitor synth in group 102 (reads loopBus, writes to
+  //      bus 0 for the mixer AND to a trackBus output channel
+  //      for the per-track AnalyserNode)
+  //
+  // task.outBus is set to loopBus so all synths + FX in that loop
+  // write there. The monitor fans out post-FX.
+  //
+  // Bare code (no live_loop) keeps outBus = 0, no monitor.
+
+  /**
+   * Create a per-loop monitor synth. Returns the loopBus number that
+   * the loop's synths should write to (via task.outBus).
+   *
+   * If a monitor already exists for this name (hot-swap), reuses it.
+   * The monitor persists across loop iterations (SP11 pattern — same
+   * lifecycle as persistentFx).
+   */
+  createLoopMonitor(name: string): number {
+    const existing = this.loopMonitors.get(name)
+    if (existing) return existing.loopBus
+
+    if (!this.sonic || !this.monitorSynthDefLoaded) return 0 // fallback
+
+    // Allocate internal bus for this loop's audio
+    const loopBus = this.allocateBus()
+
+    // Allocate output channel for the per-track AnalyserNode tap.
+    // allocateTrackBus also creates the WebAudio AnalyserNode.
+    // Falls back to 0 (master) if out of output channels.
+    const trackBus = this.allocateTrackBus(name)
+
+    // Create monitor synth in group 102 (after FX, before mixer).
+    // addAction 1 = addToTail so it executes after any existing monitors.
+    // Param names must match the SynthDef exactly (SP9 trap).
+    const monitorNodeId = this.sonic.nextNodeId()
+    this.sonic.send('/s_new', 'sonic_pi_track_monitor', monitorNodeId, 1, 102,
+      'in_bus', loopBus,
+      'out_bus_master', 0,
+      'out_bus_track', trackBus,
+      'amp', 1,
+    )
+
+    this.loopMonitors.set(name, { loopBus, monitorNodeId })
+    return loopBus
+  }
+
+  /**
+   * Get the loopBus for a named loop (0 if no monitor exists).
+   * The engine uses this to set task.outBus.
+   */
+  getLoopBus(name: string): number {
+    return this.loopMonitors.get(name)?.loopBus ?? 0
+  }
+
+  /**
+   * Free a specific loop's monitor synth and return its bus to the pool.
+   * Called when a loop is removed during hot-swap.
+   */
+  freeLoopMonitor(name: string): void {
+    const monitor = this.loopMonitors.get(name)
+    if (!monitor) return
+    this.sonic?.send('/n_free', monitor.monitorNodeId)
+    this.freeBus(monitor.loopBus)
+    this.loopMonitors.delete(name)
+  }
+
+  /**
+   * Free all monitor synths (called on stop / re-evaluate).
+   * The loopBus numbers are returned to the pool so they can be
+   * reused on the next run. Monitor synths are also freed via
+   * /g_freeAll 102 in freeAllNodes(), but we clean the map here
+   * so createLoopMonitor() knows to recreate them.
+   */
+  private clearLoopMonitors(): void {
+    for (const [, { loopBus }] of this.loopMonitors) {
+      this.freeBus(loopBus)
+    }
+    this.loopMonitors.clear()
+  }
+
   /** Allocate a private audio bus for FX routing. */
   allocateBus(): number {
     if (this.freeBuses.length > 0) return this.freeBuses.pop()!
@@ -848,11 +947,13 @@ export class SuperSonicBridge {
     return this.sampleDurations.get(name)
   }
 
-  /** Free all synth and FX nodes (clean slate for re-evaluate). */
+  /** Free all synth, FX, and monitor nodes (clean slate for re-evaluate). */
   freeAllNodes(): void {
     if (!this.sonic) return
     this.sonic.send('/g_freeAll', 100)  // synths group
     this.sonic.send('/g_freeAll', 101)  // FX group
+    this.sonic.send('/g_freeAll', 102)  // monitors group
+    this.clearLoopMonitors()            // return loopBuses to pool + clear map
   }
 
   /** Create a new group inside the FX group (101). Returns group ID. */
@@ -875,7 +976,7 @@ export class SuperSonicBridge {
   }
 
   /** Send raw OSC message to SuperSonic (immediate, no timestamp). */
-  send(address: string, ...args: (string | number)[]): void {
+  send(address: string, ...args: (string | number | Uint8Array)[]): void {
     this.sonic?.send(address, ...args)
   }
 
