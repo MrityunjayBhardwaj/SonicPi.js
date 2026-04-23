@@ -7,6 +7,7 @@
  */
 
 import { getCategories, getSamplesByCategory, searchSamples, type SampleInfo } from '../engine/SampleCatalog'
+import { theme } from './theme'
 
 export interface SampleBrowserCallbacks {
   onPreviewSample: (name: string) => void
@@ -35,7 +36,7 @@ export class SampleBrowser {
     this.overlay = document.createElement('div')
     this.overlay.style.cssText = `
       position: fixed; inset: 0;
-      background: rgba(0,0,0,0.6);
+      background: ${theme.shadowStrong};
       z-index: 2000;
       display: flex;
       align-items: center;
@@ -49,8 +50,8 @@ export class SampleBrowser {
     // Modal container
     const modal = document.createElement('div')
     modal.style.cssText = `
-      background: #1c2128;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: ${theme.bgAlt};
+      border: 1px solid ${theme.borderHover};
       border-radius: 8px;
       width: 640px;
       max-width: 90vw;
@@ -58,7 +59,7 @@ export class SampleBrowser {
       max-height: 80vh;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+      box-shadow: 0 16px 48px ${theme.shadowStrong};
       overflow: hidden;
     `
     this.overlay.appendChild(modal)
@@ -70,7 +71,7 @@ export class SampleBrowser {
       align-items: center;
       gap: 0.5rem;
       padding: 0.6rem 0.8rem;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      border-bottom: 1px solid ${theme.border};
       flex-shrink: 0;
     `
 
@@ -79,7 +80,7 @@ export class SampleBrowser {
     title.style.cssText = `
       font-size: 0.8rem;
       font-weight: 700;
-      color: #c9d1d9;
+      color: ${theme.fg};
       white-space: nowrap;
     `
     header.appendChild(title)
@@ -90,11 +91,11 @@ export class SampleBrowser {
     searchInput.placeholder = 'Search samples...'
     searchInput.style.cssText = `
       flex: 1;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
+      background: ${theme.border};
+      border: 1px solid ${theme.borderHover};
       border-radius: 4px;
       padding: 0.3rem 0.5rem;
-      color: #c9d1d9;
+      color: ${theme.fg};
       font-family: inherit;
       font-size: 0.7rem;
       outline: none;
@@ -105,10 +106,10 @@ export class SampleBrowser {
       this.renderSamples()
     })
     searchInput.addEventListener('focus', () => {
-      searchInput.style.borderColor = '#E8527C'
+      searchInput.style.borderColor = theme.accent
     })
     searchInput.addEventListener('blur', () => {
-      searchInput.style.borderColor = 'rgba(255,255,255,0.1)'
+      searchInput.style.borderColor = theme.borderHover
     })
     header.appendChild(searchInput)
 
@@ -118,7 +119,7 @@ export class SampleBrowser {
     closeBtn.style.cssText = `
       background: none;
       border: none;
-      color: #8b949e;
+      color: ${theme.fgMuted};
       font-size: 0.9rem;
       cursor: pointer;
       padding: 0.2rem 0.4rem;
@@ -127,12 +128,12 @@ export class SampleBrowser {
       line-height: 1;
     `
     closeBtn.addEventListener('mouseenter', () => {
-      closeBtn.style.background = 'rgba(255,255,255,0.08)'
-      closeBtn.style.color = '#c9d1d9'
+      closeBtn.style.background = theme.border
+      closeBtn.style.color = theme.fg
     })
     closeBtn.addEventListener('mouseleave', () => {
       closeBtn.style.background = 'none'
-      closeBtn.style.color = '#8b949e'
+      closeBtn.style.color = theme.fgMuted
     })
     closeBtn.addEventListener('click', () => this.close())
     header.appendChild(closeBtn)
@@ -153,7 +154,7 @@ export class SampleBrowser {
     this.categoryListEl.style.cssText = `
       width: 140px;
       min-width: 120px;
-      border-right: 1px solid rgba(255,255,255,0.08);
+      border-right: 1px solid ${theme.border};
       overflow-y: auto;
       padding: 0.3rem 0;
       flex-shrink: 0;
@@ -225,9 +226,9 @@ export class SampleBrowser {
     item.style.cssText = `
       padding: 0.25rem 0.6rem;
       font-size: 0.65rem;
-      color: ${isActive ? '#c9d1d9' : '#8b949e'};
-      background: ${isActive ? 'rgba(232,82,124,0.12)' : 'transparent'};
-      border-left: 2px solid ${isActive ? '#E8527C' : 'transparent'};
+      color: ${isActive ? theme.fg : theme.fgMuted};
+      background: ${isActive ? theme.accentMuted : 'transparent'};
+      border-left: 2px solid ${isActive ? theme.accent : 'transparent'};
       cursor: pointer;
       transition: background 0.1s, color 0.1s;
       white-space: nowrap;
@@ -237,14 +238,14 @@ export class SampleBrowser {
     item.textContent = label
     item.addEventListener('mouseenter', () => {
       if (this.selectedCategory !== category) {
-        item.style.background = 'rgba(255,255,255,0.04)'
-        item.style.color = '#c9d1d9'
+        item.style.background = theme.border
+        item.style.color = theme.fg
       }
     })
     item.addEventListener('mouseleave', () => {
       if (this.selectedCategory !== category) {
         item.style.background = 'transparent'
-        item.style.color = '#8b949e'
+        item.style.color = theme.fgMuted
       }
     })
     item.addEventListener('click', () => {
@@ -282,7 +283,7 @@ export class SampleBrowser {
       empty.style.cssText = `
         padding: 1.5rem;
         text-align: center;
-        color: #484f58;
+        color: ${theme.fgFaint};
         font-size: 0.7rem;
       `
       el.appendChild(empty)
@@ -304,7 +305,7 @@ export class SampleBrowser {
       transition: background 0.1s;
     `
     row.addEventListener('mouseenter', () => {
-      row.style.background = 'rgba(255,255,255,0.04)'
+      row.style.background = theme.border
     })
     row.addEventListener('mouseleave', () => {
       row.style.background = 'transparent'
@@ -316,8 +317,8 @@ export class SampleBrowser {
     previewBtn.title = 'Preview sample'
     previewBtn.style.cssText = `
       background: none;
-      border: 1px solid rgba(255,255,255,0.1);
-      color: #8b949e;
+      border: 1px solid ${theme.borderHover};
+      color: ${theme.fgMuted};
       border-radius: 3px;
       width: 22px; height: 22px;
       font-size: 0.5rem;
@@ -329,12 +330,12 @@ export class SampleBrowser {
       transition: all 0.15s;
     `
     previewBtn.addEventListener('mouseenter', () => {
-      previewBtn.style.borderColor = '#E8527C'
-      previewBtn.style.color = '#E8527C'
+      previewBtn.style.borderColor = theme.accent
+      previewBtn.style.color = theme.accent
     })
     previewBtn.addEventListener('mouseleave', () => {
-      previewBtn.style.borderColor = 'rgba(255,255,255,0.1)'
-      previewBtn.style.color = '#8b949e'
+      previewBtn.style.borderColor = theme.borderHover
+      previewBtn.style.color = theme.fgMuted
     })
     previewBtn.addEventListener('click', (e) => {
       e.stopPropagation()
@@ -348,7 +349,7 @@ export class SampleBrowser {
     name.style.cssText = `
       flex: 1;
       font-size: 0.7rem;
-      color: #c9d1d9;
+      color: ${theme.fg};
       font-family: inherit;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -362,7 +363,7 @@ export class SampleBrowser {
       badge.textContent = sample.category
       badge.style.cssText = `
         font-size: 0.55rem;
-        color: #484f58;
+        color: ${theme.fgFaint};
         white-space: nowrap;
         flex-shrink: 0;
       `
@@ -374,9 +375,9 @@ export class SampleBrowser {
     insertBtn.textContent = 'Insert'
     insertBtn.title = 'Insert at cursor'
     insertBtn.style.cssText = `
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      color: #8b949e;
+      background: ${theme.border};
+      border: 1px solid ${theme.borderHover};
+      color: ${theme.fgMuted};
       border-radius: 3px;
       padding: 0.15rem 0.4rem;
       font-family: inherit;
@@ -386,12 +387,12 @@ export class SampleBrowser {
       transition: all 0.15s;
     `
     insertBtn.addEventListener('mouseenter', () => {
-      insertBtn.style.borderColor = '#5EBDAB'
-      insertBtn.style.color = '#5EBDAB'
+      insertBtn.style.borderColor = theme.cyan
+      insertBtn.style.color = theme.cyan
     })
     insertBtn.addEventListener('mouseleave', () => {
-      insertBtn.style.borderColor = 'rgba(255,255,255,0.1)'
-      insertBtn.style.color = '#8b949e'
+      insertBtn.style.borderColor = theme.borderHover
+      insertBtn.style.color = theme.fgMuted
     })
     insertBtn.addEventListener('click', (e) => {
       e.stopPropagation()

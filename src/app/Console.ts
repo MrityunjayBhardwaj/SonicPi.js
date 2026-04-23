@@ -2,6 +2,8 @@
  * Console / log pane — Sonic Pi-style log with run counters and timestamps.
  */
 
+import { theme } from './theme'
+
 export type LogLevel = 'info' | 'error' | 'event' | 'system' | 'cue'
 
 interface LogEntry {
@@ -36,7 +38,7 @@ export class Console {
     this.el = document.createElement('div')
     this.el.style.cssText = `
       height: 100%; display: flex; flex-direction: column;
-      background: #151520; overflow: hidden;
+      background: ${theme.bgDarker}; overflow: hidden;
     `
     container.appendChild(this.el)
 
@@ -45,10 +47,10 @@ export class Console {
     this.header.style.cssText = `
       padding: 0.35rem 0.6rem;
       font-size: 0.65rem;
-      color: #555;
+      color: ${theme.comment};
       text-transform: uppercase;
       letter-spacing: 1px;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
+      border-bottom: 1px solid ${theme.border};
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -60,14 +62,14 @@ export class Console {
     const clearBtn = document.createElement('button')
     clearBtn.textContent = 'Clear'
     clearBtn.style.cssText = `
-      background: none; border: none; color: #555;
+      background: none; border: none; color: ${theme.comment};
       font-family: inherit; font-size: 0.6rem; cursor: pointer;
       padding: 0.1rem 0.4rem; border-radius: 3px;
       transition: color 0.15s;
     `
     clearBtn.addEventListener('click', () => this.clear())
-    clearBtn.addEventListener('mouseenter', () => { clearBtn.style.color = '#E8527C' })
-    clearBtn.addEventListener('mouseleave', () => { clearBtn.style.color = '#555' })
+    clearBtn.addEventListener('mouseenter', () => { clearBtn.style.color = theme.accent })
+    clearBtn.addEventListener('mouseleave', () => { clearBtn.style.color = theme.comment })
     this.header.appendChild(clearBtn)
     this.el.appendChild(this.header)
 
@@ -78,7 +80,7 @@ export class Console {
       font-family: inherit; font-size: 0.72rem;
       line-height: 1.5; padding: 0.3rem 0;
       scrollbar-width: thin;
-      scrollbar-color: #333 transparent;
+      scrollbar-color: ${theme.fgFaint} transparent;
     `
     this.el.appendChild(this.body)
 
@@ -197,7 +199,7 @@ export class Console {
     if (entry.level !== 'system') {
       const prefix = document.createElement('span')
       prefix.style.cssText = `
-        color: #444; font-size: 0.65rem; min-width: 9ch;
+        color: ${theme.fgFaint}; font-size: 0.65rem; min-width: 9ch;
         flex-shrink: 0;
       `
       const t = entry.beat != null ? entry.beat.toFixed(4) : this.elapsed()
@@ -210,13 +212,13 @@ export class Console {
 
     switch (entry.level) {
       case 'event':
-        content.style.color = '#5EBDAB'
-        line.style.borderLeftColor = '#5EBDAB33'
+        content.style.color = theme.cyan
+        line.style.borderLeftColor = `${theme.cyan}33`
         break
       case 'error': {
         // Structured error block — Desktop SP style
-        line.style.background = 'rgba(232,82,124,0.06)'
-        line.style.borderLeftColor = '#E8527C'
+        line.style.background = theme.accentFaint
+        line.style.borderLeftColor = theme.accent
         line.style.borderLeftWidth = '3px'
         line.style.padding = '0.4rem 0.6rem'
         line.style.margin = '0.2rem 0'
@@ -229,14 +231,14 @@ export class Console {
 
         // Title line — bold, larger
         const titleEl = document.createElement('div')
-        titleEl.style.cssText = 'color: #E8527C; font-weight: 600; font-size: 0.75rem; margin-bottom: 0.25rem;'
+        titleEl.style.cssText = `color: ${theme.accent}; font-weight: 600; font-size: 0.75rem; margin-bottom: 0.25rem;`
         titleEl.textContent = `⚠ ${titleText}`
         content.appendChild(titleEl)
 
         // Body — softer color, preserve formatting
         if (bodyText) {
           const bodyEl = document.createElement('div')
-          bodyEl.style.cssText = 'color: #B0606E; font-size: 0.68rem; white-space: pre-wrap; line-height: 1.5;'
+          bodyEl.style.cssText = `color: ${theme.red}; font-size: 0.68rem; white-space: pre-wrap; line-height: 1.5;`
           bodyEl.textContent = bodyText
           content.appendChild(bodyEl)
         }
@@ -245,16 +247,16 @@ export class Console {
         break
       }
       case 'cue':
-        content.style.color = '#C792EA'
-        line.style.borderLeftColor = '#C792EA33'
+        content.style.color = theme.purple
+        line.style.borderLeftColor = `${theme.purple}33`
         break
       case 'system':
-        content.style.color = '#555'
+        content.style.color = theme.comment
         content.style.fontStyle = 'italic'
         content.style.padding = '0 0.6rem'
         break
       default:
-        content.style.color = '#8892B0'
+        content.style.color = theme.fgMuted
         break
     }
 

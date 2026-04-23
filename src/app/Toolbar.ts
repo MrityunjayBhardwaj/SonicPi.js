@@ -3,6 +3,7 @@
  */
 
 import { examples, getExamplesByDifficulty, type Example } from '../engine/examples'
+import { theme } from './theme'
 
 export interface MidiDeviceInfo {
   id: string
@@ -52,7 +53,7 @@ export class Toolbar {
     // Top row: main controls
     this.topRow = this.createRow()
     const topRow = this.topRow
-    topRow.style.borderBottom = '1px solid rgba(255,255,255,0.06)'
+    topRow.style.borderBottom = `1px solid ${theme.border}`
 
     // Logo
     const logo = document.createElement('div')
@@ -63,19 +64,19 @@ export class Toolbar {
     const logoIcon = document.createElement('span')
     logoIcon.textContent = '\u266B'
     logoIcon.style.cssText = `
-      font-size: 1.3rem; color: #E8527C;
-      text-shadow: 0 0 12px rgba(232,82,124,0.4);
+      font-size: 1.3rem; color: ${theme.accent};
+      text-shadow: 0 0 12px ${theme.accentHover};
     `
     const logoText = document.createElement('span')
     logoText.textContent = 'Sonic Pi'
     logoText.style.cssText = `
-      font-weight: 700; font-size: 0.95rem; color: #ddd;
+      font-weight: 700; font-size: 0.95rem; color: ${theme.fg};
       letter-spacing: 0.5px;
     `
     const logoSub = document.createElement('span')
     logoSub.textContent = 'Web'
     logoSub.style.cssText = `
-      font-size: 0.65rem; color: #666; font-weight: 400;
+      font-size: 0.65rem; color: ${theme.comment}; font-weight: 400;
       margin-left: 0.2rem; letter-spacing: 1px; text-transform: uppercase;
     `
     logo.append(logoIcon, logoText, logoSub)
@@ -88,7 +89,7 @@ export class Toolbar {
     this.playBtn = this.iconButton(
       '\u25B6', 'Run',
       () => this.callbacks.onPlay(),
-      { bg: '#2D8B4E', hover: '#34a058' }
+      { bg: theme.success, hover: theme.green }
     )
     this.playBtn.title = 'Run (Ctrl+Enter)'
     topRow.appendChild(this.playBtn)
@@ -97,7 +98,7 @@ export class Toolbar {
     this.stopBtn = this.iconButton(
       '\u25A0', 'Stop',
       () => this.callbacks.onStop(),
-      { bg: '#555', hover: '#777' }
+      { bg: theme.comment, hover: theme.fgMuted }
     )
     this.stopBtn.title = 'Stop (Esc)'
     this.stopBtn.style.opacity = '0.4'
@@ -107,7 +108,7 @@ export class Toolbar {
     this.recBtn = this.iconButton(
       '\u23FA', 'Rec',
       () => this.callbacks.onRecord(),
-      { bg: '#555', hover: '#777' }
+      { bg: theme.comment, hover: theme.fgMuted }
     )
     this.recBtn.title = 'Record to WAV'
     this.recBtn.style.opacity = '0.4'
@@ -119,7 +120,7 @@ export class Toolbar {
     const saveBtn = this.iconButton(
       '\u{1F4BE}', 'Save',
       () => this.callbacks.onSave?.(),
-      { bg: '#555', hover: '#777' }
+      { bg: theme.comment, hover: theme.fgMuted }
     )
     saveBtn.title = 'Save buffer to file'
     saveBtn.style.opacity = '0.7'
@@ -129,7 +130,7 @@ export class Toolbar {
     const loadBtn = this.iconButton(
       '\u{1F4C2}', 'Load',
       () => this.callbacks.onLoad?.(),
-      { bg: '#555', hover: '#777' }
+      { bg: theme.comment, hover: theme.fgMuted }
     )
     loadBtn.title = 'Load file into buffer'
     loadBtn.style.opacity = '0.7'
@@ -142,14 +143,14 @@ export class Toolbar {
     volWrap.style.cssText = 'display: flex; align-items: center; gap: 0.3rem;'
     const volIcon = document.createElement('span')
     volIcon.textContent = '\u{1F50A}'
-    volIcon.style.cssText = 'font-size: 0.7rem; color: #888;'
+    volIcon.style.cssText = 'font-size: 0.7rem; color: ${theme.fgMuted};'
     const volSlider = document.createElement('input')
     volSlider.type = 'range'
     volSlider.min = '0'
     volSlider.max = '100'
     volSlider.value = '80'
     volSlider.style.cssText = `
-      width: 70px; height: 3px; accent-color: #E8527C;
+      width: 70px; height: 3px; accent-color: ${theme.accent};
       cursor: pointer;
     `
     volSlider.addEventListener('input', () => {
@@ -161,7 +162,7 @@ export class Toolbar {
     // BPM display
     this.bpmLabel = document.createElement('span')
     this.bpmLabel.style.cssText = `
-      font-size: 0.7rem; color: #888;
+      font-size: 0.7rem; color: ${theme.fgMuted};
       user-select: none; white-space: nowrap;
       margin-left: 0.25rem;
     `
@@ -178,24 +179,24 @@ export class Toolbar {
     fontDown.title = 'Decrease font size'
     fontDown.style.cssText = `
       padding: 0.2rem 0.4rem; border: none; border-radius: 3px;
-      background: rgba(255,255,255,0.06); color: #888;
+      background: ${theme.border}; color: ${theme.fgMuted};
       font-family: inherit; font-size: 0.65rem; cursor: pointer;
       transition: background 0.15s;
     `
-    fontDown.addEventListener('mouseenter', () => { fontDown.style.background = 'rgba(255,255,255,0.12)' })
-    fontDown.addEventListener('mouseleave', () => { fontDown.style.background = 'rgba(255,255,255,0.06)' })
+    fontDown.addEventListener('mouseenter', () => { fontDown.style.background = theme.borderHover })
+    fontDown.addEventListener('mouseleave', () => { fontDown.style.background = theme.border })
     fontDown.addEventListener('click', () => this.callbacks.onFontSizeChange?.(-1))
     const fontUp = document.createElement('button')
     fontUp.textContent = 'A+'
     fontUp.title = 'Increase font size'
     fontUp.style.cssText = `
       padding: 0.2rem 0.4rem; border: none; border-radius: 3px;
-      background: rgba(255,255,255,0.06); color: #888;
+      background: ${theme.border}; color: ${theme.fgMuted};
       font-family: inherit; font-size: 0.65rem; cursor: pointer;
       transition: background 0.15s;
     `
-    fontUp.addEventListener('mouseenter', () => { fontUp.style.background = 'rgba(255,255,255,0.12)' })
-    fontUp.addEventListener('mouseleave', () => { fontUp.style.background = 'rgba(255,255,255,0.06)' })
+    fontUp.addEventListener('mouseenter', () => { fontUp.style.background = theme.borderHover })
+    fontUp.addEventListener('mouseleave', () => { fontUp.style.background = theme.border })
     fontUp.addEventListener('click', () => this.callbacks.onFontSizeChange?.(1))
     fontWrap.append(fontDown, fontUp)
     topRow.appendChild(fontWrap)
@@ -206,7 +207,7 @@ export class Toolbar {
     const midiBtn = this.iconButton(
       '\u{1F3B9}', 'MIDI',
       () => this.toggleMidiDropdown(midiBtn),
-      { bg: '#555', hover: '#777' }
+      { bg: theme.comment, hover: theme.fgMuted }
     )
     midiBtn.title = 'MIDI Devices'
     midiBtn.style.opacity = '0.7'
@@ -216,7 +217,7 @@ export class Toolbar {
     const samplesBtn = this.iconButton(
       '\u{1F3B5}', 'Samples',
       () => this.callbacks.onOpenSampleBrowser?.(),
-      { bg: '#555', hover: '#777' }
+      { bg: theme.comment, hover: theme.fgMuted }
     )
     samplesBtn.title = 'Browse Samples'
     samplesBtn.style.opacity = '0.7'
@@ -232,9 +233,9 @@ export class Toolbar {
     // Example selector
     const select = document.createElement('select')
     select.style.cssText = `
-      background: rgba(255,255,255,0.05);
-      color: #999;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: ${theme.border};
+      color: ${theme.fgDark};
+      border: 1px solid ${theme.borderHover};
       border-radius: 4px;
       padding: 0.25rem 0.5rem;
       font-family: inherit;
@@ -275,13 +276,13 @@ export class Toolbar {
     zenBtn.title = 'Fullscreen / Zen mode (F11)'
     zenBtn.style.cssText = `
       padding: 0.2rem 0.5rem; border: none; border-radius: 3px;
-      background: rgba(255,255,255,0.06); color: #888;
+      background: ${theme.border}; color: ${theme.fgMuted};
       font-size: 0.85rem; cursor: pointer;
       transition: background 0.15s;
       margin-left: 0.3rem;
     `
-    zenBtn.addEventListener('mouseenter', () => { zenBtn.style.background = 'rgba(255,255,255,0.12)' })
-    zenBtn.addEventListener('mouseleave', () => { zenBtn.style.background = 'rgba(255,255,255,0.06)' })
+    zenBtn.addEventListener('mouseenter', () => { zenBtn.style.background = theme.borderHover })
+    zenBtn.addEventListener('mouseleave', () => { zenBtn.style.background = theme.border })
     zenBtn.addEventListener('click', () => this.callbacks.onZen?.())
     topRow.appendChild(zenBtn)
 
@@ -296,19 +297,19 @@ export class Toolbar {
       display: inline-flex; align-items: center; justify-content: center;
       width: 1.9rem; height: 1.8rem;
       border: none; border-radius: 3px;
-      background: rgba(255,255,255,0.06); color: #888;
+      background: ${theme.border}; color: ${theme.fgMuted};
       cursor: pointer;
       transition: background 0.15s, color 0.15s;
       margin-left: 0.3rem;
       text-decoration: none;
     `
     githubBtn.addEventListener('mouseenter', () => {
-      githubBtn.style.background = 'rgba(255,255,255,0.12)'
-      githubBtn.style.color = '#ddd'
+      githubBtn.style.background = theme.borderHover
+      githubBtn.style.color = theme.fg
     })
     githubBtn.addEventListener('mouseleave', () => {
-      githubBtn.style.background = 'rgba(255,255,255,0.06)'
-      githubBtn.style.color = '#888'
+      githubBtn.style.background = theme.border
+      githubBtn.style.color = theme.fgMuted
     })
     topRow.appendChild(githubBtn)
 
@@ -327,20 +328,20 @@ export class Toolbar {
         min-height: 2rem;
         border: none;
         background: transparent;
-        color: ${i === 0 ? '#E8527C' : '#555'};
+        color: ${i === 0 ? theme.accent : theme.comment};
         font-family: inherit;
         font-size: 0.7rem;
         font-weight: ${i === 0 ? '700' : '400'};
         cursor: pointer;
-        border-bottom: 2px solid ${i === 0 ? '#E8527C' : 'transparent'};
+        border-bottom: 2px solid ${i === 0 ? theme.accent : 'transparent'};
         transition: color 0.15s, border-color 0.15s;
       `
       btn.addEventListener('click', () => this.selectBuffer(i))
       btn.addEventListener('mouseenter', () => {
-        if (i !== this.activeBuffer) btn.style.color = '#999'
+        if (i !== this.activeBuffer) btn.style.color = theme.fgDark
       })
       btn.addEventListener('mouseleave', () => {
-        if (i !== this.activeBuffer) btn.style.color = '#555'
+        if (i !== this.activeBuffer) btn.style.color = theme.comment
       })
       bufRow.appendChild(btn)
       this.bufferBtns.push(btn)
@@ -351,14 +352,14 @@ export class Toolbar {
     hintSpacer.style.flex = '1'
     bufRow.appendChild(hintSpacer)
     const hints = document.createElement('span')
-    hints.style.cssText = 'color: #333; font-size: 0.6rem; white-space: nowrap;'
+    hints.style.cssText = `color: ${theme.fgFaint}; font-size: 0.6rem; white-space: nowrap;`
     hints.textContent = 'Ctrl+Enter Run  |  Esc Stop  |  Ctrl+/ Comment'
     bufRow.appendChild(hints)
   }
 
   setPlaying(playing: boolean): void {
     this.playing = playing
-    this.playBtn.style.background = playing ? '#3a6ea5' : '#2D8B4E'
+    this.playBtn.style.background = playing ? theme.info : theme.success
     const label = this.playBtn.querySelector('.spw-btn-label') as HTMLElement
     if (label) label.textContent = playing ? 'Update' : 'Run'
     this.stopBtn.style.opacity = playing ? '1' : '0.4'
@@ -383,7 +384,7 @@ export class Toolbar {
   setRecording(recording: boolean): void {
     this.recording = recording
     this.recBtn.style.opacity = recording ? '1' : '0.4'
-    this.recBtn.style.background = recording ? '#C0392B' : '#555'
+    this.recBtn.style.background = recording ? theme.error : theme.comment
     const label = this.recBtn.querySelector('.spw-btn-label') as HTMLElement
     if (label) label.textContent = recording ? 'Save' : 'Rec'
   }
@@ -393,14 +394,14 @@ export class Toolbar {
   }
 
   private selectBuffer(index: number): void {
-    this.bufferBtns[this.activeBuffer].style.color = '#555'
+    this.bufferBtns[this.activeBuffer].style.color = theme.comment
     this.bufferBtns[this.activeBuffer].style.fontWeight = '400'
     this.bufferBtns[this.activeBuffer].style.borderBottomColor = 'transparent'
 
     this.activeBuffer = index
-    this.bufferBtns[index].style.color = '#E8527C'
+    this.bufferBtns[index].style.color = theme.accent
     this.bufferBtns[index].style.fontWeight = '700'
-    this.bufferBtns[index].style.borderBottomColor = '#E8527C'
+    this.bufferBtns[index].style.borderBottomColor = theme.accent
 
     this.callbacks.onBufferSelect(index)
   }
@@ -421,7 +422,7 @@ export class Toolbar {
     const sep = document.createElement('div')
     sep.style.cssText = `
       width: 1px; height: 20px;
-      background: rgba(255,255,255,0.08);
+      background: ${theme.border};
       margin: 0 0.25rem;
     `
     return sep
@@ -441,7 +442,7 @@ export class Toolbar {
       border: none;
       border-radius: 5px;
       background: ${colors.bg};
-      color: #fff;
+      color: ${theme.fg};
       font-family: inherit;
       font-size: 0.75rem;
       cursor: pointer;
@@ -473,14 +474,14 @@ export class Toolbar {
     const dropdown = document.createElement('div')
     dropdown.style.cssText = `
       position: fixed;
-      background: #1c2128;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: ${theme.bgAlt};
+      border: 1px solid ${theme.borderHover};
       border-radius: 6px;
       padding: 0.4rem 0;
       min-width: 220px;
       max-height: 320px;
       overflow-y: auto;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      box-shadow: 0 8px 24px ${theme.shadow};
       z-index: 1000;
       font-family: inherit;
     `
@@ -551,7 +552,7 @@ export class Toolbar {
     if (outputs.length > 0) {
       if (inputs.length > 0) {
         const sep = document.createElement('div')
-        sep.style.cssText = 'height: 1px; background: rgba(255,255,255,0.06); margin: 0.3rem 0;'
+        sep.style.cssText = 'height: 1px; background: ${theme.border}; margin: 0.3rem 0;'
         dropdown.appendChild(sep)
       }
       this.addMidiSectionHeader(dropdown, 'Outputs')
@@ -567,7 +568,7 @@ export class Toolbar {
     msg.style.cssText = `
       padding: 0.8rem;
       text-align: center;
-      color: #484f58;
+      color: ${theme.fgFaint};
       font-size: 0.7rem;
     `
     container.appendChild(msg)
@@ -579,7 +580,7 @@ export class Toolbar {
     header.style.cssText = `
       padding: 0.3rem 0.8rem 0.2rem;
       font-size: 0.55rem;
-      color: #484f58;
+      color: ${theme.fgFaint};
       text-transform: uppercase;
       letter-spacing: 1px;
     `
@@ -594,13 +595,13 @@ export class Toolbar {
       padding: 0.3rem 0.8rem;
       cursor: pointer;
       font-size: 0.7rem;
-      color: #c9d1d9;
+      color: ${theme.fg};
       gap: 0.5rem;
       transition: background 0.1s;
       user-select: none;
     `
     row.addEventListener('mouseenter', () => {
-      row.style.background = 'rgba(255,255,255,0.06)'
+      row.style.background = theme.border
     })
     row.addEventListener('mouseleave', () => {
       row.style.background = 'none'
@@ -610,15 +611,15 @@ export class Toolbar {
     const check = document.createElement('span')
     check.style.cssText = `
       width: 14px; height: 14px;
-      border: 1px solid ${device.selected ? '#E8527C' : 'rgba(255,255,255,0.2)'};
+      border: 1px solid ${device.selected ? theme.accent : theme.borderStrong};
       border-radius: 3px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 0.6rem;
       flex-shrink: 0;
-      background: ${device.selected ? '#E8527C' : 'none'};
-      color: ${device.selected ? '#fff' : 'transparent'};
+      background: ${device.selected ? theme.accent : 'none'};
+      color: ${device.selected ? theme.fg : 'transparent'};
       transition: all 0.15s;
     `
     check.textContent = device.selected ? '\u2713' : ''

@@ -6,16 +6,18 @@
  * Features: phosphor trail persistence, glow effects, DPR-aware rendering.
  */
 
+import { theme } from './theme'
+
 export type ScopeMode = 'mono' | 'stereo' | 'lissajous' | 'mirror' | 'spectrum'
 
 export const ALL_SCOPE_MODES: ScopeMode[] = ['mono', 'stereo', 'lissajous', 'mirror', 'spectrum']
 
 const SCOPE_COLORS: Record<ScopeMode, string> = {
-  mono: '#E8527C',
-  stereo: '#5EBDAB',
-  lissajous: '#C792EA',
-  mirror: '#82AAFF',
-  spectrum: '#FF00FF',
+  mono: theme.accent,
+  stereo: theme.cyan,
+  lissajous: theme.purple,
+  mirror: theme.blue,
+  spectrum: theme.magenta,
 }
 
 const SCOPE_LABELS: Record<ScopeMode, string> = {
@@ -192,12 +194,12 @@ export class Scope {
 
       // Phosphor trail
       ctx.globalAlpha = 1 - this._trail
-      ctx.fillStyle = '#0d1117'
+      ctx.fillStyle = theme.bgDark
       ctx.fillRect(0, 0, w, h)
       ctx.globalAlpha = 1.0
 
       // Grid
-      ctx.strokeStyle = 'rgba(255,255,255,0.03)'
+      ctx.strokeStyle = theme.border
       ctx.lineWidth = 1
       ctx.beginPath()
       ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2)
@@ -244,14 +246,14 @@ export class Scope {
     const dataR = this.dataR ?? this.dataMono
     if (!dataL || !dataR) return
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+    ctx.strokeStyle = theme.border
     ctx.lineWidth = 1
     ctx.beginPath()
     ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2)
     ctx.stroke()
 
-    this.drawWaveform(ctx, dataL, w, h / 2, 0, h / 2, this.shiftColor('#5EBDAB'), this._lineWidth * 0.75)
-    this.drawWaveform(ctx, dataR, w, h / 2, h / 2, h / 2, this.shiftColor('#F78C6C'), this._lineWidth * 0.75)
+    this.drawWaveform(ctx, dataL, w, h / 2, 0, h / 2, this.shiftColor(theme.cyan), this._lineWidth * 0.75)
+    this.drawWaveform(ctx, dataR, w, h / 2, h / 2, h / 2, this.shiftColor(theme.orange), this._lineWidth * 0.75)
   }
 
   private drawMirror(ctx: CanvasRenderingContext2D, w: number, h: number): void {
@@ -387,7 +389,7 @@ export class Scope {
       canvas.width = canvas.clientWidth * dpr
       canvas.height = canvas.clientHeight * dpr
       const ctx = canvas.getContext('2d')!
-      ctx.fillStyle = '#0d1117'
+      ctx.fillStyle = theme.bgDark
       ctx.fillRect(0, 0, canvas.width, canvas.height)
     }
   }

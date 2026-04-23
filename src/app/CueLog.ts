@@ -3,6 +3,8 @@
  * Mirrors Desktop Sonic Pi's separate cue log window.
  */
 
+import { theme } from './theme'
+
 interface CueEntry {
   name: string
   run: number
@@ -25,7 +27,7 @@ export class CueLog {
     this.el = document.createElement('div')
     this.el.style.cssText = `
       height: 100%; display: flex; flex-direction: column;
-      background: #151520; overflow: hidden;
+      background: ${theme.bgDarker}; overflow: hidden;
     `
     container.appendChild(this.el)
 
@@ -34,10 +36,10 @@ export class CueLog {
     this.header.style.cssText = `
       padding: 0.35rem 0.6rem;
       font-size: 0.65rem;
-      color: #555;
+      color: ${theme.comment};
       text-transform: uppercase;
       letter-spacing: 1px;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
+      border-bottom: 1px solid ${theme.border};
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -49,14 +51,14 @@ export class CueLog {
     const clearBtn = document.createElement('button')
     clearBtn.textContent = 'Clear'
     clearBtn.style.cssText = `
-      background: none; border: none; color: #555;
+      background: none; border: none; color: ${theme.comment};
       font-family: inherit; font-size: 0.6rem; cursor: pointer;
       padding: 0.1rem 0.4rem; border-radius: 3px;
       transition: color 0.15s;
     `
     clearBtn.addEventListener('click', () => this.clear())
-    clearBtn.addEventListener('mouseenter', () => { clearBtn.style.color = '#C792EA' })
-    clearBtn.addEventListener('mouseleave', () => { clearBtn.style.color = '#555' })
+    clearBtn.addEventListener('mouseenter', () => { clearBtn.style.color = theme.purple })
+    clearBtn.addEventListener('mouseleave', () => { clearBtn.style.color = theme.comment })
     this.header.appendChild(clearBtn)
     this.el.appendChild(this.header)
 
@@ -67,7 +69,7 @@ export class CueLog {
       font-family: inherit; font-size: 0.72rem;
       line-height: 1.5; padding: 0.3rem 0;
       scrollbar-width: thin;
-      scrollbar-color: #333 transparent;
+      scrollbar-color: ${theme.fgFaint} transparent;
     `
     this.el.appendChild(this.body)
 
@@ -138,12 +140,12 @@ export class CueLog {
       padding: 0.1rem 0.6rem;
       display: flex;
       gap: 0.5rem;
-      border-left: 2px solid #C792EA33;
+      border-left: 2px solid ${theme.purple}33;
     `
 
     const prefix = document.createElement('span')
     prefix.style.cssText = `
-      color: #444; font-size: 0.65rem; min-width: 9ch;
+      color: ${theme.fgFaint}; font-size: 0.65rem; min-width: 9ch;
       flex-shrink: 0;
     `
     prefix.textContent = `{run:${entry.run}, t:${(entry.time / 1000).toFixed(4)}}`
@@ -152,7 +154,7 @@ export class CueLog {
     const content = document.createElement('span')
     content.style.cssText = `
       white-space: pre-wrap; word-break: break-word;
-      color: #C792EA;
+      color: ${theme.purple};
     `
     content.textContent = `cue :${entry.name}`
     line.appendChild(content)

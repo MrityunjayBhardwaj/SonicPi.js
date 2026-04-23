@@ -17,6 +17,7 @@ import { CueLog } from './CueLog'
 import { SampleBrowser } from './SampleBrowser'
 import { HelpPanel } from './HelpPanel'
 import { APP_VERSION } from './version'
+import { theme } from './theme'
 
 // Welcome buffer — the Blade Runner Ecstasy Edit
 const WELCOME_CODE = `# =====================================================
@@ -458,8 +459,8 @@ export class App {
       flex-direction: column;
       height: 100vh;
       width: 100vw;
-      background: #0d1117;
-      color: #CDD3DE;
+      background: ${theme.bgDark};
+      color: ${theme.fg};
       font-family: 'Fira Code', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
       overflow: hidden;
     `
@@ -467,8 +468,8 @@ export class App {
     // Toolbar
     const toolbarContainer = document.createElement('div')
     toolbarContainer.style.cssText = `
-      background: #161B22;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: ${theme.bg};
+      border-bottom: 1px solid ${theme.border};
       flex-shrink: 0;
     `
     this.root.appendChild(toolbarContainer)
@@ -511,15 +512,15 @@ export class App {
     editorHeader.style.cssText = `
       padding: 0.3rem 0.6rem;
       font-size: 0.65rem;
-      color: #555;
+      color: ${theme.comment};
       text-transform: uppercase;
       letter-spacing: 1px;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
+      border-bottom: 1px solid ${theme.border};
       display: flex;
       align-items: center;
       gap: 0.5rem;
       flex-shrink: 0;
-      background: #111921;
+      background: ${theme.bgPanel};
     `
     const edTitle = document.createElement('span')
     edTitle.textContent = 'Buffer 0'
@@ -528,7 +529,7 @@ export class App {
 
     const edHint = document.createElement('span')
     edHint.textContent = 'Ctrl+Enter to run'
-    edHint.style.cssText = 'margin-left: auto; color: #3a4550;'
+    edHint.style.cssText = `margin-left: auto; color: ${theme.fgFaint};`
     editorHeader.appendChild(edHint)
     editorPanel.appendChild(editorHeader)
 
@@ -553,7 +554,7 @@ export class App {
 
       el.style.cssText = [
         isH ? 'height: 4px; cursor: row-resize;' : 'width: 4px; cursor: col-resize;',
-        'background: rgba(255,255,255,0.06);',
+        `background: ${theme.border};`,
         'flex-shrink: 0;',
         'transition: background 0.15s;',
         'position: relative;',
@@ -561,19 +562,19 @@ export class App {
       ].join(' ')
 
       const setIdle = () => {
-        el.style.background = 'rgba(255,255,255,0.06)'
+        el.style.background = theme.border
         el.style[isH ? 'height' : 'width'] = '4px'
       }
 
       el.addEventListener('mouseenter', () => {
-        el.style.background = 'rgba(232,82,124,0.4)'
+        el.style.background = theme.accentHover
         el.style[isH ? 'height' : 'width'] = '6px'
       })
       el.addEventListener('mouseleave', () => { if (!dragging) setIdle() })
 
       const startDrag = (startPos: number, getPos: (e: MouseEvent | Touch) => number) => {
         dragging = true
-        el.style.background = 'rgba(232,82,124,0.6)'
+        el.style.background = theme.accentDrag
         let last = startPos
 
         const onMove = (e: MouseEvent) => {
@@ -601,7 +602,7 @@ export class App {
         e.preventDefault()
         const t = e.touches[0]
         dragging = true
-        el.style.background = 'rgba(232,82,124,0.6)'
+        el.style.background = theme.accentDrag
         let last = isH ? t.clientY : t.clientX
 
         const onTouchMove = (ev: TouchEvent) => {
@@ -643,7 +644,7 @@ export class App {
     rightPanel.style.cssText = `
       width: 40%; min-width: 280px; max-width: 520px;
       display: flex; flex-direction: column;
-      overflow: hidden; background: #0d1117;
+      overflow: hidden; background: ${theme.bgDark};
     `
     main.appendChild(rightPanel)
 
@@ -664,8 +665,8 @@ export class App {
     scopeContainer.className = 'spw-scope'
     scopeContainer.style.cssText = `
       height: 140px; min-height: 80px;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      background: #0d1117;
+      border-bottom: 1px solid ${theme.border};
+      background: ${theme.bgDark};
       flex-shrink: 0;
       overflow: hidden;
     `
@@ -727,7 +728,7 @@ export class App {
     cueLogContainer.className = 'spw-cuelog'
     cueLogContainer.style.cssText = `
       height: 120px; min-height: 60px;
-      border-top: 1px solid rgba(255,255,255,0.06);
+      border-top: 1px solid ${theme.border};
       flex-shrink: 0;
     `
     // Load saved cue log height

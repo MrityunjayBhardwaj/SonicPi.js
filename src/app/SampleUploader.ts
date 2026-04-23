@@ -12,6 +12,7 @@ import {
   type CustomSampleRecord,
 } from '../engine/CustomSampleStore'
 import type { SonicPiEngine } from '../engine/SonicPiEngine'
+import { theme } from './theme'
 
 const ACCEPTED_TYPES = '.wav,.mp3,.ogg,.flac'
 
@@ -32,17 +33,17 @@ export class SampleUploader {
     this.container.style.cssText = `
       padding: 0.4rem 0;
       font-size: 0.7rem;
-      color: #c9d1d9;
+      color: ${theme.fg};
     `
 
     // Upload button
     const uploadBtn = document.createElement('button')
     uploadBtn.textContent = '+ Upload Sample'
     uploadBtn.style.cssText = `
-      background: rgba(255,255,255,0.06);
-      border: 1px dashed rgba(255,255,255,0.15);
+      background: ${theme.border};
+      border: 1px dashed ${theme.borderStrong};
       border-radius: 4px;
-      color: #8b949e;
+      color: ${theme.fgMuted};
       font-family: inherit;
       font-size: 0.65rem;
       padding: 0.4rem 0.8rem;
@@ -52,12 +53,12 @@ export class SampleUploader {
       margin-bottom: 0.4rem;
     `
     uploadBtn.addEventListener('mouseenter', () => {
-      uploadBtn.style.background = 'rgba(255,255,255,0.1)'
-      uploadBtn.style.borderColor = 'rgba(255,255,255,0.25)'
+      uploadBtn.style.background = theme.borderHover
+      uploadBtn.style.borderColor = theme.borderStrong
     })
     uploadBtn.addEventListener('mouseleave', () => {
-      uploadBtn.style.background = 'rgba(255,255,255,0.06)'
-      uploadBtn.style.borderColor = 'rgba(255,255,255,0.15)'
+      uploadBtn.style.background = theme.border
+      uploadBtn.style.borderColor = theme.borderStrong
     })
 
     // Hidden file input
@@ -145,7 +146,7 @@ export class SampleUploader {
       if (samples.length === 0) {
         const empty = document.createElement('div')
         empty.textContent = 'No custom samples uploaded'
-        empty.style.cssText = 'color: #484f58; font-size: 0.6rem; padding: 0.2rem 0;'
+        empty.style.cssText = `color: ${theme.fgFaint}; font-size: 0.6rem; padding: 0.2rem 0;`
         this.listEl.appendChild(empty)
         return
       }
@@ -169,7 +170,7 @@ export class SampleUploader {
       transition: background 0.1s;
     `
     row.addEventListener('mouseenter', () => {
-      row.style.background = 'rgba(255,255,255,0.04)'
+      row.style.background = theme.border
     })
     row.addEventListener('mouseleave', () => {
       row.style.background = 'none'
@@ -178,7 +179,7 @@ export class SampleUploader {
     const nameEl = document.createElement('span')
     nameEl.style.cssText = `
       font-size: 0.65rem;
-      color: #c9d1d9;
+      color: ${theme.fg};
       font-family: 'Fira Code', monospace;
     `
     nameEl.textContent = `:${sample.name}`
@@ -190,7 +191,7 @@ export class SampleUploader {
     deleteBtn.style.cssText = `
       background: none;
       border: none;
-      color: #484f58;
+      color: ${theme.fgFaint};
       font-size: 0.8rem;
       cursor: pointer;
       padding: 0 0.3rem;
@@ -198,10 +199,10 @@ export class SampleUploader {
       transition: color 0.1s;
     `
     deleteBtn.addEventListener('mouseenter', () => {
-      deleteBtn.style.color = '#f85149'
+      deleteBtn.style.color = theme.red
     })
     deleteBtn.addEventListener('mouseleave', () => {
-      deleteBtn.style.color = '#484f58'
+      deleteBtn.style.color = theme.fgFaint
     })
     deleteBtn.addEventListener('click', async (e) => {
       e.stopPropagation()

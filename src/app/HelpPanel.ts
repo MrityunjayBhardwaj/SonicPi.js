@@ -6,6 +6,7 @@
  */
 
 import { HELP_DB, type HelpEntry } from './helpData'
+import { theme } from './theme'
 
 export class HelpPanel {
   private container: HTMLElement
@@ -44,18 +45,18 @@ export class HelpPanel {
       position: absolute;
       left: 0; right: 0; top: 2px;
       height: 1px;
-      background: rgba(255,255,255,0.08);
+      background: ${theme.border};
       transition: background 0.15s;
     `
     this.handle.appendChild(indicator)
-    this.handle.addEventListener('mouseenter', () => { indicator.style.background = 'rgba(232,82,124,0.5)' })
-    this.handle.addEventListener('mouseleave', () => { if (!this.dragging) indicator.style.background = 'rgba(255,255,255,0.08)' })
+    this.handle.addEventListener('mouseenter', () => { indicator.style.background = theme.accentHover })
+    this.handle.addEventListener('mouseleave', () => { if (!this.dragging) indicator.style.background = theme.border })
 
     // Drag logic
     this.handle.addEventListener('mousedown', (e) => {
       e.preventDefault()
       this.dragging = true
-      indicator.style.background = 'rgba(232,82,124,0.7)'
+      indicator.style.background = theme.accentDrag
       const startY = e.clientY
       const startH = this.container.getBoundingClientRect().height
 
@@ -66,7 +67,7 @@ export class HelpPanel {
       }
       const onUp = () => {
         this.dragging = false
-        indicator.style.background = 'rgba(255,255,255,0.08)'
+        indicator.style.background = theme.border
         document.removeEventListener('mousemove', onMove)
         document.removeEventListener('mouseup', onUp)
         try { localStorage.setItem('spw-help-height', String(Math.round(this.container.getBoundingClientRect().height))) } catch { /* ignore */ }
@@ -82,11 +83,11 @@ export class HelpPanel {
     this.container.style.cssText = `
       height: ${savedHeight}px;
       overflow-y: auto;
-      background: #161b22;
-      border-top: 1px solid rgba(255,255,255,0.08);
+      background: ${theme.bg};
+      border-top: 1px solid ${theme.border};
       font-family: 'Fira Code', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
       font-size: 0.72rem;
-      color: #c9d1d9;
+      color: ${theme.fg};
       padding: 0.6rem 0.8rem;
       display: none;
       flex-shrink: 0;
@@ -142,32 +143,32 @@ export class HelpPanel {
 
   private renderEntry(name: string, entry: HelpEntry): void {
     const paramRows = entry.params.map(p => {
-      const dflt = p.default ? ` <span style="color:#484f58">(default: ${this.esc(p.default)})</span>` : ''
+      const dflt = p.default ? ` <span style="color:${theme.fgFaint}">(default: ${this.esc(p.default)})</span>` : ''
       return `<tr>
-        <td style="color:#F78C6C;padding:0.15rem 0.6rem 0.15rem 0;white-space:nowrap;vertical-align:top;">:${this.esc(p.name)}</td>
-        <td style="color:#484f58;padding:0.15rem 0.6rem 0.15rem 0;white-space:nowrap;vertical-align:top;">${this.esc(p.type)}</td>
+        <td style="color:${theme.orange};padding:0.15rem 0.6rem 0.15rem 0;white-space:nowrap;vertical-align:top;">:${this.esc(p.name)}</td>
+        <td style="color:${theme.fgFaint};padding:0.15rem 0.6rem 0.15rem 0;white-space:nowrap;vertical-align:top;">${this.esc(p.type)}</td>
         <td style="padding:0.15rem 0;vertical-align:top;">${this.esc(p.desc)}${dflt}</td>
       </tr>`
     }).join('')
 
     this.content.innerHTML = `
       <div style="margin-bottom:0.4rem;">
-        <span style="color:#82AAFF;font-weight:bold;font-size:0.8rem;">${this.esc(name)}</span>
-        <span style="color:#484f58;margin-left:0.5rem;">${this.esc(entry.signature)}</span>
+        <span style="color:${theme.blue};font-weight:bold;font-size:0.8rem;">${this.esc(name)}</span>
+        <span style="color:${theme.fgFaint};margin-left:0.5rem;">${this.esc(entry.signature)}</span>
       </div>
-      <div style="color:#8b949e;margin-bottom:0.5rem;">${this.esc(entry.description)}</div>
+      <div style="color:${theme.fgMuted};margin-bottom:0.5rem;">${this.esc(entry.description)}</div>
       ${entry.params.length > 0 ? `
-        <div style="color:#484f58;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.2rem;">Parameters</div>
+        <div style="color:${theme.fgFaint};font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.2rem;">Parameters</div>
         <table style="border-collapse:collapse;width:100%;margin-bottom:0.5rem;">${paramRows}</table>
       ` : ''}
-      <div style="color:#484f58;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.2rem;">Example</div>
-      <pre style="background:#0d1117;border:1px solid rgba(255,255,255,0.06);border-radius:4px;padding:0.4rem 0.6rem;margin:0;color:#99C794;white-space:pre-wrap;">${this.esc(entry.example)}</pre>
+      <div style="color:${theme.fgFaint};font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.2rem;">Example</div>
+      <pre style="background:${theme.bgDark};border:1px solid ${theme.border};border-radius:4px;padding:0.4rem 0.6rem;margin:0;color:${theme.green};white-space:pre-wrap;">${this.esc(entry.example)}</pre>
     `
   }
 
   private renderEmpty(): void {
     this.content.innerHTML = `
-      <div style="color:#484f58;text-align:center;padding:2rem 0;">
+      <div style="color:${theme.fgFaint};text-align:center;padding:2rem 0;">
         Move cursor to a function to see help
       </div>
     `
