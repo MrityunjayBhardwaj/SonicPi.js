@@ -1133,12 +1133,17 @@ function transpileReceiverMethodCall(
     return `for (let ${varName} = 0; ${varName} < ${recStr}; ${varName}++) {\n${ctx.indent}  __b.__checkBudget__()\n${bodyStr}\n${ctx.indent}}`
   }
 
-  // .each do |item| ... end
+  // .each do |item| ... end  /  .each do |a, b| ... end (destructure)
+  // Multi-arg block over a tuple-yielding iterator (e.g. arr.zip(b).each do |a, b|)
+  // emits JS array destructure: for (const [a, b] of iter).
   if (method === 'each' && blockNode) {
     const params = blockNode.namedChildren.find((c: any) => c.type === 'block_parameters')
-    const varName = params?.namedChildren[0]?.text ?? '_item'
+    const paramNames = params?.namedChildren?.map((c: any) => c.text) ?? []
     const bodyStr = transpileBlockBody(blockNode, ctx)
-    return `for (const ${varName} of ${recStr}) {\n${ctx.indent}  __b.__checkBudget__()\n${bodyStr}\n${ctx.indent}}`
+    const bindings = paramNames.length === 0 ? '_item'
+      : paramNames.length === 1 ? paramNames[0]
+      : `[${paramNames.join(', ')}]`
+    return `for (const ${bindings} of ${recStr}) {\n${ctx.indent}  __b.__checkBudget__()\n${bodyStr}\n${ctx.indent}}`
   }
 
   // .each_with_index do |item, i| ... end → for (let i = 0; ...) { const item = arr[i]; ... }
@@ -1319,6 +1324,16 @@ function transpileReceiverMethodCall(
   // .sample → b.choose (Ruby's Array#sample is random pick)
   if (method === 'sample' && !argsNode) {
     return `__b.choose(${recStr})`
+  }
+
+  // Ruby type predicates: x.kind_of?(Integer) / x.is_a?(Integer).
+  // Arg is a class name (constant node), not a value — transpile it as a
+  // STRING so the runtime helper can match on type name. JS has no direct
+  // equivalent for Ruby's class hierarchy; __spIsA dispatches on the name.
+  if (method === 'kind_of?' || method === 'is_a?' || method === 'instance_of?') {
+    const arg = argsNode?.namedChildren?.[0]
+    const argText = arg ? arg.text : 'Object'
+    return `__spIsA(${recStr}, ${JSON.stringify(argText)})`
   }
 
   // Methods with ? suffix → rename to _q

@@ -696,6 +696,20 @@ export class SonicPiEngine {
       // Inside live_loops, the callback parameter `b` shadows this.
       const topLevelBuilder = new ProgramBuilder()
 
+      // Top-level random + iteration helpers. These live on ProgramBuilder for
+      // use inside live_loops (`b.rrand(...)`), but some Ruby patterns call
+      // them at the top level (e.g. `use_bpm rrand(90, 130)` in
+      // choose_generator.rb from in-thread.sonic-pi.net). Bare references in
+      // the sandbox proxy fall through to these wrappers.
+      const tlRrand = (min: number, max: number) => topLevelBuilder.rrand(min, max)
+      const tlRrandI = (min: number, max: number) => topLevelBuilder.rrand_i(min, max)
+      const tlRand = (max?: number) => topLevelBuilder.rand(max ?? 1)
+      const tlRandI = (max: number) => topLevelBuilder.rand_i(max)
+      const tlChoose = <T>(arr: T[]) => topLevelBuilder.choose(arr)
+      const tlDice = (n?: number) => topLevelBuilder.dice(n ?? 6)
+      const tlOneIn = (n: number) => topLevelBuilder.one_in(n)
+      const tlRdist = (max: number, centre?: number) => topLevelBuilder.rdist(max, centre ?? 0)
+
       // Build DSL parameter names and values for the executor
       const dslNames = [
         '__b',
@@ -703,6 +717,7 @@ export class SonicPiEngine {
         'use_arg_bpm_scaling', 'with_arg_bpm_scaling',
         'in_thread', 'at', 'density',
         'ring', 'knit', 'range', 'line', 'spread',
+        'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in', 'rdist',
         'chord', 'scale', 'chord_invert', 'note', 'note_range',
         'chord_degree', 'degree', 'chord_names', 'scale_names',
         'noteToMidi', 'midiToFreq', 'noteToFreq',
@@ -743,6 +758,7 @@ export class SonicPiEngine {
         topLevelUseArgBpmScaling, topLevelWithArgBpmScaling,
         topLevelInThread, topLevelAt, topLevelDensity,
         ring, knit, range, line, spread,
+        tlRrand, tlRrandI, tlRand, tlRandI, tlChoose, tlDice, tlOneIn, tlRdist,
         chord, scale, chord_invert, note, note_range,
         chord_degree, degree, chord_names, scale_names,
         noteToMidi, midiToFreq, noteToFreq,

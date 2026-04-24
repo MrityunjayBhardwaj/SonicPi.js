@@ -1218,4 +1218,49 @@ end`)
       expect(r.code).toContain('=== 2')
     })
   })
+
+  // Phase B — empirical handler fixes from the in-thread forum test run (#186).
+  describe('Phase B — handler fixes from forum test run', () => {
+    it('kind_of?(Integer) → __spIsA with class-name string', () => {
+      const r = treeSitterTranspile(`x = 5\nif x.kind_of?(Integer)\n  play 60\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('__spIsA(x, "Integer")')
+    })
+
+    it('is_a?(Array) uses same __spIsA dispatch', () => {
+      const r = treeSitterTranspile(`x = [1]\nif x.is_a?(Array)\n  play 60\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('__spIsA(x, "Array")')
+    })
+
+    it('array .take(n) transpiles (polyfill handles runtime)', () => {
+      const r = treeSitterTranspile(`c = [:f3, :a3, :c4]\nlive_loop :t do\n  play c.take(1).look\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('.take(1)')
+    })
+
+    it('Array * Integer (Ruby repeat) uses __spMul', () => {
+      const r = treeSitterTranspile(`hats = [1,0,1,0] * 4\nlive_loop :t do\n  play hats.tick\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('__spMul([1, 0, 1, 0], 4)')
+    })
+
+    it('.each do |a, b| emits array destructure', () => {
+      const r = treeSitterTranspile(`pairs = [[:c4, 1], [:e4, 2]]\nlive_loop :t do\n  pairs.each do |n, d|\n    play n\n    sleep d\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/for \(const \[n, d\] of pairs\)/)
+    })
+
+    it('single-arg .each do |item| still uses bare binding', () => {
+      const r = treeSitterTranspile(`[1,2,3].each do |x|\n  play x\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('for (const x of')
+    })
+
+    it('top-level use_bpm rrand(…) transpiles cleanly (runtime-bound)', () => {
+      const r = treeSitterTranspile(`use_bpm rrand(90, 130)\nlive_loop :t do\n  play 60\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('use_bpm(rrand(90, 130))')
+    })
+  })
 })

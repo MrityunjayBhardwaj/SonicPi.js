@@ -133,6 +133,10 @@ export function createIsolatedExecutor(
   // Polyfill: Array.at() wrapping — Sonic Pi treats all arrays as rings (wrapping on tick).
   // JS Array.at() returns undefined for index >= length. This wraps with modulo.
   const arrayAtPolyfill = `{ const _origAt = Array.prototype.at; Object.defineProperty(Array.prototype, 'at', { value: function(i) { return this[((i % this.length) + this.length) % this.length]; }, writable: true, configurable: true }); }\n`
+  // Polyfill: Array#take(n) — Ruby Array method, not in JS. Ring has a native take(),
+  // but plain arrays (common in user code: `c = [:f3,:a3,:c4]; c.take(1)`) need this.
+  // Semantics match Ruby: returns first n elements as a new array.
+  const arrayTakePolyfill = `if (!Array.prototype.take) { Object.defineProperty(Array.prototype, 'take', { value: function(n) { return this.slice(0, n); }, writable: true, configurable: true }); }\n`
   // Polyfill: Sonic Pi operator helpers — handle note strings, Ring/Array arithmetic.
   // Ruby auto-coerces :c3 to MIDI 48 and overloads +/-/* on Ring/Array.
   // JS can't do operator overloading, so the transpiler emits __spAdd/__spSub/__spMul
@@ -166,14 +170,43 @@ export function createIsolatedExecutor(
     'function __spMul(a, b) {',
     '  if (__spIsRing(a) && typeof b === "number") return a.repeat(b);',
     '  if (typeof a === "number" && __spIsRing(b)) return b.repeat(a);',
+    // Ruby Array * Integer → repeat the array (not arithmetic).
+    // Needed for patterns like `hats = [1,0,1,0] * 4`.
+    '  if (Array.isArray(a) && typeof b === "number") return new Array(b).fill(a).flat();',
+    '  if (typeof a === "number" && Array.isArray(b)) return new Array(a).fill(b).flat();',
     '  return a * b;',
     '}',
+    // Ruby x.kind_of?(Class) / x.is_a?(Class) — dispatch by class name.
+    // Class arg comes in as a string (the transpiler JSON-encodes the
+    // constant name) so we can match without needing the runtime to have
+    // bindings for Integer, Numeric, etc.
+    'function __spIsA(x, cls) {',
+    '  switch (cls) {',
+    '    case "Integer":  return Number.isInteger(x);',
+    '    case "Float":    return typeof x === "number" && !Number.isInteger(x);',
+    '    case "Numeric":  return typeof x === "number";',
+    '    case "String":   return typeof x === "string";',
+    '    case "Symbol":   return typeof x === "string";',
+    '    case "Array":    return Array.isArray(x);',
+    '    case "Hash":     return x !== null && typeof x === "object" && !Array.isArray(x) && !__spIsRing(x);',
+    '    case "NilClass": return x === null || x === undefined;',
+    '    case "TrueClass":  return x === true;',
+    '    case "FalseClass": return x === false;',
+    '    case "Proc":     return typeof x === "function";',
+    '  }',
+    // Unknown class name — try the runtime binding. If it's a function,
+    // fall back to instanceof; otherwise return false (Ruby semantics for
+    // an undefined class would raise NameError, but silent false is safer
+    // than crashing a live loop).
+    '  try { var t = eval(cls); return typeof t === "function" ? (x instanceof t) : false; }',
+    '  catch (e) { return false; }',
+    '}',
   ].join('\n') + '\n'
-  const wrappedCode = `with(__scope__) { return (async () => {\n${mergePolyfill}${stringRingPolyfill}${arrayAtPolyfill}${spOperatorPolyfill}${transpiledCode}\n})(); }`
+  const wrappedCode = `with(__scope__) { return (async () => {\n${mergePolyfill}${stringRingPolyfill}${arrayAtPolyfill}${arrayTakePolyfill}${spOperatorPolyfill}${transpiledCode}\n})(); }`
 
   // Count polyfill lines so we can map error line numbers back to user code
   // 2 = new Function wrapper (1) + with/async IIFE wrapper (1)
-  const polyfillLineCount = (mergePolyfill + stringRingPolyfill + arrayAtPolyfill + spOperatorPolyfill).split('\n').length
+  const polyfillLineCount = (mergePolyfill + stringRingPolyfill + arrayAtPolyfill + arrayTakePolyfill + spOperatorPolyfill).split('\n').length
   SANDBOX_WRAPPER_LINES = 2 + polyfillLineCount
 
   try {
