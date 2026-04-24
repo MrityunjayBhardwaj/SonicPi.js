@@ -396,6 +396,24 @@ describe('normalizeFxParams', () => {
     const p = normalizeFxParams('echo', { room: 0.8 }, 60)
     expect(p.env_curve).toBeUndefined()
   })
+
+  // Phase C gap #4 (#191) — out-of-range FX params are clamped AND a warning
+  // is emitted through the warnFn callback. Without the callback the clamp
+  // is silent (SV19 — accept, but user needs a signal).
+  it('clamps gverb room > 1 and calls warnFn with clamp message', () => {
+    const warnings: string[] = []
+    const p = normalizeFxParams('gverb', { room: 233 }, 60, (m) => warnings.push(m))
+    expect(p.room).toBe(1)
+    expect(warnings.length).toBe(1)
+    expect(warnings[0]).toContain('room')
+    expect(warnings[0]).toContain('233')
+    expect(warnings[0]).toContain('clamped to 1')
+  })
+
+  it('still clamps when no warnFn supplied (backwards compat, no throw)', () => {
+    const p = normalizeFxParams('gverb', { room: 233 }, 60)
+    expect(p.room).toBe(1)
+  })
 })
 
 // ---------------------------------------------------------------------------

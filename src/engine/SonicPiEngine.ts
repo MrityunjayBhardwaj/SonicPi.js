@@ -114,6 +114,9 @@ export class SonicPiEngine {
     if (this.initialized) return
 
     this.bridge = new SuperSonicBridge(this.bridgeOptions)
+    // Forward clamp/validation warnings from SoundLayer (for samples) to the
+    // UI log. Handles the case where setPrintHandler was called before init.
+    if (this.printHandler) this.bridge.warnHandler = this.printHandler
 
     // Initialize SuperSonic and tree-sitter in parallel
     const bridgeInit = this.bridge.init()
@@ -385,7 +388,10 @@ export class SonicPiEngine {
               for (const fx of fxChain) {
                 const bus = this.bridge.allocateBus()
                 const groupId = this.bridge.createFxGroup()
-                const fxOpts = normalizeFxParams(fx.name, fx.opts, task.bpm)
+                const fxWarn = this.printHandler
+                  ? (m: string) => this.printHandler!(`[Warning] with_fx :${fx.name} — ${m}`)
+                  : undefined
+                const fxOpts = normalizeFxParams(fx.name, fx.opts, task.bpm, fxWarn)
                 await this.bridge.applyFx(fx.name, audioTime, fxOpts, bus, currentOutBus)
                 this.bridge.flushMessages()
                 buses.push(bus)
@@ -911,6 +917,9 @@ export class SonicPiEngine {
   /** Register a handler for `puts` / `print` output from user code. */
   setPrintHandler(handler: (msg: string) => void): void {
     this.printHandler = handler
+    // Forward to the bridge so SoundLayer clamp warnings for samples surface
+    // through the same UI channel as play/FX warnings (SV19 — accept with signal).
+    if (this.bridge) this.bridge.warnHandler = handler
   }
 
   /** Register a handler for cue events (for the CueLog panel). */

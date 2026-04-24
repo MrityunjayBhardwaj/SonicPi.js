@@ -132,6 +132,9 @@ export class SuperSonicBridge {
   private analyserL: AnalyserNode | null = null
   private analyserR: AnalyserNode | null = null
   private options: SuperSonicBridgeOptions
+  /** Optional warning sink — set by SonicPiEngine so SoundLayer clamp
+   *  messages for samples reach the UI log (SV19 — accept with signal). */
+  warnHandler: ((msg: string) => void) | null = null
   /** rand_buf — buffer of random values for slicer/wobble/panslicer FX.
    *  Desktop SP loads rand-stream.wav (studio.rb:87). We generate in-memory. */
   private randBufId: number = -1
@@ -556,7 +559,10 @@ export class SuperSonicBridge {
     const nodeId = this.sonic!.nextNodeId()
     const duration = this.sampleDurations.get(sampleName) ?? null
     const translated = translateSampleOpts(opts, bpm ?? 60, duration)
-    const params = normalizeSampleParams(translated, bpm ?? 60)
+    const sampleWarn = this.warnHandler
+      ? (m: string) => this.warnHandler!(`[Warning] sample :${sampleName} — ${m}`)
+      : undefined
+    const params = normalizeSampleParams(translated, bpm ?? 60, sampleWarn)
 
     const paramList: (string | number)[] = ['buf', bufNum]
     for (const key in params) {

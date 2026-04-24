@@ -96,7 +96,10 @@ export async function runProgram(
           // Mutate step.opts directly — normalizePlayParams copies internally.
           // Avoids 3 object spreads per event that cause GC pressure (#75).
           step.opts.note = step.note
-          const params = normalizePlayParams(synth, step.opts, currentBpm)
+          const playWarn = ctx.printHandler
+            ? (m: string) => ctx.printHandler!(`[Warning] play :${synth} — ${m}`)
+            : undefined
+          const params = normalizePlayParams(synth, step.opts, currentBpm, playWarn)
           params.out_bus = task.outBus
           ctx.bridge.triggerSynth(synth, audioTime, params)
             .then(realNodeId => ctx.nodeRefMap.set(nodeRef, realNodeId))
@@ -177,7 +180,10 @@ export async function runProgram(
         const realNodeId = ctx.nodeRefMap.get(step.nodeRef)
         if (realNodeId && ctx.bridge) {
           const audioTime = task.virtualTime + ctx.schedAheadTime
-          const normalized = normalizeControlParams(step.params, currentBpm)
+          const ctlWarn = ctx.printHandler
+            ? (m: string) => ctx.printHandler!(`[Warning] control — ${m}`)
+            : undefined
+          const normalized = normalizeControlParams(step.params, currentBpm, ctlWarn)
           const paramList: (string | number)[] = []
           for (const [k, v] of Object.entries(normalized)) {
             paramList.push(k, v)
@@ -258,7 +264,10 @@ export async function runProgram(
           let fxNodeId: number | undefined
           try {
             const audioTime = task.virtualTime + ctx.schedAheadTime
-            const fxOpts = normalizeFxParams(step.name, step.opts, currentBpm)
+            const fxWarn = ctx.printHandler
+              ? (m: string) => ctx.printHandler!(`[Warning] with_fx :${step.name} — ${m}`)
+              : undefined
+            const fxOpts = normalizeFxParams(step.name, step.opts, currentBpm, fxWarn)
             fxNodeId = await ctx.bridge.applyFx(step.name, audioTime, fxOpts, newBus, prevOutBus)
             if (step.nodeRef && fxNodeId !== undefined) {
               ctx.nodeRefMap.set(step.nodeRef, fxNodeId)
