@@ -89,7 +89,7 @@ export class Toolbar {
     this.playBtn = this.iconButton(
       '\u25B6', 'Run',
       () => this.callbacks.onPlay(),
-      { bg: theme.success, hover: theme.green }
+      { bg: '#FF1493', hover: '#FF47A8' }
     )
     this.playBtn.title = 'Run (Ctrl+Enter)'
     topRow.appendChild(this.playBtn)
@@ -108,10 +108,9 @@ export class Toolbar {
     this.recBtn = this.iconButton(
       '\u23FA', 'Rec',
       () => this.callbacks.onRecord(),
-      { bg: theme.comment, hover: theme.fgMuted }
+      { bg: '#4c83ff', hover: '#6b9bff' }
     )
     this.recBtn.title = 'Record to WAV'
-    this.recBtn.style.opacity = '0.4'
     topRow.appendChild(this.recBtn)
 
     topRow.appendChild(this.separator())
@@ -286,33 +285,6 @@ export class Toolbar {
     zenBtn.addEventListener('click', () => this.callbacks.onZen?.())
     topRow.appendChild(zenBtn)
 
-    const githubBtn = document.createElement('a')
-    githubBtn.href = 'https://github.com/MrityunjayBhardwaj/SonicPi.js'
-    githubBtn.target = '_blank'
-    githubBtn.rel = 'noopener noreferrer'
-    githubBtn.title = 'View source on GitHub'
-    githubBtn.setAttribute('aria-label', 'View source on GitHub')
-    githubBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>'
-    githubBtn.style.cssText = `
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 1.9rem; height: 1.8rem;
-      border: none; border-radius: 3px;
-      background: ${theme.border}; color: ${theme.fgMuted};
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-      margin-left: 0.3rem;
-      text-decoration: none;
-    `
-    githubBtn.addEventListener('mouseenter', () => {
-      githubBtn.style.background = theme.borderHover
-      githubBtn.style.color = theme.fg
-    })
-    githubBtn.addEventListener('mouseleave', () => {
-      githubBtn.style.background = theme.border
-      githubBtn.style.color = theme.fgMuted
-    })
-    topRow.appendChild(githubBtn)
-
     // Bottom row: buffer tabs
     this.bufRow = this.createRow()
     const bufRow = this.bufRow
@@ -359,7 +331,7 @@ export class Toolbar {
 
   setPlaying(playing: boolean): void {
     this.playing = playing
-    this.playBtn.style.background = playing ? theme.info : theme.success
+    this.playBtn.style.background = '#FF1493'
     const label = this.playBtn.querySelector('.spw-btn-label') as HTMLElement
     if (label) label.textContent = playing ? 'Update' : 'Run'
     this.stopBtn.style.opacity = playing ? '1' : '0.4'
@@ -383,8 +355,9 @@ export class Toolbar {
 
   setRecording(recording: boolean): void {
     this.recording = recording
-    this.recBtn.style.opacity = recording ? '1' : '0.4'
-    this.recBtn.style.background = recording ? theme.error : theme.comment
+    // Recording-state uses pure red (Desktop SP dt_warning convention)
+    // so it reads unambiguously as "recording" rather than salmon/orange.
+    this.recBtn.style.background = recording ? '#FF0000' : '#4c83ff'
     const label = this.recBtn.querySelector('.spw-btn-label') as HTMLElement
     if (label) label.textContent = recording ? 'Save' : 'Rec'
   }

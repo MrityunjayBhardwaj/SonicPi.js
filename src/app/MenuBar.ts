@@ -60,7 +60,6 @@ export class MenuBar {
   readonly sampleUploader: SampleUploader
   private prefsCallbacks: PrefsCallbacks
   private getReportData: (() => { code: string; engineState: string }) | null
-  private versionFlashTimer: ReturnType<typeof setTimeout> | null = null
   private outsideClickHandler: ((e: MouseEvent) => void) | null = null
 
   constructor(
@@ -114,59 +113,39 @@ export class MenuBar {
     this.addMenu('Samples', () => this.buildSamplesMenu())
     this.addMenu('Prefs', () => this.buildPrefsMenu())
 
-    // Spacer pushes version label + Report Bug to the right
+    // Spacer pushes GitHub + Report Bug to the right
     const spacer = document.createElement('div')
     spacer.style.flex = '1'
     this.container.appendChild(spacer)
 
-    // Version label — distribution-boundary observation (dharana §10).
-    // Shows which build is running so bug reports can be triaged to a
-    // specific version. Click to copy the full version string to clipboard.
-    const versionLabel = document.createElement('button')
-    versionLabel.type = 'button'
-    const VERSION_LABEL_DEFAULT = `v${APP_VERSION}`
-    const VERSION_LABEL_FULL = `SonicPi.js v${APP_VERSION}`
-    versionLabel.textContent = VERSION_LABEL_DEFAULT
-    // Keep title (hover tooltip) and aria-label (screen reader) identical
-    // so sighted and assistive-tech users get the same information.
-    versionLabel.title = `${VERSION_LABEL_FULL} — click to copy`
-    versionLabel.setAttribute('aria-label', `${VERSION_LABEL_FULL} — click to copy`)
-    versionLabel.style.cssText = `
-      background: none; border: none;
-      color: ${theme.fgMuted}; font-family: inherit; font-size: 0.65rem;
-      padding: 0 0.6rem; cursor: pointer;
-      letter-spacing: 0.3px; align-self: center;
-      transition: color 0.15s;
+    // GitHub source link — takes the slot the version label used to occupy
+    const githubBtn = document.createElement('a')
+    githubBtn.href = 'https://github.com/MrityunjayBhardwaj/SonicPi.js'
+    githubBtn.target = '_blank'
+    githubBtn.rel = 'noopener noreferrer'
+    githubBtn.title = 'View source on GitHub'
+    githubBtn.setAttribute('aria-label', 'View source on GitHub')
+    githubBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>'
+    githubBtn.style.cssText = `
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px;
+      color: ${theme.fgMuted};
+      text-decoration: none;
+      border-radius: 4px;
+      margin-right: 0.5rem;
+      align-self: center;
+      transition: color 0.15s, background 0.15s;
+      background: transparent;
     `
-    versionLabel.addEventListener('mouseenter', () => {
-      versionLabel.style.color = theme.fg
+    githubBtn.addEventListener('mouseenter', () => {
+      githubBtn.style.color = theme.fg
+      githubBtn.style.background = theme.border
     })
-    versionLabel.addEventListener('mouseleave', () => {
-      versionLabel.style.color = theme.fgMuted
+    githubBtn.addEventListener('mouseleave', () => {
+      githubBtn.style.color = theme.fgMuted
+      githubBtn.style.background = 'transparent'
     })
-    const flashVersionLabel = (msg: string): void => {
-      // Clear any pending flash-reset so rapid clicks don't stomp each
-      // other, and so dispose() can cleanly cancel a pending reset.
-      if (this.versionFlashTimer !== null) {
-        clearTimeout(this.versionFlashTimer)
-      }
-      versionLabel.textContent = msg
-      this.versionFlashTimer = setTimeout(() => {
-        versionLabel.textContent = VERSION_LABEL_DEFAULT
-        this.versionFlashTimer = null
-      }, 1200)
-    }
-    versionLabel.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(VERSION_LABEL_FULL)
-        flashVersionLabel('copied!')
-      } catch {
-        // Clipboard API can fail in insecure contexts (non-HTTPS, permission
-        // denied). Give the user visible feedback instead of failing silently.
-        flashVersionLabel('copy failed')
-      }
-    })
-    this.container.appendChild(versionLabel)
+    this.container.appendChild(githubBtn)
 
     // Report Bug button
     const bugBtn = document.createElement('button')
@@ -785,10 +764,6 @@ export class MenuBar {
 
   dispose(): void {
     this.closeDropdown()
-    if (this.versionFlashTimer !== null) {
-      clearTimeout(this.versionFlashTimer)
-      this.versionFlashTimer = null
-    }
     if (this.outsideClickHandler !== null) {
       document.removeEventListener('click', this.outsideClickHandler)
       this.outsideClickHandler = null

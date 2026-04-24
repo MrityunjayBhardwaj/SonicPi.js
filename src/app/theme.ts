@@ -27,12 +27,12 @@ export const theme = {
   borderHover: 'rgba(192,202,245,0.16)',
   borderStrong:'rgba(192,202,245,0.24)',
 
-  // Accent (brand) — purple, Tokyo Night's signature
-  accent:       '#bb9af7',
-  accentMuted:  'rgba(187,154,247,0.15)',
-  accentHover:  'rgba(187,154,247,0.4)',
-  accentDrag:   'rgba(187,154,247,0.6)',
-  accentFaint:  'rgba(187,154,247,0.08)',
+  // Accent (brand) — Desktop Sonic Pi deeppink (sonicpitheme.cpp dt_pink)
+  accent:       '#FF1493',
+  accentMuted:  'rgba(255,20,147,0.15)',
+  accentHover:  'rgba(255,20,147,0.4)',
+  accentDrag:   'rgba(255,20,147,0.6)',
+  accentFaint:  'rgba(255,20,147,0.08)',
 
   // Semantic colors
   blue:   '#7aa2f7',

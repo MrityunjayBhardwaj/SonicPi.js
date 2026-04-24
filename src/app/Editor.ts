@@ -6,6 +6,7 @@
 import { HELP_DB } from './helpData'
 import { KNOWN_SYNTHS, KNOWN_SAMPLES, KNOWN_FX } from '../engine/FriendlyErrors'
 import { SYNTH_PARAMS, FX_PARAMS } from '../engine/SynthParams'
+import { theme } from './theme'
 
 // Minimal types for the CodeMirror API surface we use
 interface EditorState {
@@ -228,7 +229,7 @@ export class Editor {
     this.container = container
     this.container.style.cssText = `
       height: 100%; overflow: hidden;
-      background: #111921;
+      background: ${theme.bgDarker};
     `
     // Load saved font size
     try {
@@ -514,20 +515,20 @@ export class Editor {
 
     // Dark theme
     try {
-      // Desktop Sonic Pi dark-theme chrome: Base=#1e1e1e, Margin bg=#000
-      // MarginForeground=#5e5e5e, Caret=deeppink, Selection=deeppink,
-      // CaretLineBackground=#0d0d0d. Matched from sonicpitheme.cpp L453-591.
-      const theme = cm.EditorView.theme({
-        '&': { height: '100%', fontSize: `${this.currentFontSize}px`, background: '#1e1e1e' },
+      // Desktop Sonic Pi dark-theme syntax colors from sonicpitheme.cpp,
+      // but container bg unified with Console/CueLog (theme.bgDarker)
+      // so the editor and logs read as one continuous dark-blue surface.
+      const editorTheme = cm.EditorView.theme({
+        '&': { height: '100%', fontSize: `${this.currentFontSize}px`, background: theme.bgDarker },
         '.cm-scroller': {
           fontFamily: "'Fira Code', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace",
           lineHeight: '1.65',
         },
         '.cm-content': { color: '#FFFFFF', caretColor: '#FF1493', padding: '0.5rem 0' },
-        '.cm-gutters': { background: '#000000', color: '#5e5e5e', border: 'none', paddingRight: '8px', minWidth: '3.5em' },
+        '.cm-gutters': { background: theme.bgDarker, color: '#5e5e5e', border: 'none', paddingRight: '8px', minWidth: '3.5em' },
         '.cm-lineNumbers .cm-gutterElement': { minWidth: '3em', textAlign: 'right', paddingRight: '8px' },
-        '.cm-activeLineGutter': { background: '#0d0d0d', color: '#ededed' },
-        '.cm-activeLine': { background: '#0d0d0d' },
+        '.cm-activeLineGutter': { background: theme.bgHighlight, color: '#ededed' },
+        '.cm-activeLine': { background: theme.bgHighlight },
         '&.cm-focused .cm-cursor': { borderLeftColor: '#FF1493', borderLeftWidth: '2px' },
         '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
           background: 'rgba(255,20,147,0.35) !important',
@@ -573,7 +574,7 @@ export class Editor {
           color: '#ededed',
         },
       } as Record<string, unknown>)
-      if (theme) extensions.push(theme)
+      if (editorTheme) extensions.push(editorTheme)
     } catch { /* theme failed — use default */ }
 
     // Keybindings

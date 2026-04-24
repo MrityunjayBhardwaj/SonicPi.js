@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Sonic Pi Web</title>
   <meta name="description" content="Live coding music synth in your browser. Based on Sonic Pi by Sam Aaron.">
-  <meta name="theme-color" content="#0d1117">
+  <meta name="theme-color" content="#16161e">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preconnect" href="https://esm.sh">
   <!-- Privacy-friendly analytics by Plausible -->
@@ -15,30 +15,33 @@
     plausible.init()
   </script>
   <style>
+    /* Critical colors — must match src/app/theme.ts (Tokyo Night) so the
+       paint before JS boots does not flash the old palette. If you update
+       theme.ts, mirror the values here. */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       height: 100%;
       overflow: hidden;
-      background: #0d1117;
+      background: #16161e; /* theme.bgDark */
     }
     body {
       font-family: 'Fira Code', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
-      color: #CDD3DE;
+      color: #c0caf5; /* theme.fg */
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
     /* Scrollbar styling */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #555; }
-    /* Selection */
-    ::selection { background: rgba(232, 82, 124, 0.3); }
+    ::-webkit-scrollbar-thumb { background: #292e42; border-radius: 3px; } /* theme.bgHighlight */
+    ::-webkit-scrollbar-thumb:hover { background: #414868; } /* theme.fgFaint */
+    /* Selection — deeppink (Desktop SP dt_pink, theme.accent) */
+    ::selection { background: rgba(255, 20, 147, 0.35); }
     /* Disable outline on focus for buttons */
     button:focus { outline: none; }
-    button:focus-visible { outline: 2px solid #E8527C; outline-offset: 1px; }
+    button:focus-visible { outline: 2px solid #FF1493; outline-offset: 1px; } /* theme.accent */
     select:focus { outline: none; }
-    select:focus-visible { outline: 2px solid #E8527C; outline-offset: 1px; }
+    select:focus-visible { outline: 2px solid #FF1493; outline-offset: 1px; } /* theme.accent */
     /* Loading state */
     #app {
       opacity: 0;
