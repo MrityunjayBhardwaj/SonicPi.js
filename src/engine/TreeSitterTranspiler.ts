@@ -1431,6 +1431,13 @@ const STRUCTURAL_WRAPPERS: Set<string> = new Set([
   // Pattern inside `case/when` — wraps a single value (literal, range, class,
   // etc.) that `case` already compares against. Passes through to the child.
   'pattern',
+  // `do` keyword block inside for/until/while constructs that already have
+  // explicit handlers — the grammar wraps the body in a `do` node.
+  'do',
+  // `in` keyword inside `for x in arr` — the `for` handler at case 'for'
+  // already pulls the iterator from namedChildren, so `in` here is just
+  // the keyword token with no semantic payload.
+  'in',
 ])
 
 // ---------------------------------------------------------------------------
