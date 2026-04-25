@@ -137,6 +137,47 @@ live_loop("drums", (b) => {
     engine.dispose()
   })
 
+  // Issue #198 — nested live_loop must register on first occurrence only
+  // and emit a one-time warning. Pre-fix, every outer iteration re-registered
+  // :inner, leaking monitor synths and resetting tick state every outer tick.
+  it('nested live_loop registers once across outer iterations + warns once', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+
+    const messages: string[] = []
+    engine.setPrintHandler((m) => messages.push(m))
+
+    await engine.evaluate(`
+      live_loop :outer do
+        live_loop :inner do
+          play 60
+          sleep 1
+        end
+        sleep 4
+      end
+    `)
+    engine.play()
+
+    type Sched = { tick: (t: number) => void; getTask: (n: string) => unknown }
+    const scheduler = (engine as unknown as { scheduler: Sched }).scheduler
+    // Run multiple outer iterations to force the nested registration call to
+    // be re-encountered. Pre-fix this caused 3+ inner registrations.
+    for (let i = 0; i < 3; i++) {
+      scheduler.tick(20)
+      await new Promise((r) => setTimeout(r, 5))
+    }
+
+    const innerWarnings = messages.filter(
+      (m) => m.includes('inner') && m.includes('inside another live_loop'),
+    )
+    expect(innerWarnings.length).toBe(1)
+    // Both loops are running.
+    expect(scheduler.getTask('outer')).toBeDefined()
+    expect(scheduler.getTask('inner')).toBeDefined()
+
+    engine.dispose()
+  })
+
   it('eventStream receives events during playback', async () => {
     const engine = new SonicPiEngine()
     await engine.init()

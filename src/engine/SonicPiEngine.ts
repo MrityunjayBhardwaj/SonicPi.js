@@ -70,6 +70,16 @@ export class SonicPiEngine {
   private loopTicks = new Map<string, Map<string, number>>()
   /** Tracks which loops have completed their initial sync — persists across hot-swaps. */
   private loopSynced = new Set<string>()
+  /**
+   * Build-phase nesting depth (issue #198). Incremented around each
+   * synchronous builderFn invocation. > 0 means we are currently
+   * building one live_loop's iteration step array; any `live_loop`
+   * call that fires now is a NESTED registration and gets sibling-once
+   * semantics rather than re-binding on every outer tick.
+   */
+  private buildNestingDepth = 0
+  /** Names that already received the "nested live_loop" warning so we don't spam. */
+  private nestedWarned = new Set<string>()
   /** Persistent top-level FX state — keyed by scope ID, shared across loops in same with_fx. */
   private persistentFx = new Map<string, { buses: number[]; groups: number[]; outBus: number }>()
   /** Maps loop name → FX scope ID (loops under same with_fx share a scope). */
@@ -337,6 +347,37 @@ export class SonicPiEngine {
           syncTarget = (builderFnOrOpts.sync as string) ?? null
           builderFn = maybeFn!
         }
+
+        // Nested live_loop semantics (issue #198): if this call fires while
+        // another live_loop's builderFn is mid-execution (buildNestingDepth > 0),
+        // treat it as a SIBLING top-level registration with first-occurrence-wins
+        // semantics. Without this guard the inner registration would re-fire on
+        // every outer iteration — re-binding the inner's tick state, sync state,
+        // and seeded RNG every outer tick, and (worse) leaking a per-loop monitor
+        // synth + bus on each rebinding.
+        //
+        // Re-evaluate (Run on already-playing code) bypasses this branch via
+        // `isReEvaluate` below so hot-swap still refreshes inner closures.
+        const isNested = this.buildNestingDepth > 0 && !isReEvaluate
+        if (isNested) {
+          const existing = scheduler.getTask(name)
+          if (existing && existing.running) {
+            // Already registered on a previous outer iteration — sibling-once.
+            // No-op for registration; the inner keeps running its existing closure.
+            return
+          }
+          if (!this.nestedWarned.has(name)) {
+            this.nestedWarned.add(name)
+            const msg =
+              `[Warning] live_loop :${name} is declared inside another live_loop. ` +
+              `It will be registered as a sibling top-level loop on FIRST occurrence only. ` +
+              `Any guards (if/unless/one_in/...) wrapping it are evaluated at first occurrence; ` +
+              `subsequent toggles do not register or unregister it.`
+            if (this.printHandler) this.printHandler(msg)
+            else console.warn('[SonicPi]', msg)
+          }
+          // Fall through to register the inner this first time.
+        }
         // Per-loop audio isolation: create a monitor synth that reads this
         // loop's private loopBus and fans out to bus 0 (mixer) + trackBus
         // (per-track AnalyserNode for scope visualization). Synths in this
@@ -419,11 +460,17 @@ export class SonicPiEngine {
           if (task.currentSynth && task.currentSynth !== 'beep') {
             builder.use_synth(task.currentSynth)
           }
-          // Enter per-loop scope so variable writes are isolated
+          // Enter per-loop scope so variable writes are isolated.
+          // Track build-phase nesting depth so any `live_loop` call that
+          // fires synchronously inside builderFn is detected as nested
+          // (issue #198). The scheduler runs builderFn calls sequentially,
+          // so an instance-level counter is safe.
           scopeHandle?.enterScope(name)
+          this.buildNestingDepth++
           try {
             builderFn(builder)
           } finally {
+            this.buildNestingDepth--
             scopeHandle?.exitScope()
           }
           // Persist tick state so ring.tick() / tick() advance across iterations
@@ -894,6 +941,11 @@ export class SonicPiEngine {
     this.reusableFx.clear()
     this.loopFxScope.clear()
     this.fxScopeChains.clear()
+    // Nested live_loop bookkeeping (issue #198). Defensive reset of depth
+    // counter — should be 0 already, but stop() may be called mid-build
+    // on error paths.
+    this.buildNestingDepth = 0
+    this.nestedWarned.clear()
   }
 
   dispose(): void {
