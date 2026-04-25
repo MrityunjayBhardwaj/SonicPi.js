@@ -27,39 +27,14 @@
  */
 import { describe, it, expect } from 'vitest'
 import { ProgramBuilder } from '../ProgramBuilder'
+import { DSL_NAMES } from '../DslNames'
 
-// Names from src/engine/SonicPiEngine.ts dslNames (around line 720).
-// Keep in sync when adding/removing DSL entries.
-const ALL_DSL_NAMES = [
-  '__b',
-  'live_loop', 'with_fx', 'use_bpm', 'use_synth', 'use_random_seed',
-  'use_arg_bpm_scaling', 'with_arg_bpm_scaling',
-  'in_thread', 'at', 'density',
-  'ring', 'knit', 'range', 'line', 'spread',
-  'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in', 'rdist',
-  'chord', 'scale', 'chord_invert', 'note', 'note_range',
-  'chord_degree', 'degree', 'chord_names', 'scale_names',
-  'noteToMidi', 'midiToFreq', 'noteToFreq',
-  'hz_to_midi', 'midi_to_hz',
-  'quantise', 'quantize', 'octs',
-  'current_bpm',
-  'puts', 'print', 'stop', 'stop_loop',
-  'set_volume', 'current_synth', 'current_volume',
-  'synth_names', 'fx_names', 'all_sample_names',
-  'load_sample', 'sample_info',
-  'get', 'set',
-  'sample_names', 'sample_groups', 'sample_loaded', 'sample_duration',
-  'get_cc', 'get_pitch_bend', 'get_note_on', 'get_note_off',
-  'midi', 'midi_note_on', 'midi_note_off', 'midi_cc',
-  'midi_pitch_bend', 'midi_channel_pressure', 'midi_poly_pressure',
-  'midi_prog_change', 'midi_clock_tick',
-  'midi_start', 'midi_stop', 'midi_continue',
-  'midi_all_notes_off', 'midi_notes_off', 'midi_devices',
-  'use_osc', 'osc', 'osc_send',
-  'use_sample_bpm',
-  'use_debug',
-  'use_real_time',
-]
+// Single source of truth — same array the engine registers in the Sandbox
+// proxy. Pre-G6 (#204) this list was a hand-maintained mirror; the test's
+// drift protection was a vibe-check (`length > 70`). Now drift is impossible:
+// adding a name in SonicPiEngine's dslNames means it shows up here too,
+// because both read DSL_NAMES from src/engine/DslNames.ts.
+const ALL_DSL_NAMES = DSL_NAMES
 
 /**
  * Names that are INTENTIONALLY immediate (not deferred). Must carry a
@@ -169,11 +144,16 @@ describe('DSL builder contract (issue #193)', () => {
     expect(gaps).toEqual([])
   })
 
-  it('ALL_DSL_NAMES stays in lockstep with SonicPiEngine dslNames — manual sync check', () => {
-    // Lightweight drift protection. If dslNames grows, this test's ALL_DSL_NAMES
-    // list must be updated. The real guard is above — this is a reminder that
-    // the list must match.
-    expect(ALL_DSL_NAMES.length).toBeGreaterThan(70)
+  it('every name in the allow-list also appears in DSL_NAMES (no orphan justifications)', () => {
+    // If the allow-list grows stale (e.g. a name is removed from DSL_NAMES
+    // but its justification stays here), the orphan would never be checked.
+    // Catch that explicitly so the allow-list stays a contract, not a wishlist.
+    const dslSet = new Set<string>(ALL_DSL_NAMES)
+    const orphans: string[] = []
+    for (const name of PURE_OR_INTENTIONAL_BUILD_TIME.keys()) {
+      if (!dslSet.has(name)) orphans.push(name)
+    }
+    expect(orphans).toEqual([])
   })
 
   it('deferred-step methods push steps in declaration order (regression for stop_loop bug)', () => {

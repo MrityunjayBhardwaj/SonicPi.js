@@ -4,6 +4,7 @@ import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioI
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
 import { normalizeFxParams } from './SoundLayer'
+import { DSL_NAMES } from './DslNames'
 import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbox'
 import { autoTranspileDetailed } from './TreeSitterTranspiler'
 import { initTreeSitter } from './TreeSitterTranspiler'
@@ -765,47 +766,15 @@ export class SonicPiEngine {
       const tlRdist = (max: number, centre?: number) => topLevelBuilder.rdist(max, centre ?? 0)
 
       // Build DSL parameter names and values for the executor
-      const dslNames = [
-        '__b',
-        'live_loop', 'with_fx', 'use_bpm', 'use_synth', 'use_random_seed',
-        'use_arg_bpm_scaling', 'with_arg_bpm_scaling',
-        'in_thread', 'at', 'density',
-        'ring', 'knit', 'range', 'line', 'spread',
-        'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in', 'rdist',
-        'chord', 'scale', 'chord_invert', 'note', 'note_range',
-        'chord_degree', 'degree', 'chord_names', 'scale_names',
-        'noteToMidi', 'midiToFreq', 'noteToFreq',
-        'hz_to_midi', 'midi_to_hz',
-        'quantise', 'quantize', 'octs',
-        'current_bpm',
-        'puts', 'print', 'stop', 'stop_loop',
-        // Volume & introspection
-        'set_volume', 'current_synth', 'current_volume',
-        // Catalog queries
-        'synth_names', 'fx_names', 'all_sample_names',
-        // Sample management
-        'load_sample', 'sample_info',
-        // Global store
-        'get', 'set',
-        // Sample catalog
-        'sample_names', 'sample_groups', 'sample_loaded', 'sample_duration',
-        // MIDI input
-        'get_cc', 'get_pitch_bend', 'get_note_on', 'get_note_off',
-        // MIDI output
-        'midi', 'midi_note_on', 'midi_note_off', 'midi_cc',
-        'midi_pitch_bend', 'midi_channel_pressure', 'midi_poly_pressure',
-        'midi_prog_change', 'midi_clock_tick',
-        'midi_start', 'midi_stop', 'midi_continue',
-        'midi_all_notes_off', 'midi_notes_off', 'midi_devices',
-        // OSC
-        'use_osc', 'osc', 'osc_send',
-        // Sample BPM
-        'use_sample_bpm',
-        // Debug (no-op in browser — silences log output in Desktop SP)
-        'use_debug',
-        // Latency — set schedule-ahead to 0 for responsive MIDI input (#149)
-        'use_real_time',
-      ]
+      // Single source of truth — see src/engine/DslNames.ts. Both this
+      // runtime registration AND the contract test at
+      // __tests__/DslBuilderContract.test.ts read the same array, so adding
+      // a new DSL function in one place is automatically visible to the
+      // other (issue #204 — closes the SP37 trap that hid 17 latent gaps).
+      // Spread to a mutable array because createIsolatedExecutor's signature
+      // takes string[]. The const-assertion stays on DSL_NAMES so the test's
+      // type narrowing remains useful.
+      const dslNames: string[] = [...DSL_NAMES]
       const dslValues = [
         topLevelBuilder,
         fxAwareWrappedLiveLoop, topLevelWithFx, topLevelUseBpm, topLevelUseSynth, topLevelUseRandomSeed,
