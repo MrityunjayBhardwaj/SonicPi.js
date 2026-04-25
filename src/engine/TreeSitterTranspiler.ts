@@ -165,6 +165,7 @@ export function treeSitterTranspile(ruby: string): TreeSitterTranspileResult {
     insideLoop: false,
     definedFunctions: new Set(),
     indent: '',
+    inthreadLoopCounter: { n: 0 },
   }
 
   const js = transpileNode(tree.rootNode, ctx)
@@ -197,6 +198,8 @@ interface TranspileContext {
   indent: string
   /** Current node's source line (1-based) for _srcLine injection */
   srcLine?: number
+  /** Hoisted-loop counter for `loop do` inside `in_thread` (issue #205). */
+  inthreadLoopCounter?: { n: number }
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +245,14 @@ const BUILDER_METHODS = new Set([
   'osc_send',
   // Sample BPM
   'use_sample_bpm',
+  // Deferred-step DSL contract (issue #193 — must mirror methods on
+  // ProgramBuilder so they fire at scheduled virtual time, not build time).
+  'stop_loop', 'set_volume', 'use_osc', 'osc',
+  'midi', 'midi_note_on', 'midi_note_off', 'midi_cc',
+  'midi_pitch_bend', 'midi_channel_pressure', 'midi_poly_pressure',
+  'midi_prog_change', 'midi_clock_tick',
+  'midi_start', 'midi_stop', 'midi_continue',
+  'midi_all_notes_off', 'midi_notes_off',
   // Budget
   '__checkBudget__',
 ])
@@ -593,7 +604,14 @@ function transpileNode(node: any, ctx: TranspileContext): string {
     }
 
     case 'scope_resolution':
-      return node.text
+      return transpileScopeResolution(node, ctx)
+
+    // Ruby splat `*expr` → JS spread `...expr` (works in array literals
+    // and call arguments — same surface as Ruby's common usage).
+    case 'splat_argument': {
+      const child = node.namedChildren[0]
+      return child ? `...${transpileNode(child, ctx)}` : '...'
+    }
 
     // ---- Blocks ----
     case 'do_block':
@@ -769,21 +787,24 @@ function transpileNode(node: any, ctx: TranspileContext): string {
       return `/* PARSE ERROR: ${node.text.slice(0, 30)} */`
     }
 
-    // ---- Structural wrapper nodes — recurse into children ----
-    // These are CST nodes that exist for grouping but carry no semantic
-    // content for transpilation (e.g., `then`, `body_statement` variants).
-    // A partial fold over named nodes — handle semantically meaningful
-    // types explicitly above, recurse through structural wrappers here.
+    // ---- Default: structural wrapper OR unsupported feature ----
+    // Only nodes in STRUCTURAL_WRAPPERS silently pass through. Everything
+    // else flags via pushUnsupported so the user gets a report link instead
+    // of a cryptic JS parser error downstream. This closes the silent-leak
+    // path where an unknown node with namedChildren would recurse and emit
+    // malformed JS (e.g., `Math::PI` → `Math::PI` → "Unexpected token ':'").
     default: {
-      if (node.namedChildCount > 0) {
-        return transpileChildren(node, ctx)
+      if (STRUCTURAL_WRAPPERS.has(node.type)) {
+        return node.namedChildCount > 0 ? transpileChildren(node, ctx) : node.text
       }
-      // Leaf node we don't recognize — likely raw Ruby leaking through.
-      // Don't silently emit it as JS; flag it so the caller can fall back.
-      if (node.type !== 'empty_statement' && node.text.trim()) {
-        ctx.errors.push(`Unhandled node type '${node.type}' at line ${node.startPosition.row + 1}: ${node.text.slice(0, 40)}`)
+      if (node.text.trim()) {
+        pushUnsupported(
+          ctx, node,
+          node.type,
+          `Ruby construct \`${node.type}\` isn't supported yet`,
+        )
       }
-      return node.text
+      return 'undefined'
     }
   }
 }
@@ -797,10 +818,14 @@ function transpileNode(node: any, ctx: TranspileContext): string {
 // This list replaces the regex detection in the old `wrapBareCode` preprocessor (#125).
 const BARE_DSL_CALLS = new Set([
   'play', 'sleep', 'sample', 'cue', 'sync',
-  'puts', 'print', 'control', 'synth', 'loop',
+  'puts', 'print', 'control', 'synth',
   'play_chord', 'play_pattern', 'play_pattern_timed',
   'use_synth_defaults', 'use_sample_defaults', 'use_transpose',
 ])
+// Top-level `loop do … end` is NOT bare code — it is its own scheduler-owned
+// live_loop (auto-named below). Wrapping it in `__run_once` would trap the
+// run_once iteration inside `while(true)` and the loop would never yield
+// (SV16 — bare code runs once, not forever). Detected via `hasBareLoop` below.
 // Settings that are safe to hoist above the bare-code wrapper — they are typically
 // set once and not interleaved with plays. `use_synth` is deliberately NOT here:
 // it is flow-sensitive (users change it between plays), so hoisting it would
@@ -830,8 +855,18 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     const text = c.text ?? ''
     return !/live_loop/.test(text)
   })
+  // Top-level `loop do … end` triggers the split so it can be hoisted to a
+  // named live_loop. Without this flag, a program that contains only
+  // `loop do … end` would bypass the split and emit bare `while(true)` at
+  // the program root — no scheduler, no sleep yielding, browser hang (#190).
+  const hasBareLoop = children.some((c: any) => {
+    if (c.type !== 'call' && c.type !== 'method_call') return false
+    const method = c.childForFieldName('method')?.text ?? c.namedChildren[0]?.text
+    if (method !== 'loop') return false
+    return c.namedChildren.some((x: any) => x.type === 'do_block' || x.type === 'block')
+  })
 
-  if (!hasBareCode && !hasBareFx) {
+  if (!hasBareCode && !hasBareFx && !hasBareLoop) {
     // No wrapping needed — transpile all children normally
     return transpileChildren(node, ctx)
   }
@@ -853,13 +888,19 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     // Bare with_fx (no live_loop inside) should be treated as bare code, not a block
     const isBareFxNode = method === 'with_fx' && !/live_loop/.test(child.text ?? '')
 
+    // Bare top-level `loop do … end` — route to blocks and emit below as a
+    // dedicated auto-named live_loop (SV16 — do not let the loop become
+    // bare while(true) inside the __run_once wrapper).
+    const isBareLoopNode = method === 'loop' &&
+      child.namedChildren.some((c: any) => c.type === 'do_block' || c.type === 'block')
+
     if (method && TOP_LEVEL_SETTINGS.has(method)) {
       topLevel.push(child)
     // `comment` and `uncomment` are control-flow (like if-true/if-false), NOT
     // structural blocks. They stay in bareCode so their content gets the __b.
     // prefix when wrapped. Separating them would produce bare `play()` at top level.
     } else if (method && !isBareFxNode && (method === 'live_loop' || method === 'define' || method === 'with_fx' ||
-                          method === 'in_thread')) {
+                          method === 'in_thread' || isBareLoopNode)) {
       blocks.push(child)
     } else {
       bareCode.push(child)
@@ -895,8 +936,26 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     .map(c => '  ' + transpileNode(c, bareCtx))
     .filter(s => s.trim())
 
-  // Transpile block-level constructs
-  const blockJS = blocks.map(c => transpileNode(c, ctx)).filter(Boolean)
+  // Transpile block-level constructs. Top-level bare `loop do … end` blocks
+  // are hoisted to auto-named live_loops so the scheduler owns their cadence
+  // (SV16 — bare code runs once, not forever; `loop do` is its own forever
+  // live_loop, not fall-through-to-`__run_once` bare code).
+  let topLoopCounter = 0
+  const blockJS = blocks.map(c => {
+    const m = (c.type === 'call' || c.type === 'method_call')
+      ? (c.childForFieldName('method')?.text ?? c.namedChildren[0]?.text)
+      : null
+    if (m === 'loop') {
+      const body = c.namedChildren.find((x: any) => x.type === 'do_block' || x.type === 'block')
+      if (body) {
+        const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+        const bodyStr = transpileBlockBody(body, bodyCtx)
+        const name = `__loop_${topLoopCounter++}`
+        return `live_loop("${name}", (__b) => {\n${bodyStr}\n${ctx.indent}})`
+      }
+    }
+    return transpileNode(c, ctx)
+  }).filter(Boolean)
 
   const parts: string[] = []
   if (topJS.length > 0) parts.push(topJS.join('\n'))
@@ -999,11 +1058,9 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return '__b.stop()'
     }
 
-    // stop_loop :name
-    if (methodName === 'stop_loop') {
-      const args = argsNode ? transpileArgList(argsNode, ctx) : ''
-      return `stop_loop(${args})`
-    }
+    // stop_loop :name — dispatched via BUILDER_METHODS so it gets `__b.`
+    // prefix inside loops (deferred step at scheduled virtual time, not
+    // build time). See issue #194.
 
     // use_synth :name
     if (methodName === 'use_synth') {
@@ -1123,12 +1180,17 @@ function transpileReceiverMethodCall(
     return `for (let ${varName} = 0; ${varName} < ${recStr}; ${varName}++) {\n${ctx.indent}  __b.__checkBudget__()\n${bodyStr}\n${ctx.indent}}`
   }
 
-  // .each do |item| ... end
+  // .each do |item| ... end  /  .each do |a, b| ... end (destructure)
+  // Multi-arg block over a tuple-yielding iterator (e.g. arr.zip(b).each do |a, b|)
+  // emits JS array destructure: for (const [a, b] of iter).
   if (method === 'each' && blockNode) {
     const params = blockNode.namedChildren.find((c: any) => c.type === 'block_parameters')
-    const varName = params?.namedChildren[0]?.text ?? '_item'
+    const paramNames = params?.namedChildren?.map((c: any) => c.text) ?? []
     const bodyStr = transpileBlockBody(blockNode, ctx)
-    return `for (const ${varName} of ${recStr}) {\n${ctx.indent}  __b.__checkBudget__()\n${bodyStr}\n${ctx.indent}}`
+    const bindings = paramNames.length === 0 ? '_item'
+      : paramNames.length === 1 ? paramNames[0]
+      : `[${paramNames.join(', ')}]`
+    return `for (const ${bindings} of ${recStr}) {\n${ctx.indent}  __b.__checkBudget__()\n${bodyStr}\n${ctx.indent}}`
   }
 
   // .each_with_index do |item, i| ... end → for (let i = 0; ...) { const item = arr[i]; ... }
@@ -1273,6 +1335,27 @@ function transpileReceiverMethodCall(
   if (method === 'min') return `Math.min(...${recStr})`
   if (method === 'max') return `Math.max(...${recStr})`
 
+  // .sum — Ruby Array#sum. reduce((a,b)=>a+b, 0) works for numbers; Ring values
+  // propagate through the same spread Ruby uses (Array/Ring indexable).
+  if (method === 'sum' && !blockNode) {
+    return `${recStr}.reduce((a, b) => a + b, 0)`
+  }
+
+  // .avg — Sonic Pi Ring extension (arithmetic mean).
+  if (method === 'avg' && !blockNode) {
+    return `(${recStr}.reduce((a, b) => a + b, 0) / ${recStr}.length)`
+  }
+
+  // .values / .keys — Ruby Hash methods. Plain JS objects use Object.values/keys.
+  // Rings don't define these, and Object.values(ring) would return the ring's
+  // internal indexed values — avoid by only handling the no-args, no-block form.
+  if (method === 'values' && !blockNode && !argsNode) {
+    return `Object.values(${recStr})`
+  }
+  if (method === 'keys' && !blockNode && !argsNode) {
+    return `Object.keys(${recStr})`
+  }
+
   // .first → [0]
   if (method === 'first') {
     return `${recStr}[0]`
@@ -1311,6 +1394,16 @@ function transpileReceiverMethodCall(
     return `__b.choose(${recStr})`
   }
 
+  // Ruby type predicates: x.kind_of?(Integer) / x.is_a?(Integer).
+  // Arg is a class name (constant node), not a value — transpile it as a
+  // STRING so the runtime helper can match on type name. JS has no direct
+  // equivalent for Ruby's class hierarchy; __spIsA dispatches on the name.
+  if (method === 'kind_of?' || method === 'is_a?' || method === 'instance_of?') {
+    const arg = argsNode?.namedChildren?.[0]
+    const argText = arg ? arg.text : 'Object'
+    return `__spIsA(${recStr}, ${JSON.stringify(argText)})`
+  }
+
   // Methods with ? suffix → rename to _q
   if (method.endsWith('?')) {
     const cleanName = method.slice(0, -1) + '_q'
@@ -1329,6 +1422,91 @@ function transpileReceiverMethodCall(
   if (fullNode.text.includes('(')) return `${recStr}.${method}()`
   return `${recStr}.${method}()`
 }
+
+// ---------------------------------------------------------------------------
+// scope_resolution (`Foo::Bar`) — Ruby namespace / constant access.
+// ---------------------------------------------------------------------------
+
+// Known-safe Ruby constants that map cleanly to JS. Anything not here
+// triggers an error via pushUnsupported() so the user gets a report link
+// instead of a cryptic JS parser error.
+const SCOPE_RESOLUTION_MAP: Record<string, string> = {
+  'Math::PI':        'Math.PI',
+  'Math::E':         'Math.E',
+  'Float::INFINITY': 'Infinity',
+  'Float::NAN':      'NaN',
+}
+
+function transpileScopeResolution(node: any, ctx: TranspileContext): string {
+  const text = node.text as string
+  if (text in SCOPE_RESOLUTION_MAP) return SCOPE_RESOLUTION_MAP[text]
+  pushUnsupported(
+    ctx, node,
+    'scope_resolution',
+    `Ruby namespace/constant access \`${text}\` isn't mapped yet`,
+  )
+  return 'undefined'
+}
+
+// ---------------------------------------------------------------------------
+// Structured unsupported-feature reporting.
+//
+// Emits a single line into ctx.errors with enough context for triage:
+// node type, line number, source snippet, and a clickable new-issue URL
+// pre-populated with feature + location. The sandbox surfaces this verbatim
+// in the editor error panel.
+// ---------------------------------------------------------------------------
+
+const REPORT_BUG_URL = 'https://github.com/MrityunjayBhardwaj/SonicPi.js/issues/new'
+
+function pushUnsupported(
+  ctx: TranspileContext,
+  node: any,
+  featureId: string,
+  humanMessage: string,
+): void {
+  const line = node.startPosition.row + 1
+  const snippet = (node.text as string).replace(/\s+/g, ' ').slice(0, 60)
+  const title = `Unsupported Ruby feature: ${featureId}`
+  const body = [
+    `The transpiler doesn't handle this yet.`,
+    ``,
+    `**Feature:** \`${featureId}\``,
+    `**Code:** \`${snippet}\``,
+    `**Line:** ${line}`,
+  ].join('\n')
+  const reportUrl = `${REPORT_BUG_URL}?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`
+  ctx.errors.push(
+    `Line ${line}: ${humanMessage}. Report: ${reportUrl}`,
+  )
+}
+
+// Nodes that are purely structural wrappers in the tree-sitter-ruby grammar
+// and carry no semantic content — safe to silently recurse through if an
+// explicit handler isn't found. Everything not listed here triggers the
+// unsupported-feature path instead of silent passthrough.
+const STRUCTURAL_WRAPPERS: Set<string> = new Set([
+  'program',
+  'expression_statement',
+  'parenthesized_statements',
+  'body_statement',
+  'block_body',
+  'then',
+  'else',
+  'elsif',
+  'argument_list',
+  'empty_statement',
+  // Pattern inside `case/when` — wraps a single value (literal, range, class,
+  // etc.) that `case` already compares against. Passes through to the child.
+  'pattern',
+  // `do` keyword block inside for/until/while constructs that already have
+  // explicit handlers — the grammar wraps the body in a `do` node.
+  'do',
+  // `in` keyword inside `for x in arr` — the `for` handler at case 'for'
+  // already pulls the iterator from namedChildren, so `in` here is just
+  // the keyword token with no semantic payload.
+  'in',
+])
 
 // ---------------------------------------------------------------------------
 // DSL-specific transpilers
@@ -1476,23 +1654,105 @@ function transpileInThread(
   }
 
   const prefix = ctx.insideLoop ? '__b.' : ''
-  const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
-  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
 
-  // Check for name: option
+  // Resolve `name:` option (used both for the in_thread wrapper and as a base
+  // for hoisted-loop names so hot-swap is stable across re-evaluation).
+  let nameExpr: string | null = null
   const args = argsNode?.namedChildren ?? []
   for (const arg of args) {
     if (arg.type === 'pair') {
       const key = arg.namedChildren[0]?.text?.replace(/:$/, '')
       if (key === 'name') {
-        // Named thread — pass name
-        const name = transpileNode(arg.namedChildren[1], ctx)
-        return `${prefix}in_thread({ name: ${name} }, (__b) => {\n${bodyStr}\n${ctx.indent}})`
+        nameExpr = transpileNode(arg.namedChildren[1], ctx)
       }
     }
   }
 
-  return `${prefix}in_thread((__b) => {\n${bodyStr}\n${ctx.indent}})`
+  // SV16 / issue #205: `loop do` inside an in_thread body must be hoisted to
+  // a sibling auto-named live_loop. Building it inline emits `while(true) {
+  // __b.play; __b.sleep; }` whose sleep resets the budget guard on every
+  // iteration → infinite Step[] push at build time → tab OOM. The top-level
+  // hoist (lines ~888-901, 936-955) handles this for bare top-level loops;
+  // we do the equivalent here for in_thread bodies.
+  // The do_block wraps its statements in a body_statement child — drill in.
+  const rawChildren = blockNode.namedChildren ?? []
+  const bodyChildren = rawChildren.length === 1 && rawChildren[0]?.type === 'body_statement'
+    ? (rawChildren[0].namedChildren ?? [])
+    : rawChildren
+  const setupChildren: any[] = []
+  const loopChildren: any[] = []
+  let sawLoop = false
+  let droppedAfterLoop = false
+  for (const child of bodyChildren) {
+    const m = (child.type === 'call' || child.type === 'method_call')
+      ? (child.childForFieldName('method')?.text ?? child.namedChildren[0]?.text)
+      : null
+    const isLoop = m === 'loop' &&
+      child.namedChildren.some((c: any) => c.type === 'do_block' || c.type === 'block')
+    if (isLoop) {
+      loopChildren.push(child)
+      sawLoop = true
+    } else if (sawLoop) {
+      // Statements after a `loop do` are unreachable in Sonic Pi — `loop` runs forever.
+      droppedAfterLoop = true
+    } else {
+      setupChildren.push(child)
+    }
+  }
+
+  if (loopChildren.length === 0) {
+    // No nested loop → original codepath.
+    const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+    const bodyStr = transpileBlockBody(blockNode, bodyCtx)
+    if (nameExpr !== null) {
+      return `${prefix}in_thread({ name: ${nameExpr} }, (__b) => {\n${bodyStr}\n${ctx.indent}})`
+    }
+    return `${prefix}in_thread((__b) => {\n${bodyStr}\n${ctx.indent}})`
+  }
+
+  if (droppedAfterLoop) {
+    const line = blockNode.startPosition?.row != null ? blockNode.startPosition.row + 1 : '?'
+    ctx.errors.push(`Warning at line ${line}: statements after \`loop do\` inside in_thread are unreachable and were dropped.`)
+  }
+
+  // Build pieces: setup-only in_thread (if any setup), then sibling live_loops
+  // for each hoisted loop. We can only emit sibling top-level live_loop calls
+  // when we are at the program root (ctx.insideLoop === false). When the
+  // in_thread is itself nested, we cannot top-level-hoist; in that case we
+  // fall back to a single live_loop per hoisted loop using __b.live_loop.
+  const counter = ctx.inthreadLoopCounter ?? { n: 0 }
+  const baseName = nameExpr !== null ? nameExpr : null
+  const parts: string[] = []
+
+  if (setupChildren.length > 0) {
+    const setupCtx: TranspileContext = { ...ctx, insideLoop: true }
+    const setupStr = setupChildren
+      .map(c => '  ' + transpileNode(c, setupCtx))
+      .filter(s => s.trim())
+      .join('\n')
+    if (nameExpr !== null) {
+      parts.push(`${prefix}in_thread({ name: ${nameExpr} }, (__b) => {\n${setupStr}\n${ctx.indent}})`)
+    } else {
+      parts.push(`${prefix}in_thread((__b) => {\n${setupStr}\n${ctx.indent}})`)
+    }
+  }
+
+  for (const loopNode of loopChildren) {
+    const body = loopNode.namedChildren.find((c: any) => c.type === 'do_block' || c.type === 'block')
+    const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+    const bodyStr = transpileBlockBody(body, bodyCtx)
+    const idx = counter.n++
+    const autoName = baseName !== null
+      ? `(${baseName}) + "__loop_${idx}"`
+      : `"__inthread_loop_${idx}"`
+    // At program root, emit as bare live_loop so the engine registers it
+    // as a top-level scheduler-owned loop. Inside another deferred context,
+    // route through __b.live_loop.
+    const liveLoopPrefix = ctx.insideLoop ? '__b.' : ''
+    parts.push(`${liveLoopPrefix}live_loop(${autoName}, (__b) => {\n${bodyStr}\n${ctx.indent}})`)
+  }
+
+  return parts.join('\n')
 }
 
 function transpileAt(

@@ -8,6 +8,7 @@
 
 import type { Program } from '../Program'
 import { normalizePlayParams, normalizeControlParams, normalizeFxParams, resolveSynthName } from '../SoundLayer'
+import { noteToMidi } from '../NoteToFreq'
 
 /** Visual duration used for note events in the sound event stream (seconds). */
 const NOTE_EVENT_VISUAL_DURATION = 0.25
@@ -16,6 +17,7 @@ const SAMPLE_EVENT_VISUAL_DURATION = 0.5
 import type { VirtualTimeScheduler } from '../VirtualTimeScheduler'
 import type { SuperSonicBridge } from '../SuperSonicBridge'
 import type { SoundEventStream, SoundEvent } from '../SoundEventStream'
+import type { MidiBridge } from '../MidiBridge'
 
 /** State for a reusable inner FX node (persists across loop iterations). */
 interface ReusableFxState {
@@ -46,6 +48,16 @@ export interface AudioContext {
   globalStore?: Map<string | symbol, unknown>
   /** Host-provided OSC send handler. If not set, osc_send is a silent no-op. */
   oscHandler?: (host: string, port: number, path: string, ...args: unknown[]) => void
+  /** MIDI bridge for deferred midi-out steps (issue #195). */
+  midiBridge?: MidiBridge
+  /**
+   * Volume-change callback (issue #201). Deferred `set_volume` steps fire at
+   * scheduled time and need to update the engine's closure-local
+   * `currentVolume` so the next iteration's `current_volume` returns the
+   * new value. The engine wires this to its setVolumeShared closure;
+   * unset means: just push the bridge change (legacy path).
+   */
+  onVolumeChange?: (vol: number) => void
 }
 
 /**
@@ -96,7 +108,10 @@ export async function runProgram(
           // Mutate step.opts directly — normalizePlayParams copies internally.
           // Avoids 3 object spreads per event that cause GC pressure (#75).
           step.opts.note = step.note
-          const params = normalizePlayParams(synth, step.opts, currentBpm)
+          const playWarn = ctx.printHandler
+            ? (m: string) => ctx.printHandler!(`[Warning] play :${synth} — ${m}`)
+            : undefined
+          const params = normalizePlayParams(synth, step.opts, currentBpm, playWarn)
           params.out_bus = task.outBus
           ctx.bridge.triggerSynth(synth, audioTime, params)
             .then(realNodeId => ctx.nodeRefMap.set(nodeRef, realNodeId))
@@ -177,7 +192,10 @@ export async function runProgram(
         const realNodeId = ctx.nodeRefMap.get(step.nodeRef)
         if (realNodeId && ctx.bridge) {
           const audioTime = task.virtualTime + ctx.schedAheadTime
-          const normalized = normalizeControlParams(step.params, currentBpm)
+          const ctlWarn = ctx.printHandler
+            ? (m: string) => ctx.printHandler!(`[Warning] control — ${m}`)
+            : undefined
+          const normalized = normalizeControlParams(step.params, currentBpm, ctlWarn)
           const paramList: (string | number)[] = []
           for (const [k, v] of Object.entries(normalized)) {
             paramList.push(k, v)
@@ -258,7 +276,10 @@ export async function runProgram(
           let fxNodeId: number | undefined
           try {
             const audioTime = task.virtualTime + ctx.schedAheadTime
-            const fxOpts = normalizeFxParams(step.name, step.opts, currentBpm)
+            const fxWarn = ctx.printHandler
+              ? (m: string) => ctx.printHandler!(`[Warning] with_fx :${step.name} — ${m}`)
+              : undefined
+            const fxOpts = normalizeFxParams(step.name, step.opts, currentBpm, fxWarn)
             fxNodeId = await ctx.bridge.applyFx(step.name, audioTime, fxOpts, newBus, prevOutBus)
             if (step.nodeRef && fxNodeId !== undefined) {
               ctx.nodeRefMap.set(step.nodeRef, fxNodeId)
@@ -339,8 +360,80 @@ export async function runProgram(
         ctx.bridge?.flushMessages()
         if (task) task.running = false
         return
+
+      // --- Deferred-step DSL fixes (issue #193) ---
+
+      case 'stopLoop':
+        // Stop a named live_loop at the scheduled time (#194). Without this,
+        // stop_loop fired at BUILD time, killing target loops at beat 0.
+        ctx.scheduler.stopLoop(step.name)
+        break
+
+      case 'setVolume': {
+        // Master-volume change at the scheduled time (#197). Ducking patterns
+        // were broken because both calls fired at beat 0; now the second call
+        // happens after the intermediate sleep.
+        // Route through onVolumeChange (#201) so the engine's closure-local
+        // currentVolume — read by current_volume — is also updated. Without
+        // this, `set_volume 0.3; sleep 4; puts current_volume` printed 1.0.
+        const vol = Math.max(0, Math.min(5, step.vol))
+        if (ctx.onVolumeChange) {
+          ctx.onVolumeChange(vol)
+        } else {
+          ctx.bridge?.setMasterVolume(vol / 5)
+        }
+        break
+      }
+
+      case 'useOsc':
+        // Mutates builder defaults at build; this step is here so the change
+        // is also visible to a step-time observer (no-op effect on bridge,
+        // but keeps the lifecycle parity-correct against desktop SP).
+        break
+
+      case 'midiOut': {
+        // 14 MIDI-output entry points (#195). All routed through one tag
+        // with a `kind` discriminator. Without these, every midi_* call
+        // inside a live_loop fired at beat 0 — scheduled MIDI was broken.
+        const mb = ctx.midiBridge
+        if (!mb) break
+        const a = step.args as unknown[]
+        switch (step.kind) {
+          case 'noteOn': {
+            const [note, vel, ch] = a as [number | string, number, number]
+            const n = typeof note === 'string' ? noteToMidi(note) : note
+            mb.noteOn(n, vel, ch)
+            break
+          }
+          case 'noteOff': {
+            const [note, ch, sustainBeats] = a as [number | string, number, number]
+            const n = typeof note === 'string' ? noteToMidi(note) : note
+            if (sustainBeats > 0) {
+              // BPM-aware delay tracked by MidiBridge so engine.stop() can
+              // cancel-and-fire-now to prevent hung notes on the device (#200).
+              const seconds = sustainBeats * 60 / currentBpm
+              mb.scheduleNoteOff(n, ch, seconds)
+            } else {
+              mb.noteOff(n, ch)
+            }
+            break
+          }
+          case 'cc':              { const [c, v, ch] = a as [number, number, number]; mb.cc(c, v, ch); break }
+          case 'pitchBend':       { const [v, ch] = a as [number, number]; mb.pitchBend(v, ch); break }
+          case 'channelPressure': { const [v, ch] = a as [number, number]; mb.channelPressure(v, ch); break }
+          case 'polyPressure':    { const [n, v, ch] = a as [number, number, number]; mb.polyPressure(n, v, ch); break }
+          case 'progChange':      { const [p, ch] = a as [number, number]; mb.programChange(p, ch); break }
+          case 'clockTick':       mb.clockTick(); break
+          case 'start':           mb.midiStart(); break
+          case 'stop':            mb.midiStop(); break
+          case 'continue':        mb.midiContinue(); break
+          case 'allNotesOff':     { const [ch] = a as [number]; mb.allNotesOff(ch); break }
+        }
+        break
+      }
     }
   }
   // Flush any remaining queued messages at end of program
   ctx.bridge?.flushMessages()
 }
+

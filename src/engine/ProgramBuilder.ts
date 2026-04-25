@@ -234,15 +234,145 @@ export class ProgramBuilder {
     return this
   }
 
+  /**
+   * Stop a named live_loop at the scheduled time (issue #194).
+   * Without this deferred step, `stop_loop :name` inside a live_loop
+   * fires at BUILD time (beat 0), killing target loops before any
+   * preceding `sleep` elapses — silent failure mode confirmed by
+   * the welcome-buffer finale bug.
+   */
+  stop_loop(name: string): this {
+    this.steps.push({ tag: 'stopLoop', name })
+    return this
+  }
+
   /** Free a running synth node immediately. */
   kill(nodeRef: number): this {
     this.steps.push({ tag: 'kill', nodeRef })
     return this
   }
 
+  /**
+   * Set master volume at the scheduled time (issue #197).
+   * Without this deferred step, ducking patterns
+   * (`set_volume 0.3; sleep 4; set_volume 1.0`) collapse: both calls
+   * fire at beat 0, last-writer wins, no ducking.
+   */
+  set_volume(vol: number): this {
+    this.steps.push({ tag: 'setVolume', vol })
+    return this
+  }
+
+  // --- OSC: deferred (issue #196) ---
+  /**
+   * Builder-captured OSC defaults for the `osc` shorthand. `use_osc`
+   * mutates these synchronously at build time AND emits a deferred
+   * `useOsc` step (the latter is for cross-task visibility).
+   * `osc(path, ...)` reads these at build time and pushes a deferred
+   * `oscSend` step using the captured destination.
+   */
+  private _oscHost = 'localhost'
+  private _oscPort = 4560
+
+  use_osc(host: string, port: number): this {
+    this._oscHost = host
+    this._oscPort = port
+    this.steps.push({ tag: 'useOsc', host, port })
+    return this
+  }
+
+  /** Emit an OSC message to the use_osc-set default destination. */
+  osc(path: string, ...args: unknown[]): this {
+    this.steps.push({ tag: 'oscSend', host: this._oscHost, port: this._oscPort, path, args })
+    return this
+  }
+
   /** Emit an OSC message — the host provides the actual transport. */
   osc_send(host: string, port: number, path: string, ...args: unknown[]): this {
     this.steps.push({ tag: 'oscSend', host, port, path, args })
+    return this
+  }
+
+  // --- MIDI output: 14 deferred entry points (issue #195) ---
+  // All push a `midiOut` step with a `kind` discriminator. The interpreter
+  // dispatches at scheduled virtual time. Auto note-off for `midi(...)` is
+  // BPM-aware (sustain in beats → seconds via the task's current bpm).
+
+  /** midi shorthand: note-on + auto note-off after `sustain` beats. */
+  midi(note: number | string, opts: Record<string, number | string> = {}): this {
+    const sustain = (opts.sustain as number) ?? 1
+    const velocity = (opts.velocity as number) ?? (opts.vel as number) ?? 100
+    const channel = (opts.channel as number) ?? 1
+    this.steps.push({ tag: 'midiOut', kind: 'noteOn', args: [note, velocity, channel] })
+    // Schedule note-off via virtual-time-aware sleep+off pair handled by interpreter:
+    // we encode the off as a 'noteOff' step with a beat offset. Interpreter resolves
+    // the offset to seconds using the task's current bpm.
+    this.steps.push({ tag: 'midiOut', kind: 'noteOff', args: [note, channel, sustain] })
+    return this
+  }
+
+  midi_note_on(note: number | string, velocity: number = 100, opts: Record<string, number> = {}): this {
+    this.steps.push({ tag: 'midiOut', kind: 'noteOn', args: [note, velocity, opts.channel ?? 1] })
+    return this
+  }
+
+  midi_note_off(note: number | string, opts: Record<string, number> = {}): this {
+    this.steps.push({ tag: 'midiOut', kind: 'noteOff', args: [note, opts.channel ?? 1, 0] })
+    return this
+  }
+
+  midi_cc(controller: number, value: number, opts: Record<string, number> = {}): this {
+    this.steps.push({ tag: 'midiOut', kind: 'cc', args: [controller, value, opts.channel ?? 1] })
+    return this
+  }
+
+  midi_pitch_bend(val: number, opts: Record<string, number> = {}): this {
+    this.steps.push({ tag: 'midiOut', kind: 'pitchBend', args: [val, opts.channel ?? 1] })
+    return this
+  }
+
+  midi_channel_pressure(val: number, opts: Record<string, number> = {}): this {
+    this.steps.push({ tag: 'midiOut', kind: 'channelPressure', args: [val, opts.channel ?? 1] })
+    return this
+  }
+
+  midi_poly_pressure(note: number, val: number, opts: Record<string, number> = {}): this {
+    this.steps.push({ tag: 'midiOut', kind: 'polyPressure', args: [note, val, opts.channel ?? 1] })
+    return this
+  }
+
+  midi_prog_change(program: number, opts: Record<string, number> = {}): this {
+    this.steps.push({ tag: 'midiOut', kind: 'progChange', args: [program, opts.channel ?? 1] })
+    return this
+  }
+
+  midi_clock_tick(): this {
+    this.steps.push({ tag: 'midiOut', kind: 'clockTick', args: [] })
+    return this
+  }
+
+  midi_start(): this {
+    this.steps.push({ tag: 'midiOut', kind: 'start', args: [] })
+    return this
+  }
+
+  midi_stop(): this {
+    this.steps.push({ tag: 'midiOut', kind: 'stop', args: [] })
+    return this
+  }
+
+  midi_continue(): this {
+    this.steps.push({ tag: 'midiOut', kind: 'continue', args: [] })
+    return this
+  }
+
+  midi_all_notes_off(opts: Record<string, number> = {}): this {
+    this.steps.push({ tag: 'midiOut', kind: 'allNotesOff', args: [opts.channel ?? 1] })
+    return this
+  }
+
+  midi_notes_off(opts: Record<string, number> = {}): this {
+    this.steps.push({ tag: 'midiOut', kind: 'allNotesOff', args: [opts.channel ?? 1] })
     return this
   }
 

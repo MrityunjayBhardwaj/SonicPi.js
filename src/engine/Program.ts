@@ -21,9 +21,19 @@ export type Step =
   | { tag: 'liveAudio'; name: string; opts: Record<string, number> }
   | { tag: 'set'; key: string | symbol; value: unknown }
   | { tag: 'stop' }
+  | { tag: 'stopLoop'; name: string }
+  | { tag: 'setVolume'; vol: number }
+  | { tag: 'useOsc'; host: string; port: number }
+  | { tag: 'midiOut'; kind: MidiOutKind; args: unknown[] }
   | { tag: 'kill'; nodeRef: number }
   | { tag: 'oscSend'; host: string; port: number; path: string; args: unknown[] }
   | { tag: 'useRealTime' }
+
+/** MIDI-out variants — one tag with kind discriminator (issue #195). */
+export type MidiOutKind =
+  | 'noteOn' | 'noteOff' | 'cc' | 'pitchBend'
+  | 'channelPressure' | 'polyPressure' | 'progChange'
+  | 'clockTick' | 'start' | 'stop' | 'continue' | 'allNotesOff'
 
 export type Program = Step[]
 

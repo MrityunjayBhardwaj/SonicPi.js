@@ -4,9 +4,21 @@ import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioI
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
 import { normalizeFxParams } from './SoundLayer'
+import { DSL_NAMES } from './DslNames'
 import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbox'
 import { autoTranspileDetailed } from './TreeSitterTranspiler'
 import { initTreeSitter } from './TreeSitterTranspiler'
+
+/**
+ * Matches SoundLayer.validateAndClamp output:
+ *   `[Warning] play :synth — key: val clamped to N (min)`
+ *   `[Warning] with_fx :name — key: val clamped to N (max)`
+ *   `[Warning] sample :name — key: val clamped to N (min|max)`
+ *   `[Warning] control — key: val clamped to N (min|max)`
+ * Anything matching this is a deterministic clamp message and we only need
+ * to surface each unique line once per evaluation (issue #202, G4).
+ */
+const CLAMP_WARN_RE = /clamped to .+ \((min|max)\)$/
 import { friendlyError, formatFriendlyError, type FriendlyError } from './FriendlyErrors'
 import { detectStratum, Stratum } from './Stratum'
 import { SoundEventStream } from './SoundEventStream'
@@ -52,6 +64,16 @@ export class SonicPiEngine {
   private runtimeErrorHandler: ((err: Error) => void) | null = null
   private printHandler: ((msg: string) => void) | null = null
   private cueHandler: ((name: string, time: number) => void) | null = null
+  /**
+   * Per-evaluation dedup set for clamp/range warnings (issue #202, G4).
+   * SoundLayer's validateAndClamp emits one warning per out-of-range param,
+   * which fires every loop iteration → log floods. We dedup by exact message
+   * so the user sees each unique clamp once per evaluation.
+   * Cleared on each evaluate() call (re-running the user's code resets the
+   * "what have we already told them" memory — they may have changed the
+   * offending value, or want to be told again because they re-pressed Run).
+   */
+  private warnDedup = new Set<string>()
   private currentCode = ''
   private currentStratum: Stratum = Stratum.S1
   private bridgeOptions: SuperSonicBridgeOptions
@@ -70,6 +92,16 @@ export class SonicPiEngine {
   private loopTicks = new Map<string, Map<string, number>>()
   /** Tracks which loops have completed their initial sync — persists across hot-swaps. */
   private loopSynced = new Set<string>()
+  /**
+   * Build-phase nesting depth (issue #198). Incremented around each
+   * synchronous builderFn invocation. > 0 means we are currently
+   * building one live_loop's iteration step array; any `live_loop`
+   * call that fires now is a NESTED registration and gets sibling-once
+   * semantics rather than re-binding on every outer tick.
+   */
+  private buildNestingDepth = 0
+  /** Names that already received the "nested live_loop" warning so we don't spam. */
+  private nestedWarned = new Set<string>()
   /** Persistent top-level FX state — keyed by scope ID, shared across loops in same with_fx. */
   private persistentFx = new Map<string, { buses: number[]; groups: number[]; outBus: number }>()
   /** Maps loop name → FX scope ID (loops under same with_fx share a scope). */
@@ -114,6 +146,9 @@ export class SonicPiEngine {
     if (this.initialized) return
 
     this.bridge = new SuperSonicBridge(this.bridgeOptions)
+    // Forward clamp/validation warnings from SoundLayer (for samples) to the
+    // UI log. Handles the case where setPrintHandler was called before init.
+    if (this.printHandler) this.bridge.warnHandler = this.printHandler
 
     // Initialize SuperSonic and tree-sitter in parallel
     const bridgeInit = this.bridge.init()
@@ -183,6 +218,10 @@ export class SonicPiEngine {
     try {
       this.currentCode = code
       this.currentStratum = detectStratum(code)
+      // Reset clamp-warning dedup so re-pressing Run re-surfaces clamp messages
+      // (the user may have changed the offending value, and they shouldn't be
+      // forever-silenced because we already showed the warning once).
+      this.warnDedup.clear()
 
       const isReEvaluate = this.scheduler !== null && this.playing
 
@@ -263,12 +302,19 @@ export class SonicPiEngine {
       const pendingLoops = new Map<string, () => Promise<void>>()
       const pendingDefaults = new Map<string, { bpm: number; synth: string }>()
 
-      // Top-level set_volume! — Desktop SP range is 0-5, maps to mixer pre_amp
+      // Top-level set_volume! — Desktop SP range is 0-5, maps to mixer pre_amp.
+      // currentVolume is captured by closures (set_volume + current_volume_fn +
+      // setVolumeShared). Deferred set_volume steps fire setVolumeShared at
+      // scheduled time so current_volume reflects the new value (#201).
       let currentVolume = 1
       const set_volume = (vol: number) => {
         currentVolume = Math.max(0, Math.min(5, vol))
         this.bridge?.setMasterVolume(currentVolume / 5) // normalize 0-5 → 0-1
       }
+      // Used by AudioInterpreter's setVolume step — same body as set_volume,
+      // but exposed as a stable reference so the interpreter can update the
+      // shared currentVolume closure variable.
+      const setVolumeShared = (vol: number) => set_volume(vol)
 
       // Top-level current_* introspection functions
       const current_synth_fn = () => defaultSynth
@@ -334,6 +380,37 @@ export class SonicPiEngine {
           syncTarget = (builderFnOrOpts.sync as string) ?? null
           builderFn = maybeFn!
         }
+
+        // Nested live_loop semantics (issue #198): if this call fires while
+        // another live_loop's builderFn is mid-execution (buildNestingDepth > 0),
+        // treat it as a SIBLING top-level registration with first-occurrence-wins
+        // semantics. Without this guard the inner registration would re-fire on
+        // every outer iteration — re-binding the inner's tick state, sync state,
+        // and seeded RNG every outer tick, and (worse) leaking a per-loop monitor
+        // synth + bus on each rebinding.
+        //
+        // Re-evaluate (Run on already-playing code) bypasses this branch via
+        // `isReEvaluate` below so hot-swap still refreshes inner closures.
+        const isNested = this.buildNestingDepth > 0 && !isReEvaluate
+        if (isNested) {
+          const existing = scheduler.getTask(name)
+          if (existing && existing.running) {
+            // Already registered on a previous outer iteration — sibling-once.
+            // No-op for registration; the inner keeps running its existing closure.
+            return
+          }
+          if (!this.nestedWarned.has(name)) {
+            this.nestedWarned.add(name)
+            const msg =
+              `[Warning] live_loop :${name} is declared inside another live_loop. ` +
+              `It will be registered as a sibling top-level loop on FIRST occurrence only. ` +
+              `Any guards (if/unless/one_in/...) wrapping it are evaluated at first occurrence; ` +
+              `subsequent toggles do not register or unregister it.`
+            if (this.printHandler) this.printHandler(msg)
+            else console.warn('[SonicPi]', msg)
+          }
+          // Fall through to register the inner this first time.
+        }
         // Per-loop audio isolation: create a monitor synth that reads this
         // loop's private loopBus and fans out to bus 0 (mixer) + trackBus
         // (per-track AnalyserNode for scope visualization). Synths in this
@@ -385,7 +462,10 @@ export class SonicPiEngine {
               for (const fx of fxChain) {
                 const bus = this.bridge.allocateBus()
                 const groupId = this.bridge.createFxGroup()
-                const fxOpts = normalizeFxParams(fx.name, fx.opts, task.bpm)
+                const fxWarn = this.printHandler
+                  ? (m: string) => this.printHandler!(`[Warning] with_fx :${fx.name} — ${m}`)
+                  : undefined
+                const fxOpts = normalizeFxParams(fx.name, fx.opts, task.bpm, fxWarn)
                 await this.bridge.applyFx(fx.name, audioTime, fxOpts, bus, currentOutBus)
                 this.bridge.flushMessages()
                 buses.push(bus)
@@ -413,11 +493,17 @@ export class SonicPiEngine {
           if (task.currentSynth && task.currentSynth !== 'beep') {
             builder.use_synth(task.currentSynth)
           }
-          // Enter per-loop scope so variable writes are isolated
+          // Enter per-loop scope so variable writes are isolated.
+          // Track build-phase nesting depth so any `live_loop` call that
+          // fires synchronously inside builderFn is detected as nested
+          // (issue #198). The scheduler runs builderFn calls sequentially,
+          // so an instance-level counter is safe.
           scopeHandle?.enterScope(name)
+          this.buildNestingDepth++
           try {
             builderFn(builder)
           } finally {
+            this.buildNestingDepth--
             scopeHandle?.exitScope()
           }
           // Persist tick state so ring.tick() / tick() advance across iterations
@@ -435,6 +521,8 @@ export class SonicPiEngine {
             reusableFx: this.reusableFx,
             globalStore: this.globalStore,
             oscHandler: this.oscHandler ?? undefined,
+            midiBridge: this.midiBridge,
+            onVolumeChange: setVolumeShared,
           })
 
           // Auto-cue the loop name after each iteration.
@@ -627,13 +715,18 @@ export class SonicPiEngine {
 
       // ----- MIDI output (opts object carries keyword args from transpiler) -----
       type MidiOpts = { channel?: number; sustain?: number; velocity?: number; vel?: number }
-      /** midi shorthand — sends note_on + auto note_off after sustain (default 1 beat) */
+      /** midi shorthand — sends note_on + auto note_off after sustain (default 1 beat).
+          The auto note-off goes through midiBridge.scheduleNoteOff so that
+          engine.stop() can cancel-and-fire-now to avoid hung notes (#200). */
       const midi = (note: number | string, opts: MidiOpts = {}) => {
         const n = typeof note === 'string' ? noteToMidi(note) : note
         const vel = opts.velocity ?? opts.vel ?? 100
         const sus = opts.sustain ?? 1
-        this.midiBridge.noteOn(n, vel, opts.channel ?? 1)
-        setTimeout(() => this.midiBridge.noteOff(n, opts.channel ?? 1), sus * 1000)
+        const ch = opts.channel ?? 1
+        this.midiBridge.noteOn(n, vel, ch)
+        // Tracked timer — engine.stop() cancels-and-fires-now to prevent
+        // hung notes on external devices (#200).
+        this.midiBridge.scheduleNoteOff(n, ch, sus)
       }
       const midi_note_on = (note: number | string, velocity: number = 100, opts: MidiOpts = {}) => {
         const n = typeof note === 'string' ? noteToMidi(note) : note
@@ -696,53 +789,37 @@ export class SonicPiEngine {
       // Inside live_loops, the callback parameter `b` shadows this.
       const topLevelBuilder = new ProgramBuilder()
 
+      // Top-level random + iteration helpers. These live on ProgramBuilder for
+      // use inside live_loops (`b.rrand(...)`), but some Ruby patterns call
+      // them at the top level (e.g. `use_bpm rrand(90, 130)` in
+      // choose_generator.rb from in-thread.sonic-pi.net). Bare references in
+      // the sandbox proxy fall through to these wrappers.
+      const tlRrand = (min: number, max: number) => topLevelBuilder.rrand(min, max)
+      const tlRrandI = (min: number, max: number) => topLevelBuilder.rrand_i(min, max)
+      const tlRand = (max?: number) => topLevelBuilder.rand(max ?? 1)
+      const tlRandI = (max: number) => topLevelBuilder.rand_i(max)
+      const tlChoose = <T>(arr: T[]) => topLevelBuilder.choose(arr)
+      const tlDice = (n?: number) => topLevelBuilder.dice(n ?? 6)
+      const tlOneIn = (n: number) => topLevelBuilder.one_in(n)
+      const tlRdist = (max: number, centre?: number) => topLevelBuilder.rdist(max, centre ?? 0)
+
       // Build DSL parameter names and values for the executor
-      const dslNames = [
-        '__b',
-        'live_loop', 'with_fx', 'use_bpm', 'use_synth', 'use_random_seed',
-        'use_arg_bpm_scaling', 'with_arg_bpm_scaling',
-        'in_thread', 'at', 'density',
-        'ring', 'knit', 'range', 'line', 'spread',
-        'chord', 'scale', 'chord_invert', 'note', 'note_range',
-        'chord_degree', 'degree', 'chord_names', 'scale_names',
-        'noteToMidi', 'midiToFreq', 'noteToFreq',
-        'hz_to_midi', 'midi_to_hz',
-        'quantise', 'quantize', 'octs',
-        'current_bpm',
-        'puts', 'print', 'stop', 'stop_loop',
-        // Volume & introspection
-        'set_volume', 'current_synth', 'current_volume',
-        // Catalog queries
-        'synth_names', 'fx_names', 'all_sample_names',
-        // Sample management
-        'load_sample', 'sample_info',
-        // Global store
-        'get', 'set',
-        // Sample catalog
-        'sample_names', 'sample_groups', 'sample_loaded', 'sample_duration',
-        // MIDI input
-        'get_cc', 'get_pitch_bend', 'get_note_on', 'get_note_off',
-        // MIDI output
-        'midi', 'midi_note_on', 'midi_note_off', 'midi_cc',
-        'midi_pitch_bend', 'midi_channel_pressure', 'midi_poly_pressure',
-        'midi_prog_change', 'midi_clock_tick',
-        'midi_start', 'midi_stop', 'midi_continue',
-        'midi_all_notes_off', 'midi_notes_off', 'midi_devices',
-        // OSC
-        'use_osc', 'osc', 'osc_send',
-        // Sample BPM
-        'use_sample_bpm',
-        // Debug (no-op in browser — silences log output in Desktop SP)
-        'use_debug',
-        // Latency — set schedule-ahead to 0 for responsive MIDI input (#149)
-        'use_real_time',
-      ]
+      // Single source of truth — see src/engine/DslNames.ts. Both this
+      // runtime registration AND the contract test at
+      // __tests__/DslBuilderContract.test.ts read the same array, so adding
+      // a new DSL function in one place is automatically visible to the
+      // other (issue #204 — closes the SP37 trap that hid 17 latent gaps).
+      // Spread to a mutable array because createIsolatedExecutor's signature
+      // takes string[]. The const-assertion stays on DSL_NAMES so the test's
+      // type narrowing remains useful.
+      const dslNames: string[] = [...DSL_NAMES]
       const dslValues = [
         topLevelBuilder,
         fxAwareWrappedLiveLoop, topLevelWithFx, topLevelUseBpm, topLevelUseSynth, topLevelUseRandomSeed,
         topLevelUseArgBpmScaling, topLevelWithArgBpmScaling,
         topLevelInThread, topLevelAt, topLevelDensity,
         ring, knit, range, line, spread,
+        tlRrand, tlRrandI, tlRand, tlRandI, tlChoose, tlDice, tlOneIn, tlRdist,
         chord, scale, chord_invert, note, note_range,
         chord_degree, degree, chord_names, scale_names,
         noteToMidi, midiToFreq, noteToFreq,
@@ -850,6 +927,13 @@ export class SonicPiEngine {
     this.playing = false
     this.scheduler?.stop()
 
+    // Cancel pending MIDI auto note-offs and fire them NOW so external
+    // devices don't hang. Without this, a `midi 60, sustain: 4` followed by
+    // Stop leaves the device sounding the note until the timer eventually
+    // fires (#200). After stop, the timer is also gone so a fresh run won't
+    // collide with stale note-offs.
+    this.midiBridge.cancelPendingNoteOffs()
+
     // Free all scsynth nodes for clean silence
     if (this.bridge) {
       this.bridge.freeAllNodes()
@@ -871,6 +955,11 @@ export class SonicPiEngine {
     this.reusableFx.clear()
     this.loopFxScope.clear()
     this.fxScopeChains.clear()
+    // Nested live_loop bookkeeping (issue #198). Defensive reset of depth
+    // counter — should be 0 already, but stop() may be called mid-build
+    // on error paths.
+    this.buildNestingDepth = 0
+    this.nestedWarned.clear()
   }
 
   dispose(): void {
@@ -894,7 +983,24 @@ export class SonicPiEngine {
 
   /** Register a handler for `puts` / `print` output from user code. */
   setPrintHandler(handler: (msg: string) => void): void {
-    this.printHandler = handler
+    // Wrap with clamp-warning dedup (issue #202, G4). SoundLayer's
+    // validateAndClamp emits one message per out-of-range param per call,
+    // and `play`/`sample`/`with_fx` flow through it on every loop iteration.
+    // Without dedup the user gets the same `[Warning] play :gverb — room: 233
+    // clamped to 1 (max)` message every beat. Dedup keys on the full message
+    // string so distinct clamp triggers (different param, different value,
+    // different synth) each surface once.
+    const wrapped = (msg: string) => {
+      if (CLAMP_WARN_RE.test(msg)) {
+        if (this.warnDedup.has(msg)) return
+        this.warnDedup.add(msg)
+      }
+      handler(msg)
+    }
+    this.printHandler = wrapped
+    // Forward to the bridge so SoundLayer clamp warnings for samples surface
+    // through the same UI channel as play/FX warnings (SV19 — accept with signal).
+    if (this.bridge) this.bridge.warnHandler = wrapped
   }
 
   /** Register a handler for cue events (for the CueLog panel). */

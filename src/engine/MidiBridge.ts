@@ -200,6 +200,44 @@ export class MidiBridge {
     this.send([status, note & MIDI_DATA_MASK, 0])
   }
 
+  /**
+   * Tracks pending auto-note-offs scheduled by `midi(...)` shorthand and the
+   * deferred `midiOut`-with-sustain step. engine.stop() calls
+   * cancelPendingNoteOffs() to fire each pending note's off NOW (so external
+   * devices don't hang) and prevent the timer's deferred fire from sending a
+   * stale note-off into a fresh run (#200).
+   */
+  private pendingNoteOffs = new Set<{
+    timer: ReturnType<typeof setTimeout>
+    note: number
+    channel: number
+  }>()
+
+  /**
+   * Schedule a note-off after `delaySeconds`. Returns the entry so the caller
+   * can ignore it; the bridge tracks the timer and clears it on stop().
+   */
+  scheduleNoteOff(note: number, channel: number, delaySeconds: number): void {
+    const entry = { timer: 0 as unknown as ReturnType<typeof setTimeout>, note, channel }
+    entry.timer = setTimeout(() => {
+      this.pendingNoteOffs.delete(entry)
+      this.noteOff(note, channel)
+    }, delaySeconds * 1000)
+    this.pendingNoteOffs.add(entry)
+  }
+
+  /**
+   * Cancel every pending auto note-off and immediately fire its note-off so
+   * external MIDI devices don't hang. Called from engine.stop() (#200).
+   */
+  cancelPendingNoteOffs(): void {
+    for (const entry of this.pendingNoteOffs) {
+      clearTimeout(entry.timer)
+      this.noteOff(entry.note, entry.channel)
+    }
+    this.pendingNoteOffs.clear()
+  }
+
   // ---------------------------------------------------------------------------
   // Output — continuous controllers
   // ---------------------------------------------------------------------------

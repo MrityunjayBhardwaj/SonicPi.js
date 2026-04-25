@@ -137,6 +137,47 @@ live_loop("drums", (b) => {
     engine.dispose()
   })
 
+  // Issue #198 — nested live_loop must register on first occurrence only
+  // and emit a one-time warning. Pre-fix, every outer iteration re-registered
+  // :inner, leaking monitor synths and resetting tick state every outer tick.
+  it('nested live_loop registers once across outer iterations + warns once', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+
+    const messages: string[] = []
+    engine.setPrintHandler((m) => messages.push(m))
+
+    await engine.evaluate(`
+      live_loop :outer do
+        live_loop :inner do
+          play 60
+          sleep 1
+        end
+        sleep 4
+      end
+    `)
+    engine.play()
+
+    type Sched = { tick: (t: number) => void; getTask: (n: string) => unknown }
+    const scheduler = (engine as unknown as { scheduler: Sched }).scheduler
+    // Run multiple outer iterations to force the nested registration call to
+    // be re-encountered. Pre-fix this caused 3+ inner registrations.
+    for (let i = 0; i < 3; i++) {
+      scheduler.tick(20)
+      await new Promise((r) => setTimeout(r, 5))
+    }
+
+    const innerWarnings = messages.filter(
+      (m) => m.includes('inner') && m.includes('inside another live_loop'),
+    )
+    expect(innerWarnings.length).toBe(1)
+    // Both loops are running.
+    expect(scheduler.getTask('outer')).toBeDefined()
+    expect(scheduler.getTask('inner')).toBeDefined()
+
+    engine.dispose()
+  })
+
   it('eventStream receives events during playback', async () => {
     const engine = new SonicPiEngine()
     await engine.init()
@@ -378,6 +419,100 @@ end
       e.name === 'InfiniteLoopError' || e.message.includes('Infinite loop')
     )
     expect(hasInfiniteLoopError).toBe(true)
+
+    engine.dispose()
+  })
+
+  // Issue #201 (G3) — Deferred set_volume must update the closure-local
+  // `currentVolume` the engine reads via current_volume_fn. Pre-fix the
+  // setVolume step called bridge.setMasterVolume directly, so the engine's
+  // currentVolume stayed at its initial 1.
+  //
+  // The verification trick: `puts` inside a live_loop fires at BUILD time,
+  // baking its arg into a print step. So iteration N+1's build reads the
+  // currentVolume that iteration N's deferred set_volume left behind.
+  it('deferred set_volume mutates engine currentVolume — visible to next iteration', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+
+    const messages: string[] = []
+    engine.setPrintHandler((m) => messages.push(m))
+
+    // Single evaluate so both calls share the same closure scope.
+    // Note: `current_volume` in our DSL is a JS function reference, not a
+    // bare identifier (no auto-invocation). Use `current_volume()` for the
+    // assertion target — separate gap from the deferred-step plumbing.
+    await engine.evaluate(`
+      live_loop :duck do
+        puts "vol=#{current_volume()}"
+        set_volume 0.3
+        sleep 1
+      end
+    `)
+    engine.play()
+
+    type Sched = { tick: (t: number) => void }
+    const scheduler = (engine as unknown as { scheduler: Sched }).scheduler
+    // Drive several iterations. Iter 1 build: prints "vol=1" (initial),
+    // pushes setVolume(0.3) step. Iter 1 run: setVolume fires →
+    // currentVolume = 0.3. Iter 2 build: prints "vol=0.3". Pre-fix every
+    // iteration printed "vol=1" because the closure was never mutated.
+    for (let i = 0; i < 5; i++) {
+      scheduler.tick(2)
+      await new Promise((r) => setTimeout(r, 5))
+    }
+
+    const volLines = messages.filter((m) => /vol=/.test(m))
+    expect(volLines.length).toBeGreaterThan(1)
+    expect(volLines.some((m) => m.includes('vol=0.3'))).toBe(true)
+
+    engine.dispose()
+  })
+
+  // Issue #202 (G4) — SoundLayer clamp warnings used to fire every loop
+  // iteration. The fix wraps printHandler with a Set-based dedup that
+  // matches `[...] clamped to N (min|max)` lines and emits each unique
+  // message at most once per evaluate(). Re-evaluating clears the dedup.
+  //
+  // Verified at the printHandler boundary directly — exercising the FX
+  // chain end-to-end requires a live SuperSonic bridge (browser only).
+  it('dedups clamp-warning messages; resets on re-evaluate', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+
+    const messages: string[] = []
+    engine.setPrintHandler((m) => messages.push(m))
+
+    // Reach into the wrapped printHandler that the engine plumbed via
+    // setPrintHandler. SoundLayer's warnFn callbacks call this same wrapped
+    // handler with messages of the shape we dedup on.
+    type Internal = { printHandler: ((m: string) => void) | null }
+    const wrapped = (engine as unknown as Internal).printHandler!
+    expect(wrapped).toBeTypeOf('function')
+
+    // First evaluation — fire the same clamp message 10 times. Should
+    // surface exactly once. Other (non-clamp) messages always pass through.
+    await engine.evaluate(`# noop`)
+    for (let i = 0; i < 10; i++) {
+      wrapped('[Warning] play :gverb — room: 233 clamped to 1 (max)')
+    }
+    wrapped('[Warning] something else')
+    wrapped('[Warning] play :gverb — room: 233 clamped to 1 (max)')
+    wrapped('[Warning] play :gverb — mix: 5 clamped to 1 (max)') // distinct line — passes
+    const clampMatches = messages.filter((m) => /room: 233 clamped to 1 \(max\)/.test(m))
+    const otherMessages = messages.filter((m) => /something else/.test(m))
+    const distinctClamp = messages.filter((m) => /mix: 5 clamped to 1 \(max\)/.test(m))
+    expect(clampMatches.length).toBe(1)
+    expect(otherMessages.length).toBe(1)
+    expect(distinctClamp.length).toBe(1)
+
+    // Re-evaluate clears the dedup so the same clamp re-surfaces once.
+    messages.length = 0
+    await engine.evaluate(`# noop again`)
+    wrapped('[Warning] play :gverb — room: 233 clamped to 1 (max)')
+    wrapped('[Warning] play :gverb — room: 233 clamped to 1 (max)')
+    const reMatches = messages.filter((m) => /room: 233 clamped to 1 \(max\)/.test(m))
+    expect(reMatches.length).toBe(1)
 
     engine.dispose()
   })

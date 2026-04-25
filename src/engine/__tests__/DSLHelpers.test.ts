@@ -215,6 +215,76 @@ describe('MidiBridge — CC state', () => {
   })
 })
 
+describe('MidiBridge — pending note-off cancellation (#200)', () => {
+  // The DSL `midi 60, sustain: 1` and the deferred midiOut step both schedule
+  // an automatic note-off. Pre-fix, that setTimeout was fire-and-forget — calling
+  // engine.stop() left the timer queued and the external device kept sounding
+  // the note until the timer eventually fired. Worse: a fresh run could collide
+  // with the stale note-off.
+  //
+  // The fix: scheduleNoteOff tracks the timer; cancelPendingNoteOffs() clears
+  // every queued timer and immediately fires its note-off so the device gets a
+  // proper release.
+  it('cancelPendingNoteOffs cancels the timer and immediately fires note-off', async () => {
+    const bridge = new MidiBridge()
+    const sent: number[][] = []
+    type Internal = { send: (data: number[]) => void }
+    ;(bridge as unknown as Internal).send = (d: number[]) => { sent.push([...d]) }
+
+    bridge.noteOn(60, 100, 1)
+    expect(sent.length).toBe(1) // 0x90 60 100
+
+    // Schedule for 1 second, then cancel ~immediately.
+    bridge.scheduleNoteOff(60, 1, 1.0)
+    expect(sent.length).toBe(1) // not yet fired
+
+    bridge.cancelPendingNoteOffs()
+    // Cancellation MUST send the note-off NOW so the device doesn't hang.
+    expect(sent.length).toBe(2)
+    expect(sent[1][0] & 0xF0).toBe(0x80) // NOTE_OFF status
+    expect(sent[1][1]).toBe(60)
+
+    // Wait past the original delay — no second fire (timer was cleared).
+    await new Promise((r) => setTimeout(r, 1100))
+    expect(sent.length).toBe(2)
+  })
+
+  it('cancelPendingNoteOffs releases multiple pending notes across channels', () => {
+    const bridge = new MidiBridge()
+    const sent: number[][] = []
+    type Internal = { send: (data: number[]) => void }
+    ;(bridge as unknown as Internal).send = (d: number[]) => { sent.push([...d]) }
+
+    bridge.scheduleNoteOff(60, 1, 5)
+    bridge.scheduleNoteOff(64, 1, 5)
+    bridge.scheduleNoteOff(67, 2, 5)
+    expect(sent.length).toBe(0) // none fired yet
+
+    bridge.cancelPendingNoteOffs()
+    // All three released. Channel encoded in low nibble of status.
+    expect(sent.length).toBe(3)
+    const releases = sent.map((m) => ({ status: m[0] & 0xF0, channel: (m[0] & 0x0F) + 1, note: m[1] }))
+    expect(releases.every((r) => r.status === 0x80)).toBe(true)
+    expect(releases.find((r) => r.note === 60 && r.channel === 1)).toBeDefined()
+    expect(releases.find((r) => r.note === 64 && r.channel === 1)).toBeDefined()
+    expect(releases.find((r) => r.note === 67 && r.channel === 2)).toBeDefined()
+  })
+
+  it('a fired note-off self-removes; cancel after that is a no-op', async () => {
+    const bridge = new MidiBridge()
+    const sent: number[][] = []
+    type Internal = { send: (data: number[]) => void }
+    ;(bridge as unknown as Internal).send = (d: number[]) => { sent.push([...d]) }
+
+    bridge.scheduleNoteOff(72, 1, 0.05)
+    await new Promise((r) => setTimeout(r, 80))
+    expect(sent.length).toBe(1) // timer fired naturally
+
+    bridge.cancelPendingNoteOffs() // no double-fire
+    expect(sent.length).toBe(1)
+  })
+})
+
 describe('MidiBridge — pitch bend state', () => {
   it('returns 0 before any pitch bend received', () => {
     const bridge = new MidiBridge()

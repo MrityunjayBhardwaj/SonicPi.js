@@ -396,6 +396,36 @@ end`)
       expect(result.code).toContain('b.in_thread(')
     })
 
+    // Issue #205: `loop do` inside in_thread used to emit `while(true) { __b.play; __b.sleep }`
+    // whose sleep reset ProgramBuilder's budget guard → infinite Step[] push at build time
+    // → tab OOM. Fix hoists the inner loop to a sibling auto-named live_loop.
+    it('hoists loop do inside in_thread to sibling live_loop (no build-time while(true))', () => {
+      const result = treeSitterTranspile(`in_thread do
+  loop do
+    sample :bd_ada
+    sleep 1
+  end
+end`)
+      expect(result.ok).toBe(true)
+      // Must hoist — no build-time while(true) lurking in the in_thread body
+      expect(result.code).not.toContain('while (true)')
+      expect(result.code).toContain('live_loop("__inthread_loop_0"')
+    })
+
+    it('keeps setup statements before loop in in_thread; hoists the loop', () => {
+      const result = treeSitterTranspile(`in_thread do
+  use_synth :saw
+  loop do
+    play 60
+    sleep 1
+  end
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).not.toContain('while (true)')
+      expect(result.code).toContain('in_thread(')
+      expect(result.code).toContain('live_loop("__inthread_loop_0"')
+    })
+
     it('define with block params', () => {
       const result = treeSitterTranspile(`define :bass_hit do
   sample :bd_haus, amp: 2
@@ -1166,6 +1196,187 @@ end`)
 end`)
       expect(result.ok).toBe(true)
       expect(result.code).toContain('?.at(__b.look())')
+    })
+  })
+
+  // Phase A — error hardening (#185): previously silent passthroughs now
+  // surface as structured errors with a report-bug URL.
+  describe('Error hardening — unsupported Ruby features', () => {
+    it('Math::PI transpiles to Math.PI (known safe mapping)', () => {
+      const r = treeSitterTranspile(`x = Math::PI`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('Math.PI')
+    })
+
+    it('Math::E transpiles to Math.E', () => {
+      const r = treeSitterTranspile(`x = Math::E`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('Math.E')
+    })
+
+    it('Float::INFINITY transpiles to Infinity', () => {
+      const r = treeSitterTranspile(`x = Float::INFINITY`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('Infinity')
+    })
+
+    it('unknown scope_resolution flags a structured error', () => {
+      const r = treeSitterTranspile(`x = MyNamespace::Something`)
+      expect(r.ok).toBe(false)
+      expect(r.errors.length).toBeGreaterThan(0)
+      expect(r.errors[0]).toContain('scope_resolution')
+      expect(r.errors[0]).toContain('MyNamespace::Something')
+      expect(r.errors[0]).toContain('github.com/MrityunjayBhardwaj/SonicPi.js/issues/new')
+    })
+
+    it('error includes line number and code snippet', () => {
+      const r = treeSitterTranspile(`use_bpm 120\nlive_loop :t do\n  x = MyNamespace::Missing\n  sleep 1\nend`)
+      expect(r.ok).toBe(false)
+      expect(r.errors[0]).toMatch(/Line 3:/)
+    })
+
+    it('splat_argument in array literal transpiles to JS spread', () => {
+      const r = treeSitterTranspile(`live_loop :t do\n  a = [*ring(1,2,3)]\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('...')
+    })
+
+    it('case/when still works after pattern wrapper tightening', () => {
+      const r = treeSitterTranspile(`x = 1\ncase x\nwhen 1 then play 60\nwhen 2 then play 64\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('=== 1')
+      expect(r.code).toContain('=== 2')
+    })
+  })
+
+  // Phase B — empirical handler fixes from the in-thread forum test run (#186).
+  describe('Phase B — handler fixes from forum test run', () => {
+    it('kind_of?(Integer) → __spIsA with class-name string', () => {
+      const r = treeSitterTranspile(`x = 5\nif x.kind_of?(Integer)\n  play 60\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('__spIsA(x, "Integer")')
+    })
+
+    it('is_a?(Array) uses same __spIsA dispatch', () => {
+      const r = treeSitterTranspile(`x = [1]\nif x.is_a?(Array)\n  play 60\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('__spIsA(x, "Array")')
+    })
+
+    it('array .take(n) transpiles (polyfill handles runtime)', () => {
+      const r = treeSitterTranspile(`c = [:f3, :a3, :c4]\nlive_loop :t do\n  play c.take(1).look\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('.take(1)')
+    })
+
+    it('Array * Integer (Ruby repeat) uses __spMul', () => {
+      const r = treeSitterTranspile(`hats = [1,0,1,0] * 4\nlive_loop :t do\n  play hats.tick\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('__spMul([1, 0, 1, 0], 4)')
+    })
+
+    it('.each do |a, b| emits array destructure', () => {
+      const r = treeSitterTranspile(`pairs = [[:c4, 1], [:e4, 2]]\nlive_loop :t do\n  pairs.each do |n, d|\n    play n\n    sleep d\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/for \(const \[n, d\] of pairs\)/)
+    })
+
+    it('single-arg .each do |item| still uses bare binding', () => {
+      const r = treeSitterTranspile(`[1,2,3].each do |x|\n  play x\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('for (const x of')
+    })
+
+    it('top-level use_bpm rrand(…) transpiles cleanly (runtime-bound)', () => {
+      const r = treeSitterTranspile(`use_bpm rrand(90, 130)\nlive_loop :t do\n  play 60\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('use_bpm(rrand(90, 130))')
+    })
+  })
+
+  // Phase C — handler fixes from forum test run (#188-#192).
+  describe('Phase C — handler fixes', () => {
+    // #188 — Array enumerable: .sum, .avg
+    it('.sum transpiles to reduce((a,b)=>a+b, 0)', () => {
+      const r = treeSitterTranspile(`x = [1, 2, 3].sum`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('.reduce((a, b) => a + b, 0)')
+    })
+
+    it('.avg transpiles to reduce/length', () => {
+      const r = treeSitterTranspile(`x = [1, 2, 3].avg`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/\.reduce\(\(a, b\) => a \+ b, 0\) \/ .*\.length/)
+    })
+
+    it('chained .sum on ring: scale(:c).sum', () => {
+      const r = treeSitterTranspile(`x = scale(:c4, :major).sum`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('.reduce((a, b) => a + b, 0)')
+    })
+
+    // #189 — Hash methods: .values, .keys
+    it('Hash#values → Object.values', () => {
+      const r = treeSitterTranspile(`blues = { c: 1, d: 2 }\nx = blues.values`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('Object.values(blues)')
+    })
+
+    it('Hash#keys → Object.keys', () => {
+      const r = treeSitterTranspile(`blues = { c: 1, d: 2 }\nx = blues.keys`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('Object.keys(blues)')
+    })
+
+    it('.values with a block does NOT shadow (lets block handlers match)', () => {
+      // Defensive: ensure the no-block guard means future handlers can still match
+      // foo.values { ... } forms without being hijacked by Object.values().
+      const r = treeSitterTranspile(`x = [1,2,3].values`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('Object.values')
+    })
+
+    // #192 — case/when with multiple patterns (regression coverage for
+    // existing behavior that was previously uncovered by tests).
+    it('when 1, 2, 3 ORs patterns with ||', () => {
+      const r = treeSitterTranspile(`x = 2\ncase x\nwhen 1, 2, 3 then y = 10\nwhen 4, 5 then y = 20\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('=== 1 || ')
+      expect(r.code).toContain('=== 2')
+      expect(r.code).toContain('=== 3')
+    })
+
+    // #190 — top-level `loop do` hoists to an auto-named live_loop so the
+    // scheduler owns its cadence (otherwise `while(true)` inside the
+    // __run_once wrapper traps the iteration and the program hangs).
+    it('top-level loop do wraps in live_loop("__loop_0", …)', () => {
+      const r = treeSitterTranspile(`loop do\n  play 60\n  sleep 0.25\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('live_loop("__loop_0"')
+      expect(r.code).not.toContain('live_loop("__run_once"')
+      expect(r.code).toContain('__b.play(60')
+      expect(r.code).toContain('__b.sleep(0.25)')
+    })
+
+    it('multiple top-level loop do blocks get unique auto names', () => {
+      const r = treeSitterTranspile(`loop do\n  play 60\n  sleep 1\nend\nloop do\n  play 64\n  sleep 1\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('live_loop("__loop_0"')
+      expect(r.code).toContain('live_loop("__loop_1"')
+    })
+
+    it('loop do inside live_loop stays as while(true) (nested, scheduler-driven)', () => {
+      const r = treeSitterTranspile(`live_loop :outer do\n  loop do\n    play 60\n    sleep 0.25\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('while (true)')
+      expect(r.code).toContain('live_loop("outer"')
+    })
+
+    it('top-level loop do co-exists with bare play (play stays in __run_once)', () => {
+      const r = treeSitterTranspile(`play 48\nloop do\n  play 60\n  sleep 0.5\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('live_loop("__run_once"')
+      expect(r.code).toContain('live_loop("__loop_0"')
     })
   })
 })
