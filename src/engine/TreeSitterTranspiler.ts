@@ -242,6 +242,14 @@ const BUILDER_METHODS = new Set([
   'osc_send',
   // Sample BPM
   'use_sample_bpm',
+  // Deferred-step DSL contract (issue #193 — must mirror methods on
+  // ProgramBuilder so they fire at scheduled virtual time, not build time).
+  'stop_loop', 'set_volume', 'use_osc', 'osc',
+  'midi', 'midi_note_on', 'midi_note_off', 'midi_cc',
+  'midi_pitch_bend', 'midi_channel_pressure', 'midi_poly_pressure',
+  'midi_prog_change', 'midi_clock_tick',
+  'midi_start', 'midi_stop', 'midi_continue',
+  'midi_all_notes_off', 'midi_notes_off',
   // Budget
   '__checkBudget__',
 ])
@@ -1047,11 +1055,9 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return '__b.stop()'
     }
 
-    // stop_loop :name
-    if (methodName === 'stop_loop') {
-      const args = argsNode ? transpileArgList(argsNode, ctx) : ''
-      return `stop_loop(${args})`
-    }
+    // stop_loop :name — dispatched via BUILDER_METHODS so it gets `__b.`
+    // prefix inside loops (deferred step at scheduled virtual time, not
+    // build time). See issue #194.
 
     // use_synth :name
     if (methodName === 'use_synth') {

@@ -175,4 +175,43 @@ describe('DSL builder contract (issue #193)', () => {
     // the list must match.
     expect(ALL_DSL_NAMES.length).toBeGreaterThan(70)
   })
+
+  it('deferred-step methods push steps in declaration order (regression for stop_loop bug)', () => {
+    // The exact bug that hid for a year: stop_loop("kick") fired at build
+    // time, BEFORE the preceding sleep step was even built into the program.
+    // After the fix, the step ordering must match source order so the
+    // interpreter walks them in lock-step with sleep advances.
+    const b = new ProgramBuilder()
+    b.sleep(144)
+    b.stop_loop('kick')
+    b.set_volume(0.3)
+    b.use_osc('host', 4560)
+    b.osc('/path', 1)
+    b.midi_note_on(60, 100, { channel: 1 })
+    const program = b.build()
+
+    expect(program[0].tag).toBe('sleep')
+    expect(program[1].tag).toBe('stopLoop')
+    expect((program[1] as { tag: 'stopLoop'; name: string }).name).toBe('kick')
+    expect(program[2].tag).toBe('setVolume')
+    expect(program[3].tag).toBe('useOsc')
+    expect(program[4].tag).toBe('oscSend')
+    expect(program[5].tag).toBe('midiOut')
+    expect((program[5] as { tag: 'midiOut'; kind: string }).kind).toBe('noteOn')
+  })
+
+  it('midi shorthand emits noteOn + scheduled noteOff with sustain', () => {
+    const b = new ProgramBuilder()
+    b.midi(60, { sustain: 0.5, velocity: 90, channel: 2 })
+    const program = b.build()
+
+    expect(program.length).toBe(2)
+    expect(program[0].tag).toBe('midiOut')
+    expect((program[0] as { tag: 'midiOut'; kind: string }).kind).toBe('noteOn')
+    expect((program[0] as { tag: 'midiOut'; args: unknown[] }).args).toEqual([60, 90, 2])
+    expect(program[1].tag).toBe('midiOut')
+    expect((program[1] as { tag: 'midiOut'; kind: string }).kind).toBe('noteOff')
+    // Third arg carries the sustain in BEATS — interpreter scales by current bpm.
+    expect((program[1] as { tag: 'midiOut'; args: unknown[] }).args).toEqual([60, 2, 0.5])
+  })
 })

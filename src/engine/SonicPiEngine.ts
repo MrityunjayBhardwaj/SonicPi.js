@@ -441,6 +441,7 @@ export class SonicPiEngine {
             reusableFx: this.reusableFx,
             globalStore: this.globalStore,
             oscHandler: this.oscHandler ?? undefined,
+            midiBridge: this.midiBridge,
           })
 
           // Auto-cue the loop name after each iteration.

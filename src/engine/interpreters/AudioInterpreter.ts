@@ -16,6 +16,7 @@ const SAMPLE_EVENT_VISUAL_DURATION = 0.5
 import type { VirtualTimeScheduler } from '../VirtualTimeScheduler'
 import type { SuperSonicBridge } from '../SuperSonicBridge'
 import type { SoundEventStream, SoundEvent } from '../SoundEventStream'
+import type { MidiBridge } from '../MidiBridge'
 
 /** State for a reusable inner FX node (persists across loop iterations). */
 interface ReusableFxState {
@@ -46,6 +47,8 @@ export interface AudioContext {
   globalStore?: Map<string | symbol, unknown>
   /** Host-provided OSC send handler. If not set, osc_send is a silent no-op. */
   oscHandler?: (host: string, port: number, path: string, ...args: unknown[]) => void
+  /** MIDI bridge for deferred midi-out steps (issue #195). */
+  midiBridge?: MidiBridge
 }
 
 /**
@@ -348,8 +351,84 @@ export async function runProgram(
         ctx.bridge?.flushMessages()
         if (task) task.running = false
         return
+
+      // --- Deferred-step DSL fixes (issue #193) ---
+
+      case 'stopLoop':
+        // Stop a named live_loop at the scheduled time (#194). Without this,
+        // stop_loop fired at BUILD time, killing target loops at beat 0.
+        ctx.scheduler.stopLoop(step.name)
+        break
+
+      case 'setVolume': {
+        // Master-volume change at the scheduled time (#197). Ducking patterns
+        // were broken because both calls fired at beat 0; now the second call
+        // happens after the intermediate sleep.
+        const vol = Math.max(0, Math.min(5, step.vol))
+        ctx.bridge?.setMasterVolume(vol / 5)
+        break
+      }
+
+      case 'useOsc':
+        // Mutates builder defaults at build; this step is here so the change
+        // is also visible to a step-time observer (no-op effect on bridge,
+        // but keeps the lifecycle parity-correct against desktop SP).
+        break
+
+      case 'midiOut': {
+        // 14 MIDI-output entry points (#195). All routed through one tag
+        // with a `kind` discriminator. Without these, every midi_* call
+        // inside a live_loop fired at beat 0 — scheduled MIDI was broken.
+        const mb = ctx.midiBridge
+        if (!mb) break
+        const a = step.args as unknown[]
+        switch (step.kind) {
+          case 'noteOn': {
+            const [note, vel, ch] = a as [number | string, number, number]
+            const n = typeof note === 'string' ? noteFromString(note) : note
+            mb.noteOn(n, vel, ch)
+            break
+          }
+          case 'noteOff': {
+            const [note, ch, sustainBeats] = a as [number | string, number, number]
+            const n = typeof note === 'string' ? noteFromString(note) : note
+            if (sustainBeats > 0) {
+              // BPM-aware delay (replaces the wall-clock setTimeout from the
+              // pre-fix `midi(...)` shorthand).
+              const seconds = sustainBeats * 60 / currentBpm
+              setTimeout(() => mb.noteOff(n, ch), seconds * 1000)
+            } else {
+              mb.noteOff(n, ch)
+            }
+            break
+          }
+          case 'cc':              { const [c, v, ch] = a as [number, number, number]; mb.cc(c, v, ch); break }
+          case 'pitchBend':       { const [v, ch] = a as [number, number]; mb.pitchBend(v, ch); break }
+          case 'channelPressure': { const [v, ch] = a as [number, number]; mb.channelPressure(v, ch); break }
+          case 'polyPressure':    { const [n, v, ch] = a as [number, number, number]; mb.polyPressure(n, v, ch); break }
+          case 'progChange':      { const [p, ch] = a as [number, number]; mb.programChange(p, ch); break }
+          case 'clockTick':       mb.clockTick(); break
+          case 'start':           mb.midiStart(); break
+          case 'stop':            mb.midiStop(); break
+          case 'continue':        mb.midiContinue(); break
+          case 'allNotesOff':     { const [ch] = a as [number]; mb.allNotesOff(ch); break }
+        }
+        break
+      }
     }
   }
   // Flush any remaining queued messages at end of program
   ctx.bridge?.flushMessages()
+}
+
+/** Tiny note-name → MIDI helper for midiOut steps (avoids importing whole module). */
+function noteFromString(s: string): number {
+  // Accept "c4", "c#4", "db4" etc. Falls back to 60 (middle C).
+  const m = /^([a-g])([#bs]?)(-?\d+)?$/i.exec(s)
+  if (!m) return 60
+  const semis: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }
+  const base = semis[m[1].toLowerCase()] ?? 0
+  const acc = m[2] === '#' || m[2] === 's' ? 1 : m[2] === 'b' ? -1 : 0
+  const oct = m[3] ? parseInt(m[3], 10) : 4
+  return (oct + 1) * 12 + base + acc
 }
