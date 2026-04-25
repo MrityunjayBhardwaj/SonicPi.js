@@ -62,3 +62,37 @@ export function hzToMidi(freq: number): number {
 export function noteToFreq(note: string | number): number {
   return midiToFreq(noteToMidi(note))
 }
+
+const PITCH_CLASS_NAMES = ['C', 'Cs', 'D', 'Ds', 'E', 'F', 'Fs', 'G', 'Gs', 'A', 'As', 'B']
+
+/**
+ * SonicPi::Note-like object returned by `note_info`. Mirrors Ruby's
+ * method-call semantics — Sonic Pi user code writes `.midi_note` (a method
+ * call without parens), and our TreeSitter transpiler emits `.midi_note()`.
+ */
+export class NoteInfo {
+  private _midi: number
+  constructor(midi: number) {
+    this._midi = midi
+  }
+  midi_note(): number {
+    return this._midi
+  }
+  octave(): number {
+    return Math.floor(Math.round(this._midi) / 12) - 1
+  }
+  pitch_class(): string {
+    return PITCH_CLASS_NAMES[((Math.round(this._midi) % 12) + 12) % 12]
+  }
+  to_s(): string {
+    return `${this.pitch_class()}${this.octave()}`
+  }
+}
+
+/**
+ * Sonic Pi's `note_info(name_or_midi)` — returns a NoteInfo with method
+ * accessors `.midi_note()`, `.octave()`, `.pitch_class()`, `.to_s()`.
+ */
+export function noteInfo(n: string | number): NoteInfo {
+  return new NoteInfo(noteToMidi(n))
+}

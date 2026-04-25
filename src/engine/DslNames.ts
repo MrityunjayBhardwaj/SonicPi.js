@@ -25,7 +25,7 @@ export const DSL_NAMES = [
   'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in', 'rdist',
   'chord', 'scale', 'chord_invert', 'note', 'note_range',
   'chord_degree', 'degree', 'chord_names', 'scale_names',
-  'noteToMidi', 'midiToFreq', 'noteToFreq',
+  'noteToMidi', 'midiToFreq', 'noteToFreq', 'note_info',
   'hz_to_midi', 'midi_to_hz',
   'quantise', 'quantize', 'octs',
   'current_bpm',

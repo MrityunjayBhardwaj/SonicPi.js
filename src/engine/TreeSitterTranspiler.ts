@@ -236,7 +236,7 @@ const BUILDER_METHODS = new Set([
   'hz_to_midi', 'midi_to_hz', 'quantise', 'quantize', 'octs',
   'kill', 'play_chord', 'play_pattern',
   'with_octave', 'with_random_seed', 'with_density',
-  'noteToMidi', 'midiToFreq', 'noteToFreq',
+  'noteToMidi', 'midiToFreq', 'noteToFreq', 'note_info',
   // Data constructors
   'ring', 'knit', 'range', 'line', 'spread',
   'chord', 'scale', 'chord_invert', 'note', 'note_range',
