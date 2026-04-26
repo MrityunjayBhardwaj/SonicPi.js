@@ -70,6 +70,7 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['noteToMidi',       'Pure.'],
   ['midiToFreq',       'Pure.'],
   ['noteToFreq',       'Pure.'],
+  ['note_info',        'Pure: name/midi → SonicPi::Note-like {midi_note, octave, pitch_class}.'],
   ['hz_to_midi',       'Pure.'],
   ['midi_to_hz',       'Pure.'],
   ['quantise',         'Pure.'],

@@ -149,7 +149,7 @@ export function createIsolatedExecutor(
   // JS can't do operator overloading, so the transpiler emits __spAdd/__spSub/__spMul
   // instead of raw +/-/* operators. These helpers detect types at runtime and dispatch.
   const spOperatorPolyfill = [
-    'var __spNoteRe = /^[a-g][sb#]?\\d*$/;',
+    'var __spNoteRe = /^[a-g][sb#]?\\d*$/i;',
     'function __spIsNote(v) { return typeof v === "string" && __spNoteRe.test(v); }',
     'function __spToNum(v) { return __spIsNote(v) && typeof note === "function" ? note(v) : v; }',
     'function __spIsRing(v) { return v != null && typeof v === "object" && typeof v.toArray === "function" && typeof v.tick === "function"; }',

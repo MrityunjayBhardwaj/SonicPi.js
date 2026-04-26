@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { SeededRandom } from '../SeededRandom'
 import { Ring, ring } from '../Ring'
 import { spread } from '../EuclideanRhythm'
-import { noteToMidi, midiToFreq, noteToFreq } from '../NoteToFreq'
+import { noteToMidi, midiToFreq, noteToFreq, noteInfo } from '../NoteToFreq'
 import { MidiBridge } from '../MidiBridge'
 
 describe('SeededRandom', () => {
@@ -178,6 +178,47 @@ describe('NoteToFreq', () => {
 
   it('noteToFreq combines both', () => {
     expect(noteToFreq('a4')).toBeCloseTo(440, 1)
+  })
+
+  it('noteToMidi accepts uppercase note names (issue #208)', () => {
+    expect(noteToMidi('C3')).toBe(48)
+    expect(noteToMidi('Fs5')).toBe(78)
+    expect(noteToMidi('Eb4')).toBe(63)
+  })
+})
+
+describe('noteInfo (issue #208 — Sonic Pi note_info parity)', () => {
+  // Methods (not properties) because the TreeSitter transpiler emits
+  // Ruby's `.foo` as JS method call `.foo()`.
+  it(':c4 → midi 60, octave 4, pitch_class C', () => {
+    const info = noteInfo('c4')
+    expect(info.midi_note()).toBe(60)
+    expect(info.octave()).toBe(4)
+    expect(info.pitch_class()).toBe('C')
+    expect(info.to_s()).toBe('C4')
+  })
+
+  it('uppercase :C3 also resolves', () => {
+    expect(noteInfo('C3').midi_note()).toBe(48)
+  })
+
+  it('accepts a MIDI integer', () => {
+    const info = noteInfo(72)
+    expect(info.midi_note()).toBe(72)
+    expect(info.octave()).toBe(5)
+    expect(info.pitch_class()).toBe('C')
+  })
+
+  it('handles sharps', () => {
+    expect(noteInfo('fs5').pitch_class()).toBe('Fs')
+    expect(noteInfo('fs5').octave()).toBe(5)
+  })
+
+  it('handles low octaves (b3 below c4 boundary)', () => {
+    const info = noteInfo('b3')
+    expect(info.midi_note()).toBe(59)
+    expect(info.octave()).toBe(3)
+    expect(info.pitch_class()).toBe('B')
   })
 })
 

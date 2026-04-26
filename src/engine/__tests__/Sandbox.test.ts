@@ -226,4 +226,32 @@ describe('Sandbox', () => {
     await execute((v: unknown) => { result = v })
     expect(result).toBe(42)
   })
+
+  // --- Issue #208: __spIsNote regex must be case-insensitive ---
+  // Symptom: `:C3 + 0` produced string "C30" instead of MIDI 48,
+  // poisoning downstream subtraction with NaN (bass_foundation note: NaN).
+  it('uppercase symbols (e.g. :C3) flow through __spAdd as numeric MIDI', async () => {
+    let result: unknown = null
+    // Mimics the transpiled form of: g_grundton = :C3; g_note = g_grundton + 0; out(g_note - 24)
+    const execute = createSandboxedExecutor(
+      'var g = "C3"; var n = __spAdd(g, 0); var out = __spSub(n, 24); storeResult(out)',
+      ['storeResult', 'note']
+    )
+    await execute(
+      (v: unknown) => { result = v },
+      (s: string) => { // note() implementation
+        const str = s.toLowerCase()
+        const map: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }
+        const m = str.match(/^([a-g])(s|b|#)?(\d+)?$/)
+        if (!m) return 60
+        const base = map[m[1]]
+        const oct = m[3] ? parseInt(m[3]) : 4
+        let midi = (oct + 1) * 12 + base
+        if (m[2] === 's' || m[2] === '#') midi += 1
+        if (m[2] === 'b') midi -= 1
+        return midi
+      }
+    )
+    expect(result).toBe(24) // 48 - 24, NOT NaN
+  })
 })

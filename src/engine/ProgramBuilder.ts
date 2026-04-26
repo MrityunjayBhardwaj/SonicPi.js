@@ -10,7 +10,7 @@
 
 import type { Step, Program } from './Program'
 import { SeededRandom } from './SeededRandom'
-import { noteToMidi, midiToFreq, hzToMidi } from './NoteToFreq'
+import { noteToMidi, midiToFreq, hzToMidi, noteInfo } from './NoteToFreq'
 import { ring, knit, range, line, Ring } from './Ring'
 import { spread } from './EuclideanRhythm'
 import { chord, scale, chord_invert, note, note_range, chord_degree, degree, chord_names, scale_names } from './ChordScale'
@@ -693,6 +693,7 @@ export class ProgramBuilder {
   note_range = note_range
   noteToMidi = noteToMidi
   midiToFreq = midiToFreq
+  note_info = noteInfo
 
   noteToFreq(n: string | number): number {
     return midiToFreq(noteToMidi(n))

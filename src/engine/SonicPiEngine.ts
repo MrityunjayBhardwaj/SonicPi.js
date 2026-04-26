@@ -25,7 +25,7 @@ import { SoundEventStream } from './SoundEventStream'
 import { ring, knit, range, line } from './Ring'
 import { MidiBridge } from './MidiBridge'
 import { spread } from './EuclideanRhythm'
-import { noteToMidi, midiToFreq, noteToFreq, hzToMidi } from './NoteToFreq'
+import { noteToMidi, midiToFreq, noteToFreq, hzToMidi, noteInfo } from './NoteToFreq'
 import { chord, scale, chord_invert, note, note_range, chord_degree, degree, chord_names, scale_names } from './ChordScale'
 import { getSampleNames, getCategories } from './SampleCatalog'
 import { loadAllCustomSamples, type CustomSampleRecord } from './CustomSampleStore'
@@ -822,7 +822,7 @@ export class SonicPiEngine {
         tlRrand, tlRrandI, tlRand, tlRandI, tlChoose, tlDice, tlOneIn, tlRdist,
         chord, scale, chord_invert, note, note_range,
         chord_degree, degree, chord_names, scale_names,
-        noteToMidi, midiToFreq, noteToFreq,
+        noteToMidi, midiToFreq, noteToFreq, noteInfo,
         hzToMidi, midiToFreq,
         quantise, quantize, octs,
         current_bpm,
