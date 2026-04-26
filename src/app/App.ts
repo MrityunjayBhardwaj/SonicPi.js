@@ -853,7 +853,7 @@ export class App {
           // CDN dependency. dynamic import() does not support SRI.
           // See src/engine/cdn-manifest.ts for the full dependency manifest.
           // @ts-ignore — CDN URL
-          const mod = await import(/* @vite-ignore */ 'https://unpkg.com/supersonic-scsynth@latest')
+          const mod = await import(/* @vite-ignore */ 'https://unpkg.com/supersonic-scsynth@0.57.0')
           SuperSonicClass = mod.SuperSonic ?? mod.default
           this.console.logSystem('  WASM runtime loaded.')
         } catch {

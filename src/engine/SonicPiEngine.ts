@@ -322,11 +322,30 @@ export class SonicPiEngine {
 
       // Catalog queries
       const synth_names_fn = () => [
-        'beep','saw','prophet','tb303','supersaw','pluck','pretty_bell','piano',
-        'dsaw','dpulse','dtri','fm','mod_fm','mod_saw','mod_pulse','mod_tri',
-        'sine','square','tri','pulse','noise','pnoise','bnoise','gnoise','cnoise',
-        'chipbass','chiplead','chipnoise','dark_ambience','hollow','growl','zawa',
-        'blade','tech_saws','bass_foundation',
+        // Bells / oscillators
+        'beep','sine','saw','prophet','tb303','supersaw','pluck','pretty_bell','dull_bell','piano',
+        'dsaw','dpulse','dtri','square','tri','pulse','subpulse','fm',
+        // Mod synths
+        'mod_fm','mod_saw','mod_dsaw','mod_sine','mod_beep','mod_tri','mod_pulse',
+        // Noise variants
+        'noise','pnoise','bnoise','gnoise','cnoise',
+        // Chip
+        'chipbass','chiplead','chipnoise',
+        // Vintage / classic
+        'dark_ambience','hollow','growl','zawa','blade','tech_saws','hoover',
+        'bass_foundation','bass_highend','organ_tonewheel',
+        // Plucked / acoustic family
+        'rhodey','rodeo','kalimba','gabberkick',
+        // SC808 drum kit
+        'sc808_bassdrum','sc808_snare','sc808_clap','sc808_tomlo','sc808_tommid','sc808_tomhi',
+        'sc808_congalo','sc808_congamid','sc808_congahi','sc808_rimshot','sc808_claves',
+        'sc808_maracas','sc808_cowbell','sc808_closed_hihat','sc808_open_hihat','sc808_cymbal',
+        // Note: dark_sea_horn, singer, winwood_lead are in Desktop SP's synthinfo.rb
+        //   but their compiled .scsyndef binaries are not published on the SuperSonic CDN
+        //   (HTTP 404 at all known versions). Listing them would cause /s_new dispatch
+        //   to silently fail per SP5. Track in artifacts/designs/full-parity-gaps.md.
+        // Note: sound_in, sound_in_stereo, live_audio require Web Audio mic permission
+        //   plumbing which is not yet implemented. Track separately.
       ]
       const fx_names_fn = () => [
         'reverb','echo','delay','distortion','slicer','wobble','ixi_techno',
