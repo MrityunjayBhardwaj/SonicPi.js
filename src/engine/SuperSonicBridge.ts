@@ -195,15 +195,16 @@ export class SuperSonicBridge {
 
     // SuperSonic constructor options — URLs for workers, WASM, synthdefs, samples.
     // Workers and JS live in the main package; WASM in the core package.
-    const pkgBase = 'https://unpkg.com/supersonic-scsynth@latest/dist/'
-    const coreBase = 'https://unpkg.com/supersonic-scsynth-core@latest/'
-    this.resolvedSampleBaseURL = this.options.sampleBaseURL ?? 'https://unpkg.com/supersonic-scsynth-samples@latest/samples/'
+    // EXP-006: pinned to v0.57.0 to test if pre-faff87a (2026-03-03) MdaPiano build restores :piano
+    const pkgBase = 'https://unpkg.com/supersonic-scsynth@0.57.0/dist/'
+    const coreBase = 'https://unpkg.com/supersonic-scsynth-core@0.57.0/'
+    this.resolvedSampleBaseURL = this.options.sampleBaseURL ?? 'https://unpkg.com/supersonic-scsynth-samples@0.57.0/samples/'
     this.sonic = new SuperSonicClass({
       baseURL: this.options.baseURL ?? pkgBase,
       workerBaseURL: this.options.baseURL ?? `${pkgBase}workers/`,
       wasmBaseURL: this.options.coreBaseURL ?? `${coreBase}wasm/`,
       coreBaseURL: this.options.coreBaseURL ?? coreBase,
-      synthdefBaseURL: this.options.synthdefBaseURL ?? 'https://unpkg.com/supersonic-scsynth-synthdefs@latest/synthdefs/',
+      synthdefBaseURL: this.options.synthdefBaseURL ?? 'https://unpkg.com/supersonic-scsynth-synthdefs@0.57.0/synthdefs/',
       sampleBaseURL: this.resolvedSampleBaseURL,
       autoConnect: false,
       scsynthOptions: { numOutputBusChannels: NUM_OUTPUT_CHANNELS },
