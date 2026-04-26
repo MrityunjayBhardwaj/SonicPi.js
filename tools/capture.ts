@@ -109,6 +109,19 @@ async function captureRun(
   await page.goto(BASE_URL)
   await page.waitForTimeout(2000)
 
+  // Sanity-check: the dev server at BASE_URL is actually SonicPi.js (not some
+  // other app on the same port). The app's root mount is `#app`; a foreign
+  // app mounted at `#root` will time out the editor selector below with a
+  // confusing "locator timed out" message. Issue #214.
+  const isSonicPi = await page.evaluate(() => Boolean(document.querySelector('#app')))
+  if (!isSonicPi) {
+    const title = await page.title()
+    throw new Error(
+      `[capture] ${BASE_URL} is not serving the SonicPi.js app (page title: "${title}", no #app mount node). ` +
+      `Set BASE_URL=http://localhost:PORT (or run \`npm run dev\` in this repo first) and retry.`
+    )
+  }
+
   // Screenshot before running
   const beforePath = resolve(CAPTURES_DIR, `${prefix}_before.png`)
   await page.screenshot({ path: beforePath, fullPage: true })
