@@ -440,6 +440,20 @@ end`)
       // Call to defined function should inject __b
       expect(result.code).toContain('bass_hit(__b)')
     })
+
+    it('ndefine produces same JS function decl as define (#211)', () => {
+      const result = treeSitterTranspile(`ndefine :hit do
+  play 60
+end
+
+live_loop :run do
+  hit
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toContain('function hit(__b)')
+      expect(result.code).toContain('hit(__b)')
+    })
   })
 
   describe('Expressions', () => {

@@ -105,6 +105,8 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['assert_error',     'Pure: throws if block does NOT raise.'],
   ['inc',              'Pure: x + 1.'],
   ['dec',              'Pure: x - 1.'],
+  ['define',           'Transpiler emits a JS function decl (TreeSitterTranspiler.transpileDefine). Runtime stub is a no-op.'],
+  ['ndefine',          'Alias for define on the transpile path; same JS function decl. (#211 — non-persistence is identical to define until cross-eval persistence ships.)'],
   // Random — desktop Sonic Pi resolves these at build-time deterministically (seeded)
   ['rrand',            'Desktop SP convention: resolved at build-time against the live_loop seed.'],
   ['rrand_i',          'Desktop SP convention: build-time seeded.'],

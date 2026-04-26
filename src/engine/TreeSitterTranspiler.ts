@@ -899,7 +899,7 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     // `comment` and `uncomment` are control-flow (like if-true/if-false), NOT
     // structural blocks. They stay in bareCode so their content gets the __b.
     // prefix when wrapped. Separating them would produce bare `play()` at top level.
-    } else if (method && !isBareFxNode && (method === 'live_loop' || method === 'define' || method === 'with_fx' ||
+    } else if (method && !isBareFxNode && (method === 'live_loop' || method === 'define' || method === 'ndefine' || method === 'with_fx' ||
                           method === 'in_thread' || isBareLoopNode)) {
       blocks.push(child)
     } else {
@@ -914,7 +914,7 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     const m = (child.type === 'call' || child.type === 'method_call')
       ? (child.childForFieldName('method')?.text ?? child.namedChildren[0]?.text)
       : null
-    if (m === 'define') {
+    if (m === 'define' || m === 'ndefine') {
       const argsNode = child.childForFieldName('arguments')
       const nameNode = argsNode?.namedChildren?.[0]
       if (nameNode) {
@@ -1000,8 +1000,8 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return transpileLiveLoop(node, argsNode, blockNode, ctx)
     }
 
-    // define :name do |args| ... end
-    if (methodName === 'define') {
+    // define :name do |args| ... end  (and ndefine — same surface, doesn't persist; #211)
+    if (methodName === 'define' || methodName === 'ndefine') {
       return transpileDefine(node, argsNode, blockNode, ctx)
     }
 

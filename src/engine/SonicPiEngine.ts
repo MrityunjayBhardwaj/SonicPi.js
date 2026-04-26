@@ -892,6 +892,13 @@ export class SonicPiEngine {
         // Asserts + counter helpers (#211 Tier A) — pure build-time
         assert, assert_equal, assert_similar, assert_not, assert_error,
         inc, dec,
+        // define / ndefine — the transpiler converts these to JS function decls
+        // (TreeSitterTranspiler.transpileDefine). The runtime stubs only fire
+        // when the regex fallback transpiler runs without recognising the form;
+        // they keep the call from hitting `undefined` and producing a confusing
+        // ReferenceError. (#211)
+        () => { /* define stub — transpiler handles the real path */ },
+        () => { /* ndefine stub — transpiler handles the real path */ },
       ]
 
       const codeWarnings = validateCode(transpiledCode)

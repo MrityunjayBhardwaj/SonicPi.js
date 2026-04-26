@@ -65,6 +65,10 @@ export const DSL_NAMES = [
   // Tier A — asserts + counter helpers (#211)
   'assert', 'assert_equal', 'assert_similar', 'assert_not', 'assert_error',
   'inc', 'dec',
+  // Tier A — define is transpiler-handled (TreeSitterTranspiler.transpileDefine);
+  // these names are blocklist-safe entries so user code that introspects them
+  // doesn't fall through to globalThis. (#211)
+  'define', 'ndefine',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

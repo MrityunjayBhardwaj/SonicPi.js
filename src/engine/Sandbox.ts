@@ -61,6 +61,7 @@ export interface ScopeHandle {
 export function createIsolatedExecutor(
   transpiledCode: string,
   dslParamNames: string[],
+  extraScope?: Record<string, unknown>,
 ): { execute: (...args: unknown[]) => Promise<void>; scopeHandle: ScopeHandle } {
   // Build the scope object with DSL functions
   const scopeBase: Record<string, unknown> = {}
@@ -68,6 +69,13 @@ export function createIsolatedExecutor(
   // Pre-populate blocked globals as undefined
   for (const name of BLOCKED_GLOBALS) {
     scopeBase[name] = undefined
+  }
+
+  // Seed user-defined fns from prior evals (#211 — define/defonce persistence)
+  if (extraScope) {
+    for (const [k, v] of Object.entries(extraScope)) {
+      scopeBase[k] = v
+    }
   }
 
   // Per-loop scope isolation state — stack-based to handle async interleaving
