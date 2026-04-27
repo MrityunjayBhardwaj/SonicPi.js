@@ -1021,6 +1021,7 @@ export class SonicPiEngine {
     this.loopTicks.clear()
     this.loopSynced.clear()
     this.globalStore.clear()
+    this.definedFns.clear()
     this.persistentFx.clear()
     this.reusableFx.clear()
     this.loopFxScope.clear()
@@ -1044,6 +1045,7 @@ export class SonicPiEngine {
     this.loopBuilders.clear()
     this.loopSeeds.clear()
     this.globalStore.clear()
+    this.definedFns.clear()
   }
 
   /** Register a handler for runtime errors inside `live_loop` bodies. */

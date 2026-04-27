@@ -23,7 +23,7 @@
  *     add it to PURE_OR_INTENTIONAL_BUILD_TIME below with a one-line
  *     justification.
  *
- * See issues #193–#197 and hetvabhasa SP41.
+ * See issues #193–#197.
  */
 import { describe, it, expect } from 'vitest'
 import { ProgramBuilder } from '../ProgramBuilder'

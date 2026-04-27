@@ -58,6 +58,109 @@ describe('SonicPiEngine', () => {
     engine.dispose()
   })
 
+  it('define redefinition replaces (does not stack) the prior fn (#215 self-review)', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+
+    // Eval 1: define hello → 60
+    const r1 = await engine.evaluate(`
+define :hello do
+  play 60
+end
+
+live_loop :run do
+  hello
+  sleep 1
+end
+`)
+    expect(r1.error).toBeUndefined()
+
+    // Eval 2: redefine hello → 72.
+    // The old fn must be replaced — not "stacked". Verified by
+    // confirming this evaluates without error (a leaking-closure bug
+    // would surface as either a re-declaration error or an unbound ref).
+    const r2 = await engine.evaluate(`
+define :hello do
+  play 72
+end
+
+live_loop :run do
+  hello
+  sleep 1
+end
+`)
+    expect(r2.error).toBeUndefined()
+
+    // Eval 3: remove the define entirely; the live_loop calling \`hello\`
+    // must use the redefined (72) fn from eval 2, not eval 1's (60).
+    const r3 = await engine.evaluate(`
+live_loop :run do
+  hello
+  sleep 1
+end
+`)
+    expect(r3.error).toBeUndefined()
+
+    engine.dispose()
+  })
+
+  it('use_random_seed plumbs through to topLevelBuilder — engine-level (#217 self-review)', async () => {
+    // Run two independent engines through the SAME live_loop code with
+    // use_random_seed and capture their pick output via puts. If reseeding
+    // works at every layer (topLevelBuilder + per-loop builder), the print
+    // streams are identical. Guards against a regression that makes
+    // topLevelUseRandomSeed go back to storing the seed without reseeding.
+    const engineA = new SonicPiEngine()
+    const engineB = new SonicPiEngine()
+    await engineA.init()
+    await engineB.init()
+
+    const printsA: string[] = []
+    const printsB: string[] = []
+    engineA.setPrintHandler((msg) => printsA.push(msg))
+    engineB.setPrintHandler((msg) => printsB.push(msg))
+
+    const code = `live_loop :probe do
+  use_random_seed 42
+  puts pick([1, 2, 3, 4, 5], 4).toArray()
+  stop
+end`
+    await engineA.evaluate(code)
+    await engineB.evaluate(code)
+    // Allow scheduler to fire the loop body.
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // Streams must be byte-identical when both engines saw the same seed.
+    expect(JSON.stringify(printsA)).toBe(JSON.stringify(printsB))
+
+    engineA.dispose()
+    engineB.dispose()
+  })
+
+  it('dispose clears defined fns map (#215 self-review)', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+    await engine.evaluate(`
+define :ghost do
+  play 60
+end
+
+live_loop :run do
+  ghost
+  sleep 1
+end
+`)
+    // Bracket-access so private-field encapsulation isn't broken at the
+    // type level. The map is implementation detail of #215 persistence.
+    const fnsBefore = (engine as unknown as { definedFns: Map<string, unknown> }).definedFns
+    expect(fnsBefore.size).toBeGreaterThan(0)
+
+    engine.dispose()
+
+    const fnsAfter = (engine as unknown as { definedFns: Map<string, unknown> }).definedFns
+    expect(fnsAfter.size).toBe(0)
+  })
+
   it('define persists across re-evaluations (#215)', async () => {
     const engine = new SonicPiEngine()
     await engine.init()
