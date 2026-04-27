@@ -650,9 +650,16 @@ export class SonicPiEngine {
         }
       }
 
-      // Top-level use_random_seed: store for deterministic live_loop seeding
+      // Top-level use_random_seed: store for deterministic live_loop seeding,
+      // AND reset the topLevelBuilder's RNG so top-level rrand/choose/pick/shuffle
+      // are deterministic against the user-supplied seed (#217). Desktop SP
+      // convention: re-running the same buffer with the same seed produces
+      // the same random sequence.
       let storedRandomSeed: number | null = null
-      const topLevelUseRandomSeed = (seed: number) => { storedRandomSeed = seed }
+      const topLevelUseRandomSeed = (seed: number) => {
+        storedRandomSeed = seed
+        topLevelBuilder.use_random_seed(seed)
+      }
 
       // Top-level in_thread: wrap callback in a one-shot live_loop
       const topLevelInThread = (fn: (b: ProgramBuilder) => void) => {

@@ -219,6 +219,32 @@ describe('Ring helpers (#211 Tier A)', () => {
       .toEqual(b2.pick([10, 20, 30, 40], 3).toArray())
   })
 
+  it('use_random_seed reseeds top-level pick/shuffle (#217)', () => {
+    // Same seed → same pick/shuffle sequence across two independent builders.
+    // Models the SonicPiEngine top-level path: topLevelUseRandomSeed calls
+    // topLevelBuilder.use_random_seed before any pick/shuffle runs.
+    const a = new ProgramBuilder()
+    const b = new ProgramBuilder()
+    a.use_random_seed(42)
+    b.use_random_seed(42)
+    expect(a.pick([1, 2, 3, 4, 5], 4).toArray())
+      .toEqual(b.pick([1, 2, 3, 4, 5], 4).toArray())
+    expect(a.shuffle([10, 20, 30, 40, 50]).toArray())
+      .toEqual(b.shuffle([10, 20, 30, 40, 50]).toArray())
+  })
+
+  it('use_random_seed with different seeds produces different sequences (#217)', () => {
+    const a = new ProgramBuilder()
+    const b = new ProgramBuilder()
+    a.use_random_seed(1)
+    b.use_random_seed(2)
+    // At least one of pick/shuffle should differ — extremely high probability
+    // for the seeds 1 vs 2 across a 5-element ring.
+    const aPick = a.pick([1, 2, 3, 4, 5], 4).toArray()
+    const bPick = b.pick([1, 2, 3, 4, 5], 4).toArray()
+    expect(aPick).not.toEqual(bPick)
+  })
+
   it('ProgramBuilder.shuffle preserves length and elements', () => {
     const b = new ProgramBuilder(42)
     const out = b.shuffle([1, 2, 3, 4, 5]).toArray()
