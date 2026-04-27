@@ -1118,6 +1118,33 @@ end`)
       expect(steps[0].tag).toBe('sample')
     })
 
+    it('tick_set :symbol coerces the symbol to a string at the call site (#218)', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  tick_set :foo, 10
+  play (ring 60, 64).at(look :foo)
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      // Symbol should land as a JS string, not a colon-prefixed identifier.
+      expect(result.code).toMatch(/__b\.tick_set\(\s*"foo"\s*,\s*10\s*\)/)
+      // Same coercion for look.
+      expect(result.code).toMatch(/__b\.look\(\s*"foo"\s*\)/)
+    })
+
+    it('tick_set :foo, 10 lands the value in the named counter (#218)', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  tick_set :foo, 10
+  play (ring 60, 64, 67).at(look :foo)
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      // After tick_set :foo, 10 then look :foo, the index lookup should be
+      // (ring 60,64,67).at(10) → 64 (10 mod 3 = 1).
+      const playStep = steps.find((s: any) => s.tag === 'play')
+      expect(playStep).toBeDefined()
+      expect(playStep!.note).toBe(64)
+    })
+
     it('assert_error block-form transpiles to a callback (#216)', () => {
       const result = treeSitterTranspile(`live_loop :t do
   assert_error do
