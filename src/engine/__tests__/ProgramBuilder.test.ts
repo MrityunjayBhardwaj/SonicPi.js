@@ -475,6 +475,20 @@ describe('ProgramBuilder', () => {
       expect(ctrl.params.note).toBe(65)
     })
 
+    it('kill uses lastRef to free a specific play step at scheduled time (#225)', () => {
+      const b = new ProgramBuilder()
+      b.play(60, { sustain: 10 } as Record<string, number>)
+      const ref = b.lastRef
+      b.sleep(0.5)
+      b.kill(ref)
+      b.sleep(1)
+      const steps = b.build()
+      expect(steps).toHaveLength(4) // play, sleep, kill, sleep
+      expect(steps[2].tag).toBe('kill')
+      const killStep = steps[2] as Extract<(typeof steps)[0], { tag: 'kill' }>
+      expect(killStep.nodeRef).toBe(1)
+    })
+
     it('slide params pass through play opts', () => {
       const b = new ProgramBuilder()
       b.play(60, { note_slide: 1, amp_slide: 0.5, cutoff_slide: 2 } as Record<string, number>)

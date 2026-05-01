@@ -818,7 +818,7 @@ function transpileNode(node: any, ctx: TranspileContext): string {
 // This list replaces the regex detection in the old `wrapBareCode` preprocessor (#125).
 const BARE_DSL_CALLS = new Set([
   'play', 'sleep', 'sample', 'cue', 'sync',
-  'puts', 'print', 'control', 'synth',
+  'puts', 'print', 'control', 'kill', 'synth',
   'play_chord', 'play_pattern', 'play_pattern_timed',
   'use_synth_defaults', 'use_sample_defaults', 'use_transpose',
 ])

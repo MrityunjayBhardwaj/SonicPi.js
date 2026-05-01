@@ -587,6 +587,29 @@ end`)
       expect(result.code).toContain('b.control(')
     })
 
+    it('kill inside live_loop emits b.kill(ref) (#225)', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  n = play 60, sustain: 10
+  sleep 0.5
+  kill n
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toContain('b.play(')
+      expect(result.code).toContain('b.kill(')
+    })
+
+    it('bare-code kill triggers run-once wrapper (#225)', () => {
+      const result = treeSitterTranspile(`n = play 60, sustain: 10
+sleep 0.5
+kill n`)
+      expect(result.ok).toBe(true)
+      // BARE_DSL_CALLS routes bare top-level usage through the synthetic
+      // live_loop :__run_once wrapper so kill resolves to __b.kill.
+      expect(result.code).toContain('__run_once')
+      expect(result.code).toContain('.kill(')
+    })
+
     it('with_fx at top level (outside live_loop)', () => {
       const result = treeSitterTranspile(`with_fx :reverb, mix: 0.7 do
   live_loop :t do
