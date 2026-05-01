@@ -72,6 +72,9 @@ export const DSL_NAMES = [
   // Tier A — time_warp is transpiler-handled (transpileTimeWarp → __b.at(...)).
   // Runtime stub is a fallback for the regex transpiler path. (#211)
   'time_warp',
+  // Tier B — timing introspection (#226). Inside live_loops these route to
+  // __b.current_* for per-task reads; at top level they read engine state.
+  'current_beat', 'current_beat_duration', 'current_time', 'current_sched_ahead_time',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

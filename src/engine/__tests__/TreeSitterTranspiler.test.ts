@@ -610,6 +610,22 @@ kill n`)
       expect(result.code).toContain('.kill(')
     })
 
+    it('current_beat / current_time inside live_loop route via __b (#226)', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  sleep 1
+  puts current_beat
+  puts current_time
+  puts current_beat_duration
+  puts current_sched_ahead_time
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/\.current_beat\(\)/)
+      expect(result.code).toMatch(/\.current_time\(\)/)
+      expect(result.code).toMatch(/\.current_beat_duration\(\)/)
+      expect(result.code).toMatch(/\.current_sched_ahead_time\(\)/)
+    })
+
     it('with_fx at top level (outside live_loop)', () => {
       const result = treeSitterTranspile(`with_fx :reverb, mix: 0.7 do
   live_loop :t do

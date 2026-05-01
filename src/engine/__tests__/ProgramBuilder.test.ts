@@ -488,6 +488,69 @@ describe('ProgramBuilder', () => {
       const killStep = steps[2] as Extract<(typeof steps)[0], { tag: 'kill' }>
       expect(killStep.nodeRef).toBe(1)
     })
+  })
+
+  describe('timing introspection (#226)', () => {
+    it('current_beat sums sleep arguments since iteration start', () => {
+      const b = new ProgramBuilder()
+      b.setIterationContext(0, 0, 0.3)
+      expect(b.current_beat()).toBe(0)
+      b.sleep(2)
+      expect(b.current_beat()).toBe(2)
+      b.sleep(0.5)
+      expect(b.current_beat()).toBe(2.5)
+    })
+
+    it('current_beat seeds from engine-persisted value across iterations', () => {
+      const b = new ProgramBuilder()
+      b.setIterationContext(10, 7, 0.3)  // engine restored 7 beats from prior iteration
+      expect(b.current_beat()).toBe(7)
+      b.sleep(1)
+      expect(b.current_beat()).toBe(8)
+      // currentBeatRaw is what engine reads back at end of iteration
+      expect(b.currentBeatRaw).toBe(8)
+    })
+
+    it('current_beat_duration tracks current bpm', () => {
+      const b = new ProgramBuilder()
+      expect(b.current_beat_duration()).toBe(1)  // default 60 bpm → 1s/beat
+      b.use_bpm(120)
+      expect(b.current_beat_duration()).toBe(0.5)
+      b.use_bpm(60)
+      expect(b.current_beat_duration()).toBe(1)
+    })
+
+    it('current_time advances by sleep × beat-duration from iteration-start audio time', () => {
+      const b = new ProgramBuilder()
+      b.setIterationContext(5, 0, 0.3)
+      expect(b.current_time()).toBe(5)        // no sleep yet
+      b.sleep(2)
+      expect(b.current_time()).toBe(7)        // 5 + 2*1 (60 bpm default)
+      b.use_bpm(120)
+      b.sleep(2)
+      expect(b.current_time()).toBe(8)        // 7 + 2*0.5
+    })
+
+    it('current_sched_ahead_time returns engine-set value', () => {
+      const b = new ProgramBuilder()
+      b.setIterationContext(0, 0, 0.45)
+      expect(b.current_sched_ahead_time()).toBe(0.45)
+    })
+
+    it('inner builder (with_fx) inherits iteration context from outer', () => {
+      const outer = new ProgramBuilder()
+      outer.setIterationContext(10, 4, 0.3)
+      outer.sleep(1)  // outer beat=5, build seconds=1
+      let innerBeat = -1
+      let innerTime = -1
+      outer.with_fx('reverb', (inner) => {
+        innerBeat = inner.current_beat()
+        innerTime = inner.current_time()
+        return inner
+      })
+      expect(innerBeat).toBe(5)
+      expect(innerTime).toBe(11)  // 10 + 1
+    })
 
     it('slide params pass through play opts', () => {
       const b = new ProgramBuilder()

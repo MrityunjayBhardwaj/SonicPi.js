@@ -91,6 +91,8 @@ export class SonicPiEngine {
   private loopSeeds = new Map<string, number>()
   /** Per-loop tick counters — persisted across iterations so ring.tick() advances correctly */
   private loopTicks = new Map<string, Map<string, number>>()
+  /** Per-loop beat counter — persisted across iterations so current_beat keeps growing (#226) */
+  private loopBeats = new Map<string, number>()
   /** Tracks which loops have completed their initial sync — persists across hot-swaps. */
   private loopSynced = new Set<string>()
   /**
@@ -517,6 +519,17 @@ export class SonicPiEngine {
           if (task.currentSynth && task.currentSynth !== 'beep') {
             builder.use_synth(task.currentSynth)
           }
+          // Seed introspection state for current_time / current_beat (#226).
+          // task.virtualTime is the iteration-start audio time (advances on sleep).
+          // loopBeats persists current_beat across iterations like loopTicks does.
+          // task.bpm seeds the builder's bpm so current_beat_duration reflects a
+          // top-level use_bpm; user's own use_bpm inside the body overrides.
+          builder.setIterationContext(
+            task.virtualTime,
+            this.loopBeats.get(name) ?? 0,
+            this.schedAheadTime,
+            task.bpm,
+          )
           // Enter per-loop scope so variable writes are isolated.
           // Track build-phase nesting depth so any `live_loop` call that
           // fires synchronously inside builderFn is detected as nested
@@ -532,6 +545,8 @@ export class SonicPiEngine {
           }
           // Persist tick state so ring.tick() / tick() advance across iterations
           this.loopTicks.set(name, builder.getTicks())
+          // Persist beat counter so current_beat keeps advancing across iterations (#226)
+          this.loopBeats.set(name, builder.currentBeatRaw)
           const program = builder.build()
 
           await runProgram(program, {
@@ -920,6 +935,13 @@ export class SonicPiEngine {
         // fallback path; it forwards to topLevelAt's array-of-times shape. (#211)
         (offset: number, fn: (b: ProgramBuilder) => void) =>
           topLevelAt([offset], null, fn),
+        // Tier B — timing introspection (#226). Top-level forms read engine
+        // state directly; inside live_loops the transpiler routes through
+        // BUILDER_METHODS so __b.current_* gives per-task reads.
+        () => 0,                                                    // current_beat: top-level has no beat counter
+        () => 60 / defaultBpm,                                       // current_beat_duration
+        () => scheduler.audioTime,                                   // current_time: audio-context wall clock at top level
+        () => this.schedAheadTime,                                   // current_sched_ahead_time
       ]
 
       const codeWarnings = validateCode(transpiledCode)
@@ -1019,6 +1041,7 @@ export class SonicPiEngine {
     this.loopBuilders.clear()
     this.loopSeeds.clear()
     this.loopTicks.clear()
+    this.loopBeats.clear()
     this.loopSynced.clear()
     this.globalStore.clear()
     this.definedFns.clear()

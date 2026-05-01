@@ -40,6 +40,14 @@ export class ProgramBuilder {
   private _debug: boolean = true
   private _argBpmScaling: boolean = true
   private _currentBpm: number = 60
+  // Iteration-context fields for current_time / current_beat introspection (#226).
+  // Set once per iteration by SonicPiEngine before invoking the user body callback.
+  // _currentBeat persists across iterations via engine's loopBeats map; the other
+  // two reset because the builder is recreated each iteration.
+  private _iterationStartAudioTime: number = 0
+  private _currentBuildSeconds: number = 0
+  private _currentBeat: number = 0
+  private _schedAheadTime: number = 0
 
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
     this.rng = new SeededRandom(seed)
@@ -91,7 +99,13 @@ export class ProgramBuilder {
   }
 
   sleep(beats: number): this {
-    this.steps.push({ tag: 'sleep', beats: beats / this.densityFactor })
+    const scaled = beats / this.densityFactor
+    this.steps.push({ tag: 'sleep', beats: scaled })
+    // Advance build-phase counters used by current_beat / current_time (#226).
+    // _currentBeat matches Desktop SP's __get_spider_beat — sum of sleep arguments.
+    // _currentBuildSeconds tracks the bpm-scaled seconds from this iteration's start.
+    this._currentBeat += scaled
+    this._currentBuildSeconds += (scaled * 60) / this._currentBpm
     // Reset budget on every sleep — loops with sleep are not infinite
     this._budgetRemaining = DEFAULT_LOOP_BUDGET
     return this
@@ -145,6 +159,47 @@ export class ProgramBuilder {
     return this
   }
 
+  /**
+   * Seed the per-iteration introspection state. Called by SonicPiEngine before
+   * invoking the user's body callback.
+   *
+   * - `audioTime` is the task's virtualTime at iteration start (current_time)
+   * - `beat` is the persisted across-iteration beat counter (current_beat)
+   * - `schedAhead` is the engine's schedule-ahead window (current_sched_ahead_time)
+   * - `bpm` (optional) seeds _currentBpm so current_beat_duration reflects the
+   *    task's bpm without pushing a useBpm step. User's `use_bpm` inside the
+   *    body still overrides per-step.
+   * (#226)
+   */
+  setIterationContext(audioTime: number, beat: number, schedAhead: number, bpm?: number): void {
+    this._iterationStartAudioTime = audioTime
+    this._currentBeat = beat
+    this._currentBuildSeconds = 0
+    this._schedAheadTime = schedAhead
+    if (bpm !== undefined) this._currentBpm = bpm
+  }
+
+  /** Read the build-phase beat counter (engine persists this across iterations). */
+  get currentBeatRaw(): number { return this._currentBeat }
+
+  /** Sum of `sleep` arguments since the loop started. Matches Desktop SP. (#226) */
+  current_beat(): number { return this._currentBeat }
+
+  /** Duration of one beat in seconds at the current bpm. (#226) */
+  current_beat_duration(): number { return 60 / this._currentBpm }
+
+  /**
+   * Logical (virtual) time in seconds at the current build position. Quantised
+   * to the most recent sleep — matches Desktop SP's "wall-clock time quantised
+   * to a nearby sleep point". (#226)
+   */
+  current_time(): number {
+    return this._iterationStartAudioTime + this._currentBuildSeconds
+  }
+
+  /** Engine's schedule-ahead window in seconds. (#226) */
+  current_sched_ahead_time(): number { return this._schedAheadTime }
+
   cue(name: string, ...args: unknown[]): this {
     this.steps.push({ tag: 'cue', name, args })
     return this
@@ -187,6 +242,12 @@ export class ProgramBuilder {
     inner._transpose = this._transpose
     inner._synthDefaults = { ...this._synthDefaults }
     inner._sampleDefaults = { ...this._sampleDefaults }
+    // Inherit iteration introspection state so current_time / current_beat
+    // inside with_fx / in_thread / at blocks return the outer's values (#226).
+    inner._iterationStartAudioTime = this._iterationStartAudioTime
+    inner._currentBuildSeconds = this._currentBuildSeconds
+    inner._currentBeat = this._currentBeat
+    inner._schedAheadTime = this._schedAheadTime
     fn(inner, fxRef)
     const fxOpts = !this._argBpmScaling ? { ...opts, _argBpmScaling: 0 } : opts
     this.steps.push({ tag: 'fx', name, opts: fxOpts, body: inner.build(), nodeRef: fxRef })
@@ -201,6 +262,12 @@ export class ProgramBuilder {
     inner._transpose = this._transpose
     inner._synthDefaults = { ...this._synthDefaults }
     inner._sampleDefaults = { ...this._sampleDefaults }
+    // Inherit iteration introspection state so current_time / current_beat
+    // inside with_fx / in_thread / at blocks return the outer's values (#226).
+    inner._iterationStartAudioTime = this._iterationStartAudioTime
+    inner._currentBuildSeconds = this._currentBuildSeconds
+    inner._currentBeat = this._currentBeat
+    inner._schedAheadTime = this._schedAheadTime
     buildFn(inner)
     this.steps.push({ tag: 'thread', body: inner.build() })
     return this

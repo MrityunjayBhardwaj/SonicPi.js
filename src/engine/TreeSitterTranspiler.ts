@@ -245,6 +245,9 @@ const BUILDER_METHODS = new Set([
   'osc_send',
   // Sample BPM
   'use_sample_bpm',
+  // Tier B — timing introspection (#226). Per-task pure reads — must route
+  // through __b so the value reflects the calling task, not engine state.
+  'current_beat', 'current_beat_duration', 'current_time', 'current_sched_ahead_time',
   // Deferred-step DSL contract (issue #193 — must mirror methods on
   // ProgramBuilder so they fire at scheduled virtual time, not build time).
   'stop_loop', 'set_volume', 'use_osc', 'osc',
@@ -312,6 +315,8 @@ const BARE_CALLABLE = new Set([
   'tick', 'look', 'stop', 'tick_reset_all',
   'rand', 'rand_i',
   'chord_names', 'scale_names',
+  // Tier B — timing introspection (#226). Ruby calls these without parens.
+  'current_beat', 'current_beat_duration', 'current_time', 'current_sched_ahead_time',
 ])
 
 /**
