@@ -12,12 +12,13 @@
  *   npx tsx tools/capture.ts --file path/to/code.rb   # run from file
  *   npx tsx tools/capture.ts --example "Minimal Techno"  # run built-in example
  *   npx tsx tools/capture.ts --all-examples            # run all built-in examples
+ *   npx tsx tools/capture.ts --batch tests/book-examples/community  # batch a fixture dir
  *   npx tsx tools/capture.ts --duration 15000          # run for 15 seconds
  */
 
 import { chromium, firefox, type Browser } from '@playwright/test'
-import { writeFileSync, readFileSync, mkdirSync, statSync } from 'fs'
-import { resolve, dirname } from 'path'
+import { writeFileSync, readFileSync, mkdirSync, statSync, readdirSync } from 'fs'
+import { resolve, dirname, basename, extname, relative } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -480,6 +481,36 @@ function writeCaptureReport(result: CaptureResult, outputPath: string): void {
 // CLI
 // ---------------------------------------------------------------------------
 
+/**
+ * Discover Ruby fixtures at a path. Path may be:
+ *  - A directory → recursively collects all `*.rb` files
+ *  - A single .rb file → returns just that one
+ * Returns sorted by relative path so output ordering is stable.
+ */
+function discoverFixtures(path: string): { name: string; code: string; relPath: string }[] {
+  const stat = statSync(path)
+  const baseDir = stat.isDirectory() ? path : dirname(path)
+  const files: string[] = []
+  if (stat.isFile()) {
+    files.push(path)
+  } else {
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = resolve(dir, entry.name)
+        if (entry.isDirectory()) walk(full)
+        else if (entry.isFile() && extname(entry.name) === '.rb') files.push(full)
+      }
+    }
+    walk(path)
+  }
+  files.sort()
+  return files.map((f) => ({
+    name: basename(f, '.rb'),
+    code: readFileSync(f, 'utf-8'),
+    relPath: relative(baseDir, f) || basename(f),
+  }))
+}
+
 async function main() {
   const args = process.argv.slice(2)
   mkdirSync(CAPTURES_DIR, { recursive: true })
@@ -488,6 +519,7 @@ async function main() {
   let name = 'default'
   let duration = DEFAULT_DURATION
   let runAllExamples = false
+  let batchPath: string | null = null
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--file') {
@@ -498,6 +530,8 @@ async function main() {
       duration = parseInt(args[++i])
     } else if (args[i] === '--all-examples') {
       runAllExamples = true
+    } else if (args[i] === '--batch') {
+      batchPath = args[++i]
     } else if (args[i] === '--example') {
       name = args[++i]
       // Will be loaded from the app's example selector
@@ -508,7 +542,7 @@ async function main() {
   }
 
   // Default code if nothing specified
-  if (!code && !runAllExamples) {
+  if (!code && !runAllExamples && !batchPath) {
     code = `live_loop :test do
   play [:c4, :e4, :g4].choose
   sleep 0.5
@@ -532,7 +566,68 @@ end`
         args: ['--autoplay-policy=no-user-gesture-required'],
       })
 
-  if (runAllExamples) {
+  if (batchPath) {
+    // --batch <dir-or-file> — fan out across .rb fixtures, share one browser
+    const fixtures = discoverFixtures(batchPath)
+    if (fixtures.length === 0) {
+      console.log(`No .rb fixtures found at ${batchPath}`)
+      await browser.close()
+      return
+    }
+    console.log(`Found ${fixtures.length} fixtures at ${batchPath}`)
+
+    const summaryLines: string[] = [
+      `# Batch Capture Summary`,
+      ``,
+      `- Source: \`${batchPath}\``,
+      `- Fixtures: ${fixtures.length}`,
+      `- Duration per fixture: ${duration}ms`,
+      `- Started: ${new Date().toISOString()}`,
+      ``,
+      `| # | Fixture | Status | Errors | Report |`,
+      `|---|---------|--------|--------|--------|`,
+    ]
+
+    let okCount = 0
+    let errorCount = 0
+    const t0 = Date.now()
+    for (let i = 0; i < fixtures.length; i++) {
+      const fx = fixtures[i]
+      const tag = `[${i + 1}/${fixtures.length}]`
+      process.stdout.write(`  ${tag} ${fx.relPath}... `)
+      try {
+        const result = await captureRun(browser, fx.code, { duration, name: fx.name })
+        const reportPath = resolve(CAPTURES_DIR, `batch_${fx.name}.md`)
+        writeCaptureReport(result, reportPath)
+        const errs = result.errorSummary.length
+        const status = errs === 0 ? 'OK' : 'FAIL'
+        if (errs === 0) okCount++; else errorCount++
+        console.log(`${status}${errs ? ` (${errs} errors)` : ''}`)
+        summaryLines.push(`| ${i + 1} | \`${fx.relPath}\` | ${status} | ${errs} | [report](batch_${fx.name}.md) |`)
+        if (errs > 0) {
+          for (const e of result.errorSummary) {
+            summaryLines.push(`|   |   |   |   | ${e.replace(/\|/g, '\\|')} |`)
+          }
+        }
+      } catch (err) {
+        errorCount++
+        console.log(`CRASH (${(err as Error).message})`)
+        summaryLines.push(`| ${i + 1} | \`${fx.relPath}\` | CRASH | — | ${(err as Error).message.replace(/\|/g, '\\|')} |`)
+      }
+    }
+    const elapsed = Math.round((Date.now() - t0) / 1000)
+    summaryLines.push(``)
+    summaryLines.push(`## Results`)
+    summaryLines.push(``)
+    summaryLines.push(`- OK: ${okCount}/${fixtures.length}`)
+    summaryLines.push(`- Failures: ${errorCount}/${fixtures.length}`)
+    summaryLines.push(`- Elapsed: ${elapsed}s`)
+
+    const summaryPath = resolve(CAPTURES_DIR, 'BATCH_SUMMARY.md')
+    writeFileSync(summaryPath, summaryLines.join('\n'))
+    console.log(`\nBatch complete: ${okCount}/${fixtures.length} OK, ${errorCount} failures in ${elapsed}s`)
+    console.log(`Summary: ${summaryPath}`)
+  } else if (runAllExamples) {
     // Run each built-in example
     const examples = [
       { name: 'Hello Beep', code: 'play 60\nsleep 1\nplay 64\nsleep 1\nplay 67' },
