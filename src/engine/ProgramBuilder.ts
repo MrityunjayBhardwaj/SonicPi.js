@@ -159,6 +159,35 @@ export class ProgramBuilder {
     return this
   }
 
+  /** Read seed + idx — matches Desktop SP's current_random_seed. (#227) */
+  current_random_seed(): number {
+    return this.rng.getSeedPlusIdx()
+  }
+
+  /**
+   * Roll the rand stream back by `amount` draws. Returns the value the next
+   * `rand` would now produce (peek). Matches Desktop SP rand_back. (#227)
+   */
+  rand_back(amount: number = 1): number {
+    this.rng.decIdx(amount)
+    return this.rng.peek()
+  }
+
+  /**
+   * Skip the rand stream forward by `amount` draws. Returns the value the next
+   * `rand` would now produce (peek). Matches Desktop SP rand_skip. (#227)
+   */
+  rand_skip(amount: number = 1): number {
+    this.rng.incIdx(amount)
+    return this.rng.peek()
+  }
+
+  /** Reset rand stream to its last seed (equivalent to setIdx 0). (#227) */
+  rand_reset(): this {
+    this.rng.setIdx(0)
+    return this
+  }
+
   /**
    * Seed the per-iteration introspection state. Called by SonicPiEngine before
    * invoking the user's body callback.

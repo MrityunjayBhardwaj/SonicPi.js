@@ -610,6 +610,22 @@ kill n`)
       expect(result.code).toContain('.kill(')
     })
 
+    it('PRNG inspection inside live_loop routes via __b (#227)', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  use_random_seed 42
+  puts current_random_seed
+  rand_skip 3
+  rand_back 1
+  rand_reset
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/\.current_random_seed\(\)/)
+      expect(result.code).toMatch(/\.rand_skip\(/)
+      expect(result.code).toMatch(/\.rand_back\(/)
+      expect(result.code).toMatch(/\.rand_reset\(\)/)
+    })
+
     it('current_beat / current_time inside live_loop route via __b (#226)', () => {
       const result = treeSitterTranspile(`live_loop :t do
   sleep 1

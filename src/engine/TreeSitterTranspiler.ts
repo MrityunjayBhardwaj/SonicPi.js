@@ -248,6 +248,9 @@ const BUILDER_METHODS = new Set([
   // Tier B — timing introspection (#226). Per-task pure reads — must route
   // through __b so the value reflects the calling task, not engine state.
   'current_beat', 'current_beat_duration', 'current_time', 'current_sched_ahead_time',
+  // Tier B — PRNG inspection (#227). Per-task RNG mutations — route through
+  // __b so they hit the calling builder's seeded random stream.
+  'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
   // Deferred-step DSL contract (issue #193 — must mirror methods on
   // ProgramBuilder so they fire at scheduled virtual time, not build time).
   'stop_loop', 'set_volume', 'use_osc', 'osc',
@@ -317,6 +320,10 @@ const BARE_CALLABLE = new Set([
   'chord_names', 'scale_names',
   // Tier B — timing introspection (#226). Ruby calls these without parens.
   'current_beat', 'current_beat_duration', 'current_time', 'current_sched_ahead_time',
+  // Tier B — PRNG inspection (#227). current_random_seed and rand_reset are
+  // typically called without parens. rand_back / rand_skip take an optional
+  // arg but are also valid bare (rand_back == rand_back(1)).
+  'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
 ])
 
 /**

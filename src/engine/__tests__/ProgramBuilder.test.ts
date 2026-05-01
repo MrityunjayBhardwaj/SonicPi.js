@@ -551,7 +551,67 @@ describe('ProgramBuilder', () => {
       expect(innerBeat).toBe(5)
       expect(innerTime).toBe(11)  // 10 + 1
     })
+  })
 
+  describe('PRNG inspection (#227)', () => {
+    it('current_random_seed returns seed + draws since last reset', () => {
+      const b = new ProgramBuilder()
+      b.use_random_seed(42)
+      expect(b.current_random_seed()).toBe(42)  // 42 + 0 draws
+      // build-time rand draws by going through the builder's rng
+      // (rrand-style helpers all advance the underlying SeededRandom).
+      // Use the builder's RNG directly via use_random_seed→reset, then advance.
+      b.use_random_seed(42)
+      // Call rand_skip to advance idx
+      b.rand_skip(3)
+      expect(b.current_random_seed()).toBe(45)
+    })
+
+    it('rand_back rewinds the stream so the next draw repeats', () => {
+      const b1 = new ProgramBuilder()
+      b1.use_random_seed(7)
+      const a = b1.rand_skip(0)  // peek without advancing — but rand_skip(0) doesn't advance, returns peek
+      // Build a fresh builder to draw the same first value via use_random_seed + rand_skip(1)
+      const b2 = new ProgramBuilder()
+      b2.use_random_seed(7)
+      const x1 = b2.rand_skip(1)  // returns peek AFTER one draw — the second value
+      // Sanity: a (peek at idx 0) != x1 (peek at idx 1)
+      expect(a).not.toBe(x1)
+      // Now go back and check we land back at idx 0's value
+      b2.rand_back(1)
+      const peeked = b2.rand_skip(0)
+      expect(peeked).toBe(a)
+    })
+
+    it('rand_skip advances idx and current_random_seed reflects it', () => {
+      const b = new ProgramBuilder()
+      b.use_random_seed(100)
+      expect(b.current_random_seed()).toBe(100)
+      b.rand_skip(5)
+      expect(b.current_random_seed()).toBe(105)
+      b.rand_skip()  // default = 1
+      expect(b.current_random_seed()).toBe(106)
+    })
+
+    it('rand_reset returns to seed (idx=0)', () => {
+      const b = new ProgramBuilder()
+      b.use_random_seed(50)
+      b.rand_skip(10)
+      expect(b.current_random_seed()).toBe(60)
+      b.rand_reset()
+      expect(b.current_random_seed()).toBe(50)
+    })
+
+    it('rand_back clamps at idx=0 (never negative)', () => {
+      const b = new ProgramBuilder()
+      b.use_random_seed(1)
+      b.rand_skip(2)
+      b.rand_back(99)  // would go to idx -97, must clamp to 0
+      expect(b.current_random_seed()).toBe(1)
+    })
+  })
+
+  describe('lastRef trailing tests', () => {
     it('slide params pass through play opts', () => {
       const b = new ProgramBuilder()
       b.play(60, { note_slide: 1, amp_slide: 0.5, cutoff_slide: 2 } as Record<string, number>)

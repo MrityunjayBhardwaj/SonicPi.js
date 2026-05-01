@@ -75,6 +75,9 @@ export const DSL_NAMES = [
   // Tier B — timing introspection (#226). Inside live_loops these route to
   // __b.current_* for per-task reads; at top level they read engine state.
   'current_beat', 'current_beat_duration', 'current_time', 'current_sched_ahead_time',
+  // Tier B — PRNG inspection (#227). Per-task reads/mutations of the rand
+  // stream. All four are pure build-time on the per-loop builder's RNG.
+  'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

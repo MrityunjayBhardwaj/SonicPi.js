@@ -942,6 +942,12 @@ export class SonicPiEngine {
         () => 60 / defaultBpm,                                       // current_beat_duration
         () => scheduler.audioTime,                                   // current_time: audio-context wall clock at top level
         () => this.schedAheadTime,                                   // current_sched_ahead_time
+        // Tier B — PRNG inspection (#227). Top-level mutates topLevelBuilder's
+        // RNG; inside live_loops these route to __b.* for per-loop RNG.
+        () => topLevelBuilder.current_random_seed(),
+        (n?: number) => topLevelBuilder.rand_back(n ?? 1),
+        (n?: number) => topLevelBuilder.rand_skip(n ?? 1),
+        () => { topLevelBuilder.rand_reset() },
       ]
 
       const codeWarnings = validateCode(transpiledCode)
