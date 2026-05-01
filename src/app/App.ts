@@ -218,6 +218,92 @@ with_fx :panslicer, mix: 0.28 do
       end
     end
   end
+end
+
+# ============================================================
+#  CHRISSENDO — the cyberpunk beat drop
+#  Fires every 48 beats (4 chord cycles). Long hold → rising
+#  noise sweep → accelerating snare roll → sub-kick + acid stab.
+#  Mood: BR2049 at 2AM, rain on neon, synths through distortion.
+# ============================================================
+live_loop :chrissendo, sync: :pads do
+  sleep 32
+
+  # RISER — 8 beats of rising noise; cutoff on each play opens the filter
+  with_fx :reverb, mix: 0.6 do
+    use_synth :cnoise
+    riser_amps = line 0.04, 0.32, steps: 32
+    32.times do |i|
+      play 60, attack: 0, release: 0.12, amp: riser_amps.tick * amp_master, cutoff: 60 + (i * 2), pan: rrand(-0.4, 0.4)
+      sleep 0.25
+    end
+  end
+
+  # SNARE ROLL — 4 beats, doubling every bar, building tension
+  roll_rates = [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]
+  roll_amps  = line 0.22, 0.6, steps: 16
+  16.times do
+    sample :drum_snare_hard, rate: 1.8, cutoff: c_perc, amp: roll_amps.tick * amp_master, pan: rrand(-0.3, 0.3)
+    sleep roll_rates.tick
+  end
+
+  # IMPACT — sub-kick + distorted TB303 acid stab, Blade pad shimmer
+  with_fx :distortion, distort: 0.55, mix: 0.75 do
+    sample :bd_klub, amp: 2.8 * amp_master, rate: 0.55
+    use_synth :tb303
+    play :c2, attack: 0.005, release: 3.2, cutoff: 98, res: 0.88, amp: 0.95 * amp_master
+    play :c3, attack: 0.005, release: 1.8, cutoff: 92, res: 0.80, amp: 0.45 * amp_master
+  end
+
+  # Echoed aftershock stab — locks the drop back into the pad palette
+  with_fx :echo, phase: 0.5, decay: 4, mix: 0.35 do
+    use_synth :blade
+    play :c5, attack: 0.02, sustain: 1.5, release: 2.5, amp: 0.5 * amp_master, cutoff: c_blade + 18, vibrato_rate: 6.0, vibrato_depth: 0.12
+  end
+
+  sleep 4
+end
+
+# ============================================================
+#  FINALE — the fade into the rain
+#  Fires once, 144 beats in (3 chrissendo cycles). Sheds the
+#  rhythmic layers first, lets the pads breathe one last chord,
+#  then lands on a sustained Cm9 that dissolves into deep reverb.
+# ============================================================
+live_loop :finale, sync: :pads do
+  sleep 144
+
+  # First wave: shed percussion, bass, and the drop itself
+  stop_loop :kick
+  stop_loop :snare
+  stop_loop :hats
+  stop_loop :crash
+  stop_loop :synthbass
+  stop_loop :chrissendo
+
+  # One last chord cycle with only pads / melody / ecstasy / tears / shimmer
+  sleep 12
+
+  # Second wave: shed the melodic layers
+  stop_loop :pads
+  stop_loop :melody
+  stop_loop :ecstasy
+  stop_loop :tears
+  stop_loop :shimmer
+
+  # THE FINAL CHORD — Cm9 drifting into deep reverb + slow echo
+  with_fx :reverb, mix: 0.95, room: 0.99, damp: 0.3 do
+    with_fx :echo, phase: 2.0, decay: 10, mix: 0.45 do
+      use_synth :blade
+      [:c3, :eb3, :g3, :bb3, :d4, :g4, :c5, :eb5].each do |n|
+        play n, attack: 2.5, sustain: 10.0, release: 14.0, amp: 0.55 * amp_master, cutoff: c_blade + 14, vibrato_rate: 4.5, vibrato_depth: 0.09, vibrato_delay: 1.0
+      end
+    end
+  end
+
+  sleep 24           # let the reverb tail bloom
+  stop_loop :met1    # the metronome goes last
+  stop               # finale itself ends — song complete
 end`
 
 // Welcome log — credits and shortcuts
