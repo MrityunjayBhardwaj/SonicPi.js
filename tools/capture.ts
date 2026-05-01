@@ -43,6 +43,12 @@ interface CaptureResult {
   appConsoleText: string
   appFullText: string
 
+  // Engine-level captures (issue #221) — hooked via __spw_engine setter
+  // BEFORE Run click, so we capture every puts/cue from app start without
+  // depending on Console ring-buffer scrollback or DOM textContent slicing.
+  puts: { t: number; msg: string }[]
+  cues: { t: number; name: string; audioTime: number }[]
+
   // Screenshots
   screenshotBefore: string  // path
   screenshotAfter: string   // path
@@ -135,6 +141,36 @@ async function captureRun(
   await editor.fill(code)
   await page.waitForTimeout(200)
 
+  // Engine-level hook (issue #221) — install BEFORE Run click. The App
+  // exposes `__spw_engine` after init; intercept the assignment so we can
+  // chain into the App's already-installed printHandler/cueHandler.
+  // Captures every puts/cue regardless of Console ring-buffer pruning.
+  // Passed as a string to side-step tsx's __name closure rewriting that
+  // otherwise breaks page.evaluate of arrow-function source.
+  await page.evaluate(`(function() {
+    var _engine = null;
+    window.__capturedPuts = [];
+    window.__capturedCues = [];
+    window.__capturedStartedAt = Date.now();
+    Object.defineProperty(window, '__spw_engine', {
+      configurable: true,
+      get: function() { return _engine; },
+      set: function(e) {
+        _engine = e;
+        var origPrint = e.printHandler;
+        e.printHandler = function(msg) {
+          window.__capturedPuts.push({ t: Date.now() - window.__capturedStartedAt, msg: msg });
+          if (origPrint) origPrint(msg);
+        };
+        var origCue = e.cueHandler;
+        e.cueHandler = function(name, audioTime) {
+          window.__capturedCues.push({ t: Date.now() - window.__capturedStartedAt, name: name, audioTime: audioTime });
+          if (origCue) origCue(name, audioTime);
+        };
+      }
+    });
+  })()`)
+
   // Click Run and wait for audio engine to be ready
   const runBtn = page.locator('.spw-btn-label:has-text("Run")')
   await runBtn.click()
@@ -209,6 +245,13 @@ async function captureRun(
 
   // Capture app state
   const appFullText = await page.locator('#app').textContent() ?? ''
+
+  // Read engine-level captures (issue #221). String-form to side-step tsx's
+  // __name rewriting of arrow-function closures.
+  const engineHooks = await page.evaluate(`({
+    puts: window.__capturedPuts || [],
+    cues: window.__capturedCues || []
+  })`) as { puts: { t: number; msg: string }[]; cues: { t: number; name: string; sourceLoop: string }[] }
 
   // Try to isolate the console pane text (everything after "Audio engine ready" or "Happy live coding")
   let appConsoleText = ''
@@ -307,6 +350,8 @@ async function captureRun(
     audioStats,
     errorSummary,
     warningsSummary,
+    puts: engineHooks.puts,
+    cues: engineHooks.cues,
   }
 }
 
@@ -371,10 +416,32 @@ function writeCaptureReport(result: CaptureResult, outputPath: string): void {
     lines.push('')
   }
 
-  // App console (the real diagnostic gold)
+  // App console (engine-level puts hook — issue #221).
+  // The previous DOM-textContent slice was unreliable: Console ring buffer
+  // pruned old entries, and the slice contained UI chrome. The engine hook
+  // captures every puts call without depending on DOM rendering.
   lines.push('## App Console Output')
   lines.push('```')
-  lines.push(result.appConsoleText || '(empty)')
+  if (result.puts.length === 0) {
+    lines.push('(empty)')
+  } else {
+    for (const p of result.puts) {
+      lines.push(`[${p.t}ms] ${p.msg}`)
+    }
+  }
+  lines.push('```')
+  lines.push('')
+
+  // Cue log (engine-level cue hook — issue #221).
+  lines.push('## Cue Log')
+  lines.push('```')
+  if (result.cues.length === 0) {
+    lines.push('(empty)')
+  } else {
+    for (const c of result.cues) {
+      lines.push(`[${c.t}ms] cue :${c.name}  (audioTime ${c.audioTime.toFixed(3)}s)`)
+    }
+  }
   lines.push('```')
   lines.push('')
 
