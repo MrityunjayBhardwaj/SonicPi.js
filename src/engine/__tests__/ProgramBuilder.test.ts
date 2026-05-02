@@ -609,6 +609,21 @@ describe('ProgramBuilder', () => {
       b.rand_back(99)  // would go to idx -97, must clamp to 0
       expect(b.current_random_seed()).toBe(1)
     })
+
+    it('rand / rand_i reject 2-arg form with a clear message (matches Desktop SP, #229)', () => {
+      const b = new ProgramBuilder()
+      b.use_random_seed(1)
+      // Both 0-arg and 1-arg forms still work
+      expect(() => b.rand()).not.toThrow()
+      expect(() => b.rand(50)).not.toThrow()
+      expect(() => b.rand_i()).not.toThrow()
+      expect(() => b.rand_i(50)).not.toThrow()
+      // 2-arg form throws with a clear message pointing at rrand / rrand_i
+      expect(() => (b as unknown as { rand: (...a: number[]) => void }).rand(50, 80))
+        .toThrow(/rrand\(min, max\)/)
+      expect(() => (b as unknown as { rand_i: (...a: number[]) => void }).rand_i(50, 80))
+        .toThrow(/rrand_i\(min, max\)/)
+    })
   })
 
   describe('lastRef trailing tests', () => {

@@ -842,8 +842,10 @@ export class SonicPiEngine {
       // the sandbox proxy fall through to these wrappers.
       const tlRrand = (min: number, max: number) => topLevelBuilder.rrand(min, max)
       const tlRrandI = (min: number, max: number) => topLevelBuilder.rrand_i(min, max)
-      const tlRand = (max?: number) => topLevelBuilder.rand(max ?? 1)
-      const tlRandI = (max: number) => topLevelBuilder.rand_i(max)
+      // Forward all args via spread so the builder's arity guard fires for
+      // 2-arg `rand 50, 80` style misuse — matches Desktop SP. (#229)
+      const tlRand = (...args: number[]) => topLevelBuilder.rand(...args)
+      const tlRandI = (...args: number[]) => topLevelBuilder.rand_i(...args)
       const tlChoose = <T>(arr: T[]) => topLevelBuilder.choose(arr)
       const tlDice = (n?: number) => topLevelBuilder.dice(n ?? 6)
       const tlOneIn = (n: number) => topLevelBuilder.one_in(n)

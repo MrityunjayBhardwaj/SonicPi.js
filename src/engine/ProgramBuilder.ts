@@ -521,11 +521,25 @@ export class ProgramBuilder {
     return this.rng.rrand_i(min, max)
   }
 
-  rand(max: number = 1): number {
+  rand(...args: number[]): number {
+    if (args.length > 1) {
+      throw new Error(
+        `wrong number of arguments to rand (given ${args.length}, expected 0..1). ` +
+        `For a [min, max] range, use rrand(min, max) instead.`
+      )
+    }
+    const max = args[0] ?? 1
     return this.rng.rrand(0, max)
   }
 
-  rand_i(max: number = 2): number {
+  rand_i(...args: number[]): number {
+    if (args.length > 1) {
+      throw new Error(
+        `wrong number of arguments to rand_i (given ${args.length}, expected 0..1). ` +
+        `For a [min, max] integer range, use rrand_i(min, max) instead.`
+      )
+    }
+    const max = args[0] ?? 2
     return this.rng.rrand_i(0, max - 1)
   }
 
