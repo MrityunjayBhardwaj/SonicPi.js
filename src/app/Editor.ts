@@ -174,6 +174,15 @@ function buildCompletions(): CompletionItem[] {
     range: 'Create a numeric range',
     line: 'Create a linear ramp between values',
     loop: 'Infinite loop (use sleep inside!)',
+    // Tier B PR #2 — ring constructors, introspection, scheduling, memoization (#233)
+    doubles: 'Ring of successive doubling',
+    halves: 'Ring of successive halving',
+    current_synth_defaults: 'Active synth defaults map',
+    current_sample_defaults: 'Active sample defaults map',
+    current_arg_checks: 'Whether arg checking is enabled',
+    current_debug: 'Current debug setting',
+    tuplets: 'Run block over (nested) list with tuplet timing + optional swing',
+    defonce: 'Bind a name to the cached result of a block (re-runs on override: true)',
   }
   for (const [name, info] of Object.entries(dslFunctions)) {
     items.push({ label: name, type: 'function', info })

@@ -308,6 +308,85 @@ end`,
     example: 'play_pattern_timed [:c4, :e4, :g4], [0.25, 0.25, 0.5]',
   },
 
+  doubles: {
+    signature: 'doubles(start, count)',
+    description: 'Ring of successive doubling: doubles(60, 4) → ring(60, 120, 240, 480). Negative count delegates to halves.',
+    params: [
+      { name: 'start', type: 'number', desc: 'Starting value' },
+      { name: 'count', type: 'number', default: '1', desc: 'Number of doublings' },
+    ],
+    example: 'play_pattern doubles(60, 5)',
+  },
+
+  halves: {
+    signature: 'halves(start, count)',
+    description: 'Ring of successive halving: halves(60, 4) → ring(60, 30, 15, 7.5). Negative count delegates to doubles.',
+    params: [
+      { name: 'start', type: 'number', desc: 'Starting value' },
+      { name: 'count', type: 'number', default: '1', desc: 'Number of halvings' },
+    ],
+    example: 'sleep halves(1, 4).tick',
+  },
+
+  current_synth_defaults: {
+    signature: 'current_synth_defaults()',
+    description: 'Return the active synth defaults map (set by use_synth_defaults / with_synth_defaults).',
+    params: [],
+    example: `use_synth_defaults amp: 0.5
+puts current_synth_defaults  # → { amp: 0.5 }`,
+  },
+
+  current_sample_defaults: {
+    signature: 'current_sample_defaults()',
+    description: 'Return the active sample defaults map (set by use_sample_defaults / with_sample_defaults).',
+    params: [],
+    example: `use_sample_defaults rate: 0.5
+puts current_sample_defaults`,
+  },
+
+  current_arg_checks: {
+    signature: 'current_arg_checks()',
+    description: 'Return whether arg checking is enabled (matches Desktop SP default).',
+    params: [],
+    example: 'puts current_arg_checks',
+  },
+
+  current_debug: {
+    signature: 'current_debug()',
+    description: 'Return the current debug setting (true / false).',
+    params: [],
+    example: `use_debug false
+puts current_debug  # → false`,
+  },
+
+  tuplets: {
+    signature: 'tuplets list, opts do |x| ... end',
+    description: 'Run block over leaves of a (possibly nested) list with tuplet timing. Sub-lists fit N elements into duration beats. Optional swing offsets every Nth pulse.',
+    params: [
+      { name: 'list', type: 'array', desc: 'List of values or sub-lists (sub-lists are tuplets)' },
+      { name: 'duration', type: 'number', default: '1', desc: 'Beats per top-level element' },
+      { name: 'swing', type: 'number', default: '0', desc: 'Swing offset in beats (per swing_pulse)' },
+      { name: 'swing_pulse', type: 'number', default: '2', desc: 'Beats between swung pulses' },
+    ],
+    example: `tuplets [70, [72, 72], 70, [82, 82, 82]] do |n|
+  play n
+end`,
+  },
+
+  defonce: {
+    signature: 'defonce :name do ... end',
+    description: 'Bind a name to the cached result of a block. Body runs once; subsequent re-evals return the cached value (use override: true to re-run).',
+    params: [
+      { name: 'name', type: 'symbol', desc: 'Variable name' },
+      { name: 'override', type: 'boolean', default: 'false', desc: 'Re-run the body even if cached' },
+    ],
+    example: `defonce :pad do
+  chord(:c4, :major)
+end
+
+play_chord pad`,
+  },
+
   play_chord: {
     signature: 'play_chord notes, opts',
     description: 'Play multiple notes simultaneously as a chord.',
