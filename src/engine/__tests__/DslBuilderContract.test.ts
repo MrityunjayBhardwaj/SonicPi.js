@@ -155,6 +155,9 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['get_pitch_bend',   'Stale-read P2.'],
   ['get_note_on',      'Stale-read P2.'],
   ['get_note_off',     'Stale-read P2.'],
+  // Tier B PR #3 — host-bridge (#236). Calls back into engine.evaluate at
+  // the meta layer; not a deferred step on any builder. Top-level only.
+  ['run_code',         'Host-bridge: forwards to engine.evaluate(). Replaces running loops with a fresh evaluation. No deferred-step semantics.'],
 ])
 
 describe('DSL builder contract (issue #193)', () => {

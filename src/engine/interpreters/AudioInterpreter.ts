@@ -236,10 +236,18 @@ export async function runProgram(
         }
         break
 
-      case 'sync':
+      case 'sync': {
         ctx.bridge?.flushMessages()
-        await ctx.scheduler.waitForSync(step.name, ctx.taskId)
+        const payload = await ctx.scheduler.waitForSync(step.name, ctx.taskId)
+        if (step.bpmSync) {
+          // Inherit cuer's BPM (sync_bpm, #236). Mutate both runtime locals
+          // so subsequent sleep/play/FX steps in this iteration use the
+          // new BPM. Matches desktop `__change_spider_bpm_time_and_beat!`.
+          currentBpm = payload.bpm
+          if (task) task.bpm = payload.bpm
+        }
         break
+      }
 
       case 'fx': {
         const reps = (step.opts.reps as number) ?? 1

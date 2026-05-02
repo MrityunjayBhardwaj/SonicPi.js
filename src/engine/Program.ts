@@ -14,7 +14,7 @@ export type Step =
   | { tag: 'useBpm'; bpm: number }
   | { tag: 'control'; nodeRef: number; params: Record<string, number> }
   | { tag: 'cue'; name: string; args?: unknown[] }
-  | { tag: 'sync'; name: string }
+  | { tag: 'sync'; name: string; bpmSync?: boolean }
   | { tag: 'fx'; name: string; opts: Record<string, number>; body: Program; nodeRef?: number }
   | { tag: 'thread'; body: Program }
   | { tag: 'print'; message: string }

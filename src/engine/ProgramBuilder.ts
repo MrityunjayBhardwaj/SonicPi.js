@@ -234,9 +234,19 @@ export class ProgramBuilder {
     return this
   }
 
-  sync(name: string): this {
-    this.steps.push({ tag: 'sync', name })
+  sync(name: string, opts?: { bpm_sync?: boolean }): this {
+    const bpmSync = opts?.bpm_sync === true
+    this.steps.push(bpmSync ? { tag: 'sync', name, bpmSync: true } : { tag: 'sync', name })
     return this
+  }
+
+  /**
+   * sync_bpm — alias for sync with bpm_sync: true (#236).
+   * Inherits both virtual time AND BPM from the cuer at wake time.
+   * Matches desktop `core.rb:4490-4494`.
+   */
+  sync_bpm(name: string): this {
+    return this.sync(name, { bpm_sync: true })
   }
 
   control(nodeRef: number, params: Record<string, number>): this {

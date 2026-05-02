@@ -1088,6 +1088,27 @@ export class SonicPiEngine {
           this.defonceCache.set(name, value)
           return value
         },
+        // Tier B PR #3 — sync_bpm (#236). Inside live_loops the transpiler
+        // routes `sync_bpm :name` to `__b.sync_bpm(name)` via BUILDER_METHODS.
+        // At top level we forward to topLevelBuilder so the cue waiter runs
+        // when the top-level program reaches it. Top-level programs run
+        // serially (no concurrent context), so nothing actually waits — the
+        // call is a no-op in that case, matching desktop where sync at top
+        // level outside in_thread is unusual but harmless.
+        (name: string) => { topLevelBuilder.sync_bpm(name) },
+        // Tier B PR #3 — run_code (#236). Host-side dynamic eval. Replaces
+        // all running loops with the supplied code, equivalent to pressing
+        // Run with a fresh buffer. Returns a Promise that resolves when the
+        // new evaluation completes. Inside live_loops this re-enters the
+        // engine which is undefined behaviour — desktop's spider re-entry
+        // guard would throw; we accept the same risk for now and may add a
+        // strict guard if observed misuse warrants it.
+        (code: string) => {
+          if (typeof code !== 'string') {
+            throw new TypeError(`run_code expects a string, got ${typeof code}`)
+          }
+          return this.evaluate(code)
+        },
       ]
 
       const codeWarnings = validateCode(transpiledCode)
