@@ -1052,3 +1052,79 @@ describe('load_example host bridge (Tier B PR #3 #236)', () => {
     engine.dispose()
   })
 })
+
+describe('run_code / load_example re-entry guards (Tier B PR #3 #240/#241)', () => {
+  it('run_code inside a live_loop body throws the re-entry guard error', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const errors: string[] = []
+    engine.setRuntimeErrorHandler((e) => { errors.push(e.message) })
+
+    const r = await engine.evaluate(`live_loop :a do
+  run_code "play 60"
+  sleep 1
+end`)
+    expect(r.error).toBeUndefined()
+    // Start the scheduler so the live_loop body iterations execute. The first
+    // iteration's body-build throws synchronously; the scheduler's loop wrapper
+    // catches it and routes to onLoopError → runtimeErrorHandler.
+    engine.play()
+    for (let i = 0; i < 50 && errors.length === 0; i++) {
+      await new Promise(r => setTimeout(r, 10))
+    }
+    engine.stop()
+    expect(errors.some(m => m.includes('run_code can only be called at top level'))).toBe(true)
+    engine.dispose()
+  })
+
+  it('load_example inside a live_loop body throws the re-entry guard error', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const { getExampleNames } = await import('../examples')
+    const exampleName = getExampleNames()[0]
+    const engine = new SonicPiEngine()
+    await engine.init()
+    engine.setLoadExampleHandler(() => { /* would-be host */ })
+    const errors: string[] = []
+    engine.setRuntimeErrorHandler((e) => { errors.push(e.message) })
+
+    const r = await engine.evaluate(`live_loop :a do
+  load_example "${exampleName}"
+  sleep 1
+end`)
+    expect(r.error).toBeUndefined()
+    engine.play()
+    for (let i = 0; i < 50 && errors.length === 0; i++) {
+      await new Promise(r => setTimeout(r, 10))
+    }
+    engine.stop()
+    expect(errors.some(m => m.includes('load_example can only be called at top level'))).toBe(true)
+    engine.dispose()
+  })
+
+  it('run_code at top level still works (guard is OFF during synchronous top-level body)', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    // run_code at top level just kicks off another evaluate. We can't easily
+    // observe the inner program from here, but the absence of an error proves
+    // the top-level guard is OFF when expected.
+    const r = await engine.evaluate(`run_code "play 60"`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+})
+
+describe('sync_bpm at top level surfaces a warning (Tier B PR #3 #239)', () => {
+  it('logs an SV19 warning when called outside in_thread/live_loop', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const printed: string[] = []
+    engine.setPrintHandler((m) => { printed.push(m) })
+    const r = await engine.evaluate('sync_bpm :nope')
+    expect(r.error).toBeUndefined()
+    expect(printed.some(m => m.includes('sync_bpm') && m.includes('top level has no effect'))).toBe(true)
+    engine.dispose()
+  })
+})

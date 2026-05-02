@@ -130,6 +130,15 @@ export class SonicPiEngine {
    *  next eval's scopeBase so removing a `define` line from the buffer does not
    *  break a still-running live_loop that calls it. (#215) */
   private definedFns = new Map<string, (...args: unknown[]) => unknown>()
+  /**
+   * True only while evaluating the synchronous top-level body of user code
+   * (the window between `sandbox.execute(...)` start and resolve in
+   * `evaluate()`). Used by `run_code` and `load_example` to refuse calls
+   * that come from inside a live_loop body's later async iteration —
+   * re-entering `evaluate` from there would dispose the running scheduler
+   * mid-iteration. (#240 / #241)
+   */
+  private inTopLevelEval = false
   /** Cached `defonce` values (#212 / #233). Survive across re-evals — that's
    *  the whole point. Cleared only on full engine reset / dispose. */
   private defonceCache = new Map<string, unknown>()
@@ -1092,22 +1101,30 @@ export class SonicPiEngine {
         },
         // Tier B PR #3 — sync_bpm (#236). Inside live_loops the transpiler
         // routes `sync_bpm :name` to `__b.sync_bpm(name)` via BUILDER_METHODS.
-        // At top level we forward to topLevelBuilder so the cue waiter runs
-        // when the top-level program reaches it. Top-level programs run
-        // serially (no concurrent context), so nothing actually waits — the
-        // call is a no-op in that case, matching desktop where sync at top
-        // level outside in_thread is unusual but harmless.
-        (name: string) => { topLevelBuilder.sync_bpm(name) },
+        // At top level outside in_thread/live_loop the call has no effect —
+        // top-level code runs once linearly and there's no concurrent
+        // context to park. Surface that as a printHandler warning so the
+        // user gets an actionable signal instead of a silent no-op (#239).
+        (name: string) => {
+          topLevelBuilder.sync_bpm(name)
+          if (this.printHandler) {
+            this.printHandler(`[Warning] sync_bpm :${name} at top level has no effect — wrap in in_thread or call from inside a live_loop body.`)
+          }
+        },
         // Tier B PR #3 — run_code (#236). Host-side dynamic eval. Replaces
         // all running loops with the supplied code, equivalent to pressing
         // Run with a fresh buffer. Returns a Promise that resolves when the
-        // new evaluation completes. Inside live_loops this re-enters the
-        // engine which is undefined behaviour — desktop's spider re-entry
-        // guard would throw; we accept the same risk for now and may add a
-        // strict guard if observed misuse warrants it.
+        // new evaluation completes. Refuses calls from inside a live_loop
+        // body iteration — re-entering evaluate() from there would dispose
+        // the running scheduler mid-iteration. (#240)
         (code: string) => {
           if (typeof code !== 'string') {
             throw new TypeError(`run_code expects a string, got ${typeof code}`)
+          }
+          if (!this.inTopLevelEval) {
+            throw new Error(
+              'run_code can only be called at top level — calling it from inside a live_loop body re-enters the engine which is not supported. Use cue/sync to coordinate between loops instead.',
+            )
           }
           return this.evaluate(code)
         },
@@ -1137,6 +1154,11 @@ export class SonicPiEngine {
           if (typeof name !== 'string') {
             throw new TypeError(`load_example expects a name (string or symbol), got ${typeof name}`)
           }
+          if (!this.inTopLevelEval) {
+            throw new Error(
+              'load_example can only be called at top level — calling it from inside a live_loop replaces the running buffer mid-iteration which is not supported.',
+            )
+          }
           const example = getExample(name)
           if (!example) {
             throw new Error(`load_example: no example named "${name}". See examples panel for the full list.`)
@@ -1165,7 +1187,17 @@ export class SonicPiEngine {
       }
       const sandbox = createIsolatedExecutor(transpiledCode, dslNames, persistedFns)
       scopeHandle = sandbox.scopeHandle
-      await sandbox.execute(...dslValues)
+      // Set the re-entry guard while the synchronous top-level body runs.
+      // run_code / load_example check this flag and refuse if false (i.e.
+      // called later from inside a live_loop body iteration). Save+restore
+      // pattern handles legitimate nested run_code at top level. (#240/#241)
+      const prevInTopLevelEval = this.inTopLevelEval
+      this.inTopLevelEval = true
+      try {
+        await sandbox.execute(...dslValues)
+      } finally {
+        this.inTopLevelEval = prevInTopLevelEval
+      }
 
       if (isReEvaluate) {
         const oldLoops = scheduler.getRunningLoopNames()
