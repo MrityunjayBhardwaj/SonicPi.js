@@ -358,8 +358,14 @@ export async function runProgram(
 
       case 'liveAudio': {
         if (ctx.bridge) {
-          ctx.bridge.startLiveAudio(step.name, { stereo: !!step.opts.stereo })
-            .catch((err: Error) => ctx.printHandler?.(`live_audio failed: ${err.message}`))
+          if (step.stop) {
+            // live_audio :name, :stop (#236) — kill the named live audio.
+            // Synchronous; mirrors hot-swap reconciliation at SonicPiEngine.ts:309.
+            ctx.bridge.stopLiveAudio(step.name)
+          } else {
+            ctx.bridge.startLiveAudio(step.name, { stereo: !!step.opts.stereo })
+              .catch((err: Error) => ctx.printHandler?.(`live_audio failed: ${err.message}`))
+          }
         }
         break
       }

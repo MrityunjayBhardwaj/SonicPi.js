@@ -18,7 +18,7 @@ export type Step =
   | { tag: 'fx'; name: string; opts: Record<string, number>; body: Program; nodeRef?: number }
   | { tag: 'thread'; body: Program }
   | { tag: 'print'; message: string }
-  | { tag: 'liveAudio'; name: string; opts: Record<string, number> }
+  | { tag: 'liveAudio'; name: string; opts: Record<string, number>; stop?: boolean }
   | { tag: 'set'; key: string | symbol; value: unknown }
   | { tag: 'stop' }
   | { tag: 'stopLoop'; name: string }
