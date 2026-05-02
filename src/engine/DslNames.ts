@@ -120,6 +120,12 @@ export const DSL_NAMES = [
   // engine.evaluate with the supplied string. Top-level only; throws inside
   // live_loops to match desktop spider re-entry semantics.
   'run_code',
+  // Tier B PR #3 — eval_file / run_file (#236). Browser-sandbox stubs: the
+  // engine has no filesystem access, so both throw an informative error
+  // pointing users at run_code(string) / load_example(:name) instead.
+  // Listed in the public DSL surface so user code that references them
+  // gets a clear redirect rather than a silent globalThis lookup miss.
+  'eval_file', 'run_file',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

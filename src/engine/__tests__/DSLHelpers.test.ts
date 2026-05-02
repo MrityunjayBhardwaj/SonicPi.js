@@ -979,3 +979,27 @@ describe('MidiBridge — output send routing', () => {
     expect(out.sent[0][0]).toBe(0x9F) // 0x90 | 15
   })
 })
+
+describe('eval_file / run_file browser-sandbox stubs (Tier B PR #3 #236)', () => {
+  it('eval_file throws an informative error redirecting to run_code / load_example', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const result = await engine.evaluate('eval_file "some/path.rb"')
+    expect(result.error).toBeDefined()
+    expect(result.error!.message).toContain('browser sandbox')
+    expect(result.error!.message).toMatch(/run_code|load_example/)
+    engine.dispose()
+  })
+
+  it('run_file throws the same redirect message', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const result = await engine.evaluate('run_file "some/path.rb"')
+    expect(result.error).toBeDefined()
+    expect(result.error!.message).toContain('browser sandbox')
+    expect(result.error!.message).toMatch(/run_code|load_example/)
+    engine.dispose()
+  })
+})
