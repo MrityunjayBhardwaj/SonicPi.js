@@ -96,6 +96,12 @@ export const DSL_NAMES = [
   // don't validate arg names yet — see ProgramBuilder).
   'current_synth_defaults', 'current_sample_defaults',
   'current_arg_checks', 'current_debug',
+  // Tier B PR #2 — block-form tuplet scheduling (#233). The transpiler
+  // routes `tuplets [...] do |x| ... end` to __b.tuplets(list, opts, cb),
+  // resolving the list/opts at build time then pushing N play+sleep step
+  // pairs per the block (one per leaf element). Density wraps each
+  // sub-list so N elements fit in `duration` beats.
+  'tuplets',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

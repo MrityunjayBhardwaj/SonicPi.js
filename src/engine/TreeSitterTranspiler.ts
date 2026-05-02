@@ -234,7 +234,7 @@ const BUILDER_METHODS = new Set([
   // Utility
   'factor_q', 'bools', 'play_pattern_timed', 'sample_duration', 'stretch', 'ramp',
   'hz_to_midi', 'midi_to_hz', 'quantise', 'quantize', 'octs',
-  'kill', 'play_chord', 'play_pattern',
+  'kill', 'play_chord', 'play_pattern', 'tuplets',
   'with_octave', 'with_random_seed', 'with_density',
   'noteToMidi', 'midiToFreq', 'noteToFreq', 'note_info',
   // Data constructors
@@ -1063,6 +1063,11 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return transpileTimeWarp(argsNode, blockNode, ctx)
     }
 
+    // tuplets [list], opts do |x| ... end  (#233)
+    if (methodName === 'tuplets') {
+      return transpileTuplets(argsNode, blockNode, ctx)
+    }
+
     // assert_error do … end → assert_error((__b) => { … })  (#216)
     if (methodName === 'assert_error' && blockNode) {
       const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
@@ -1849,6 +1854,52 @@ function transpileTimeWarp(
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
   const bodyStr = transpileBlockBody(blockNode, bodyCtx)
   return `${prefix}at([${offset}], null, (__b) => {\n${bodyStr}\n${ctx.indent}})`
+}
+
+/**
+ * `tuplets [list], opts do |x| ... end`  (#233)
+ *
+ *   tuplets [70, [72, 72]], swing: 0.2 do |n| play n end
+ *     →  __b.tuplets([70, [72, 72]], { swing: 0.2 }, (__b, n) => { __b.play(n) })
+ *
+ * The first positional arg is the list. Remaining keyword pairs become an
+ * options object. Block params come through as additional callback args.
+ */
+function transpileTuplets(
+  argsNode: any, blockNode: any, ctx: TranspileContext
+): string {
+  if (!blockNode) {
+    const line = argsNode?.startPosition?.row != null ? argsNode.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: tuplets is missing 'do ... end' block`)
+    return `/* parse error: tuplets missing block */`
+  }
+
+  const args = argsNode?.namedChildren ?? []
+  const positional = args.filter((a: any) => a.type !== 'pair').map((a: any) => transpileNode(a, ctx))
+  const pairs = args.filter((a: any) => a.type === 'pair')
+
+  const listExpr = positional[0] ?? '[]'
+  const optsExpr = pairs.length > 0
+    ? '{ ' + pairs.map((p: any) => {
+        const key = p.namedChildren[0]
+        const val = p.namedChildren[1]
+        const keyName = key.type === 'hash_key_symbol'
+          ? key.text.replace(/:$/, '')
+          : key.type === 'simple_symbol'
+          ? key.text.slice(1)
+          : transpileNode(key, ctx)
+        return `${keyName}: ${transpileNode(val, ctx)}`
+      }).join(', ') + ' }'
+    : '{}'
+
+  const prefix = ctx.insideLoop ? '__b.' : ''
+  const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+  const params = blockNode.namedChildren.find((c: any) => c.type === 'block_parameters')
+  const paramNames = params?.namedChildren.map((c: any) => c.text) ?? []
+  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
+  const paramStr = paramNames.length > 0 ? ', ' + paramNames.join(', ') : ''
+
+  return `${prefix}tuplets(${listExpr}, ${optsExpr}, (__b${paramStr}) => {\n${bodyStr}\n${ctx.indent}})`
 }
 
 function transpileDensity(

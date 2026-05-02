@@ -1060,6 +1060,16 @@ export class SonicPiEngine {
         () => topLevelBuilder.current_sample_defaults(),
         () => topLevelBuilder.current_arg_checks(),
         () => topLevelBuilder.current_debug(),
+        // Tier B PR #2 — block-form tuplets (#233). Forwards to topLevelBuilder
+        // so steps land on the top-level program. Inside live_loops the
+        // transpiler emits `__b.tuplets(...)` directly via BUILDER_METHODS.
+        (list: unknown, optsOrFn: unknown, maybeFn?: unknown) => {
+          topLevelBuilder.tuplets(
+            list as readonly unknown[],
+            optsOrFn as Parameters<typeof topLevelBuilder.tuplets>[1],
+            maybeFn as Parameters<typeof topLevelBuilder.tuplets>[2],
+          )
+        },
       ]
 
       const codeWarnings = validateCode(transpiledCode)

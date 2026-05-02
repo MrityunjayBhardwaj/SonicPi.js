@@ -219,6 +219,80 @@ describe('doubles / halves (#233 Tier B PR #2)', () => {
   })
 })
 
+describe('tuplets (#233 Tier B PR #2)', () => {
+  it('bare elements emit play + sleep at full duration', () => {
+    const b = new ProgramBuilder()
+    b.tuplets([60, 62, 64], (b2, n) => { b2.play(n) })
+    const program = b.build()
+    // play, sleep, play, sleep, play, sleep
+    expect(program.length).toBe(6)
+    expect(program[0].tag).toBe('play')
+    expect(program[1].tag).toBe('sleep')
+    expect((program[1] as { tag: 'sleep'; beats: number }).beats).toBe(1)
+    expect((program[0] as { tag: 'play'; note: number }).note).toBe(60)
+    expect((program[2] as { tag: 'play'; note: number }).note).toBe(62)
+    expect((program[4] as { tag: 'play'; note: number }).note).toBe(64)
+  })
+
+  it('sub-list scales sleep by density factor 1/N', () => {
+    const b = new ProgramBuilder()
+    b.tuplets([[60, 62, 64]], (b2, n) => { b2.play(n) })
+    const program = b.build()
+    // 3 (play, sleep) pairs inside density 3
+    expect(program.length).toBe(6)
+    // Each sleep is duration / density = 1 / 3
+    const sleeps = program.filter(s => s.tag === 'sleep') as { tag: 'sleep'; beats: number }[]
+    expect(sleeps.length).toBe(3)
+    for (const s of sleeps) expect(s.beats).toBeCloseTo(1 / 3, 6)
+  })
+
+  it('mixed bare + sub-list produces correct step ordering', () => {
+    const b = new ProgramBuilder()
+    b.tuplets([70, [72, 72], 70], (b2, n) => { b2.play(n) })
+    const program = b.build()
+    // 70 → play, sleep(1)
+    // [72, 72] → density 2 → play, sleep(0.5), play, sleep(0.5)
+    // 70 → play, sleep(1)
+    expect(program.length).toBe(8)
+    const sleeps = program.filter(s => s.tag === 'sleep') as { tag: 'sleep'; beats: number }[]
+    expect(sleeps[0].beats).toBe(1)
+    expect(sleeps[1].beats).toBeCloseTo(0.5, 6)
+    expect(sleeps[2].beats).toBeCloseTo(0.5, 6)
+    expect(sleeps[3].beats).toBe(1)
+  })
+
+  it('duration opt overrides default beat-per-element', () => {
+    const b = new ProgramBuilder()
+    b.tuplets([60, 62], { duration: 0.5 }, (b2, n) => { b2.play(n) })
+    const program = b.build()
+    const sleeps = program.filter(s => s.tag === 'sleep') as { tag: 'sleep'; beats: number }[]
+    expect(sleeps[0].beats).toBe(0.5)
+    expect(sleeps[1].beats).toBe(0.5)
+  })
+
+  it('swing opt produces an at-block on swung beats', () => {
+    const b = new ProgramBuilder()
+    // [72, 72] is size 2 (matches default swing_pulse 2), swing_offset+1=1,
+    // so idx 1 swings: ((1+1)%2 === 0). Element at idx 0 plays straight.
+    b.tuplets([[72, 72]], { swing: 0.1 }, (b2, n) => { b2.play(n) })
+    const program = b.build()
+    const tags = program.map(s => s.tag)
+    expect(tags).toContain('thread') // at(...) uses thread step
+  })
+
+  it('Ring as input is accepted', () => {
+    const b = new ProgramBuilder()
+    b.tuplets(ring(60, 62, 64), (b2, n) => { b2.play(n) })
+    expect(b.build().length).toBe(6)
+  })
+
+  it('throws when block is missing', () => {
+    const b = new ProgramBuilder()
+    expect(() => (b as unknown as { tuplets: (...a: unknown[]) => void }).tuplets([60, 62])).toThrow(/requires a block/)
+    expect(() => b.tuplets([60, 62], {} as never)).toThrow(/requires a block/)
+  })
+})
+
 describe('introspection (#233 Tier B PR #2)', () => {
   it('current_synth_defaults reflects use_synth_defaults', () => {
     const b = new ProgramBuilder()
