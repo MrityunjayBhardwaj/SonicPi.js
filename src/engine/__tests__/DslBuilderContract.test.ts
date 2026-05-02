@@ -64,6 +64,8 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['range',            'Pure constructor.'],
   ['line',             'Pure constructor.'],
   ['spread',           'Pure Euclidean-rhythm constructor.'],
+  ['doubles',          'Pure: ring of successive doubling.'],
+  ['halves',           'Pure: ring of successive halving.'],
   // Pure math
   ['note',             'Pure: note name → MIDI number.'],
   ['note_range',       'Pure constructor.'],

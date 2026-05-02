@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { SeededRandom } from '../SeededRandom'
-import { Ring, ring, ramp, stretch, Ramp } from '../Ring'
+import { Ring, ring, ramp, stretch, doubles, halves, Ramp } from '../Ring'
 import { spread } from '../EuclideanRhythm'
 import { noteToMidi, midiToFreq, noteToFreq, noteInfo } from '../NoteToFreq'
 import { MidiBridge } from '../MidiBridge'
@@ -169,6 +169,53 @@ describe('Global tick context (#211 Tier A)', () => {
     b.tick('foo'); b.tick('foo') // counter at 1
     expect(b.look('foo', 5)).toBe(6)
     expect(b.look('foo')).toBe(1) // still 1
+  })
+})
+
+describe('doubles / halves (#233 Tier B PR #2)', () => {
+  it('doubles produces successive doubling', () => {
+    expect(doubles(60, 4).toArray()).toEqual([60, 120, 240, 480])
+  })
+
+  it('halves produces successive halving', () => {
+    expect(halves(60, 4).toArray()).toEqual([60, 30, 15, 7.5])
+  })
+
+  it('doubles defaults to count 1', () => {
+    expect(doubles(7).toArray()).toEqual([7])
+  })
+
+  it('halves defaults to count 1', () => {
+    expect(halves(7).toArray()).toEqual([7])
+  })
+
+  it('doubles with negative count delegates to halves', () => {
+    expect(doubles(60, -3).toArray()).toEqual(halves(60, 3).toArray())
+  })
+
+  it('halves with negative count delegates to doubles', () => {
+    expect(halves(10, -3).toArray()).toEqual(doubles(10, 3).toArray())
+  })
+
+  it('doubles returns a Ring (cyclic indexing)', () => {
+    const r = doubles(1, 3)
+    expect(r.at(0)).toBe(1)
+    expect(r.at(1)).toBe(2)
+    expect(r.at(2)).toBe(4)
+    expect(r.at(3)).toBe(1) // cycles
+  })
+
+  it('doubles rejects non-numeric start', () => {
+    expect(() => doubles('hi' as unknown as number, 2)).toThrow(/needs to be a number/)
+  })
+
+  it('halves rejects non-numeric start', () => {
+    expect(() => halves('hi' as unknown as number, 2)).toThrow(/needs to be a number/)
+  })
+
+  it('count 0 returns empty ring', () => {
+    expect(doubles(60, 0).toArray()).toEqual([])
+    expect(halves(60, 0).toArray()).toEqual([])
   })
 })
 

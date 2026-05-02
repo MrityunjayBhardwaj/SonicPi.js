@@ -87,6 +87,9 @@ export const DSL_NAMES = [
   // SoundLayer param normalization), so the WAV captures exactly what the
   // user hears. Top-level dslValues entries forward to topLevelBuilder.
   'recording_start', 'recording_stop', 'recording_save', 'recording_delete',
+  // Tier B PR #2 — pure ring constructors (#233). Both delegate to each
+  // other for negative counts (matches upstream `core.rb:1919-1970`).
+  'doubles', 'halves',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]
