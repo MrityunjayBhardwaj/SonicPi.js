@@ -259,6 +259,11 @@ const BUILDER_METHODS = new Set([
   'midi_prog_change', 'midi_clock_tick',
   'midi_start', 'midi_stop', 'midi_continue',
   'midi_all_notes_off', 'midi_notes_off',
+  // Tier B — recording (#228). Deferred so the lifecycle sequences against
+  // the audio playback timeline. Building them at top-level immediate
+  // would fire recording_save before any notes from the surrounding
+  // `8.times do` had played, leaving the WAV empty.
+  'recording_start', 'recording_stop', 'recording_save', 'recording_delete',
   // Budget
   '__checkBudget__',
 ])
@@ -324,6 +329,14 @@ const BARE_CALLABLE = new Set([
   // typically called without parens. rand_back / rand_skip take an optional
   // arg but are also valid bare (rand_back == rand_back(1)).
   'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
+  // Tier B — recording (#228). Three of the four are 0-arity and routinely
+  // called bare (`recording_start`, not `recording_start()`). Inside a
+  // BARE_DSL_CALLS-wrapped run-once block they need __b.recording_*()
+  // emitted so the deferred step actually pushes onto the program.
+  // `recording_save` always carries an arg and parses as a method_call,
+  // so it doesn't need this list — but including it means a bare
+  // `recording_save` (forgotten filename) trips the arity guard at build.
+  'recording_start', 'recording_stop', 'recording_delete', 'recording_save',
 ])
 
 /**
@@ -833,6 +846,11 @@ const BARE_DSL_CALLS = new Set([
   'puts', 'print', 'control', 'kill', 'synth',
   'play_chord', 'play_pattern', 'play_pattern_timed',
   'use_synth_defaults', 'use_sample_defaults', 'use_transpose',
+  // Tier B — recording (#228). Bare top-level recording_* triggers the
+  // implicit live_loop :__run_once wrapper so __b is in scope; the
+  // resulting __b.recording_* calls fire as deferred steps at scheduled
+  // virtual time.
+  'recording_start', 'recording_stop', 'recording_save', 'recording_delete',
 ])
 // Top-level `loop do … end` is NOT bare code — it is its own scheduler-owned
 // live_loop (auto-named below). Wrapping it in `__run_once` would trap the

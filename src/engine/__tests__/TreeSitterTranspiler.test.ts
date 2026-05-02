@@ -626,6 +626,48 @@ end`)
       expect(result.code).toMatch(/\.rand_reset\(\)/)
     })
 
+    it('recording_* inside live_loop routes through __b for deferred timing (#228)', () => {
+      // Recording is a deferred step now — must route through __b so the
+      // step fires at the scheduled virtual time of the surrounding sleep.
+      // Top-level immediate would mis-sequence: recording_save would run
+      // before the play+sleep program had executed, leaving lastRecording
+      // null.
+      const inLoop = treeSitterTranspile(`live_loop :t do
+  recording_start
+  play 60
+  sleep 1
+  recording_stop
+  recording_save "out.wav"
+  recording_delete
+end`)
+      expect(inLoop.ok).toBe(true)
+      expect(inLoop.code).toMatch(/\.recording_start\(/)
+      expect(inLoop.code).toMatch(/\.recording_stop\(/)
+      expect(inLoop.code).toMatch(/\.recording_save\("out.wav"\)/)
+      expect(inLoop.code).toMatch(/\.recording_delete\(/)
+    })
+
+    it('bare top-level recording_start triggers run-once wrapper so __b is in scope (#228)', () => {
+      // BARE_DSL_CALLS contains recording_*, so bare top-level usage
+      // wraps the whole script in live_loop :__run_once and emits
+      // __b.recording_start. Without this, recording_* would resolve to
+      // the dslValues forwarder which itself goes through topLevelBuilder,
+      // but the run-once wrapper keeps the lifecycle in lock-step with
+      // surrounding `8.times` blocks.
+      const result = treeSitterTranspile(`recording_start
+8.times do
+  play 60
+  sleep 0.25
+end
+recording_stop
+recording_save "x.wav"`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toContain('__run_once')
+      expect(result.code).toMatch(/\.recording_start\(/)
+      expect(result.code).toMatch(/\.recording_stop\(/)
+      expect(result.code).toMatch(/\.recording_save\("x.wav"\)/)
+    })
+
     it('current_beat / current_time inside live_loop route via __b (#226)', () => {
       const result = treeSitterTranspile(`live_loop :t do
   sleep 1

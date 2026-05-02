@@ -78,6 +78,11 @@ export const DSL_NAMES = [
   // Tier B — PRNG inspection (#227). Per-task reads/mutations of the rand
   // stream. All four are pure build-time on the per-loop builder's RNG.
   'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
+  // Tier B — recording (#228). Top-level immediate side effects (session
+  // lifecycle, not music events) — no ProgramBuilder methods. recording_*
+  // tap masterOutputNode on SuperSonicBridge, downstream of all SoundLayer
+  // param normalization, so the WAV captures exactly what the user hears.
+  'recording_start', 'recording_stop', 'recording_save', 'recording_delete',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

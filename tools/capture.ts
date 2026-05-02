@@ -201,7 +201,11 @@ async function captureRun(
 
     const recBtn = page.locator('button').filter({ hasText: 'Rec' }).first()
     const hasRec = await recBtn.count()
-    if (hasRec > 0) {
+    // If the user code itself drives recording (recording_start / _stop /
+    // _save — issue #228), the blob hits __capturedWavBlob without any
+    // UI clicks. Detect that path so we skip the Rec/Save button dance.
+    const codeDrivesRecording = /\brecording_(start|save)\b/.test(code)
+    if (hasRec > 0 && !codeDrivesRecording) {
       await recBtn.click()
       await page.waitForTimeout(duration - 1000)
       // Stop recording — button now says "Save"
@@ -213,27 +217,31 @@ async function captureRun(
         await recBtn.click()
       }
       await page.waitForTimeout(2000) // wait for blob to be captured
-
-      // Extract the captured WAV blob
-      const wavBase64 = await page.evaluate(async () => {
-        const blob = (window as any).__capturedWavBlob as Blob | null
-        if (!blob) return null
-        const buf = await blob.arrayBuffer()
-        const bytes = new Uint8Array(buf)
-        let binary = ''
-        const cs = 8192
-        for (let i = 0; i < bytes.length; i += cs) {
-          binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + cs, bytes.length)))
-        }
-        return btoa(binary)
-      })
-
-      if (wavBase64) {
-        audioPath = resolve(CAPTURES_DIR, `${prefix}_audio.wav`)
-        writeFileSync(audioPath, Buffer.from(wavBase64, 'base64'))
-      }
     } else {
       await page.waitForTimeout(duration - 1000)
+      // Give DSL-driven recording a beat to flush the MediaRecorder + WAV
+      // encode before we extract.
+      if (codeDrivesRecording) await page.waitForTimeout(2000)
+    }
+
+    // Extract the captured WAV blob — populated by the click interceptor
+    // above whether triggered from the Rec button or from recording_save.
+    const wavBase64 = await page.evaluate(async () => {
+      const blob = (window as any).__capturedWavBlob as Blob | null
+      if (!blob) return null
+      const buf = await blob.arrayBuffer()
+      const bytes = new Uint8Array(buf)
+      let binary = ''
+      const cs = 8192
+      for (let i = 0; i < bytes.length; i += cs) {
+        binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + cs, bytes.length)))
+      }
+      return btoa(binary)
+    })
+
+    if (wavBase64) {
+      audioPath = resolve(CAPTURES_DIR, `${prefix}_audio.wav`)
+      writeFileSync(audioPath, Buffer.from(wavBase64, 'base64'))
     }
   } else {
     // Firefox: just wait (no reliable audio capture in headless)

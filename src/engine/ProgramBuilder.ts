@@ -359,6 +359,49 @@ export class ProgramBuilder {
     return this
   }
 
+  // --- Recording (#228) — deferred steps -----------------------------------
+  // Lifecycle is sequenced against the scheduled program, not the build
+  // pass. The user's mental model is "start, play 8 notes, stop, save" —
+  // running them at build time fires save before any audio plays.
+  // Cross-engine arity ethic: rest args + length guard so passing extras
+  // errors instead of silently swallowing.
+
+  recording_start(...args: unknown[]): this {
+    if (args.length > 0) {
+      throw new Error(`recording_start expects no arguments, got ${args.length}`)
+    }
+    this.steps.push({ tag: 'recordingStart' })
+    return this
+  }
+
+  recording_stop(...args: unknown[]): this {
+    if (args.length > 0) {
+      throw new Error(`recording_stop expects no arguments, got ${args.length}`)
+    }
+    this.steps.push({ tag: 'recordingStop' })
+    return this
+  }
+
+  recording_save(...args: unknown[]): this {
+    if (args.length === 0 || args.length > 1) {
+      throw new Error(`recording_save expects 1 argument (filename), got ${args.length}`)
+    }
+    const filename = args[0]
+    if (typeof filename !== 'string') {
+      throw new Error(`recording_save: filename must be a string, got ${typeof filename}`)
+    }
+    this.steps.push({ tag: 'recordingSave', filename })
+    return this
+  }
+
+  recording_delete(...args: unknown[]): this {
+    if (args.length > 0) {
+      throw new Error(`recording_delete expects no arguments, got ${args.length}`)
+    }
+    this.steps.push({ tag: 'recordingDelete' })
+    return this
+  }
+
   // --- OSC: deferred (issue #196) ---
   /**
    * Builder-captured OSC defaults for the `osc` shorthand. `use_osc`

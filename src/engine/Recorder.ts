@@ -116,6 +116,15 @@ export class Recorder {
   /** Stop recording and trigger a browser download. */
   async stopAndDownload(filename?: string): Promise<void> {
     const blob = await this.stop()
+    Recorder.saveBlobToDownload(blob, filename)
+  }
+
+  /**
+   * Trigger a browser download for an already-captured Blob.
+   * Split out from stopAndDownload so the DSL `recording_save` step
+   * can be invoked separately from `recording_stop` (#228).
+   */
+  static saveBlobToDownload(blob: Blob, filename?: string): void {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
