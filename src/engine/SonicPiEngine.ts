@@ -1053,6 +1053,13 @@ export class SonicPiEngine {
         (...args: unknown[]) => { topLevelBuilder.recording_delete(...args) },
         // Tier B PR #2 — pure ring constructors (#233)
         doubles, halves,
+        // Tier B PR #2 — defaults / setting introspection (#233). Forward
+        // to topLevelBuilder so the value reflects top-level use_*_defaults
+        // calls. Inside live_loops the transpiler routes through __b.
+        () => topLevelBuilder.current_synth_defaults(),
+        () => topLevelBuilder.current_sample_defaults(),
+        () => topLevelBuilder.current_arg_checks(),
+        () => topLevelBuilder.current_debug(),
       ]
 
       const codeWarnings = validateCode(transpiledCode)

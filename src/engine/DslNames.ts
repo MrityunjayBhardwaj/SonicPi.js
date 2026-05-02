@@ -90,6 +90,12 @@ export const DSL_NAMES = [
   // Tier B PR #2 — pure ring constructors (#233). Both delegate to each
   // other for negative counts (matches upstream `core.rb:1919-1970`).
   'doubles', 'halves',
+  // Tier B PR #2 — defaults / setting introspection (#233). Inside live_loops
+  // these route via __b for per-task reads; at top level they read the
+  // topLevelBuilder's state. current_arg_checks returns constant true (we
+  // don't validate arg names yet — see ProgramBuilder).
+  'current_synth_defaults', 'current_sample_defaults',
+  'current_arg_checks', 'current_debug',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

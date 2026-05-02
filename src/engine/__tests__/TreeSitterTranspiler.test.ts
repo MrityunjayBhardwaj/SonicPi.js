@@ -684,6 +684,22 @@ end`)
       expect(result.code).toMatch(/\.current_sched_ahead_time\(\)/)
     })
 
+    it('current_synth_defaults / current_debug etc. inside live_loop route via __b (#233)', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  use_synth_defaults amp: 0.5
+  puts current_synth_defaults
+  puts current_sample_defaults
+  puts current_arg_checks
+  puts current_debug
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/\.current_synth_defaults\(\)/)
+      expect(result.code).toMatch(/\.current_sample_defaults\(\)/)
+      expect(result.code).toMatch(/\.current_arg_checks\(\)/)
+      expect(result.code).toMatch(/\.current_debug\(\)/)
+    })
+
     it('with_fx at top level (outside live_loop)', () => {
       const result = treeSitterTranspile(`with_fx :reverb, mix: 0.7 do
   live_loop :t do

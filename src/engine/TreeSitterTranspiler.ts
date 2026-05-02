@@ -251,6 +251,10 @@ const BUILDER_METHODS = new Set([
   // Tier B — PRNG inspection (#227). Per-task RNG mutations — route through
   // __b so they hit the calling builder's seeded random stream.
   'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
+  // Tier B PR #2 — defaults / setting introspection (#233). Per-task pure
+  // reads — route through __b so per-loop use_*_defaults are visible.
+  'current_synth_defaults', 'current_sample_defaults',
+  'current_arg_checks', 'current_debug',
   // Deferred-step DSL contract (issue #193 — must mirror methods on
   // ProgramBuilder so they fire at scheduled virtual time, not build time).
   'stop_loop', 'set_volume', 'use_osc', 'osc',
@@ -337,6 +341,10 @@ const BARE_CALLABLE = new Set([
   // so it doesn't need this list — but including it means a bare
   // `recording_save` (forgotten filename) trips the arity guard at build.
   'recording_start', 'recording_stop', 'recording_delete', 'recording_save',
+  // Tier B PR #2 — defaults / setting introspection (#233). Routinely called
+  // bare in user code (`puts current_debug`, `if current_arg_checks`).
+  'current_synth_defaults', 'current_sample_defaults',
+  'current_arg_checks', 'current_debug',
 ])
 
 /**

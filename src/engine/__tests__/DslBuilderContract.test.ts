@@ -66,6 +66,14 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['spread',           'Pure Euclidean-rhythm constructor.'],
   ['doubles',          'Pure: ring of successive doubling.'],
   ['halves',           'Pure: ring of successive halving.'],
+  // Tier B PR #2 — defaults / setting introspection (#233). All four are
+  // pure reads of builder state; inside live_loops the transpiler routes
+  // through __b.* via BUILDER_METHODS, so the per-task builder fulfils the
+  // method-presence requirement. Listed here for top-level dslValues entries.
+  ['current_synth_defaults',  'Pure read of builder._synthDefaults.'],
+  ['current_sample_defaults', 'Pure read of builder._sampleDefaults.'],
+  ['current_arg_checks',      'Constant true — we do not validate arg names yet (Tier C).'],
+  ['current_debug',           'Pure read of builder._debug.'],
   // Pure math
   ['note',             'Pure: note name → MIDI number.'],
   ['note_range',       'Pure constructor.'],

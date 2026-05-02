@@ -219,6 +219,44 @@ describe('doubles / halves (#233 Tier B PR #2)', () => {
   })
 })
 
+describe('introspection (#233 Tier B PR #2)', () => {
+  it('current_synth_defaults reflects use_synth_defaults', () => {
+    const b = new ProgramBuilder()
+    expect(b.current_synth_defaults()).toEqual({})
+    b.use_synth_defaults({ amp: 0.5, cutoff: 80 })
+    expect(b.current_synth_defaults()).toEqual({ amp: 0.5, cutoff: 80 })
+  })
+
+  it('current_sample_defaults reflects use_sample_defaults', () => {
+    const b = new ProgramBuilder()
+    expect(b.current_sample_defaults()).toEqual({})
+    b.use_sample_defaults({ rate: 0.5 })
+    expect(b.current_sample_defaults()).toEqual({ rate: 0.5 })
+  })
+
+  it('current_synth_defaults returns a copy (mutations do not leak)', () => {
+    const b = new ProgramBuilder()
+    b.use_synth_defaults({ amp: 0.5 })
+    const snapshot = b.current_synth_defaults()
+    snapshot.amp = 99
+    expect(b.current_synth_defaults().amp).toBe(0.5)
+  })
+
+  it('current_debug defaults to true and reflects use_debug', () => {
+    const b = new ProgramBuilder()
+    expect(b.current_debug()).toBe(true)
+    b.use_debug(false)
+    expect(b.current_debug()).toBe(false)
+    b.use_debug(true)
+    expect(b.current_debug()).toBe(true)
+  })
+
+  it('current_arg_checks returns true (matches Desktop SP default)', () => {
+    const b = new ProgramBuilder()
+    expect(b.current_arg_checks()).toBe(true)
+  })
+})
+
 describe('Ring helpers (#211 Tier A)', () => {
   it('stretch repeats each element n times', () => {
     const r = stretch([1, 2, 3], 2)

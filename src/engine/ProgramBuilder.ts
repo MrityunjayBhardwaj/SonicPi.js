@@ -532,11 +532,22 @@ export class ProgramBuilder {
   /** Return the current synth name. */
   get current_synth_name(): string { return this.currentSynth }
 
-  /** Return the current synth defaults hash. */
-  get current_synth_defaults_hash(): Record<string, number> { return { ...this._synthDefaults } }
-
-  /** Return the current sample defaults hash. */
-  get current_sample_defaults_hash(): Record<string, number> { return { ...this._sampleDefaults } }
+  /**
+   * Tier B PR #2 (#233) — defaults / setting introspection. All four are
+   * called bare (`puts current_debug`) so they're methods returning a value,
+   * not getters — see BARE_CALLABLE in TreeSitterTranspiler.ts which emits
+   * `__b.NAME()` with parens.
+   */
+  current_synth_defaults(): Record<string, number> { return { ...this._synthDefaults } }
+  current_sample_defaults(): Record<string, number> { return { ...this._sampleDefaults } }
+  current_debug(): boolean { return this._debug }
+  /**
+   * We don't validate synth arg names against synthinfo — unknown args are
+   * silently dropped at SoundLayer normalization. Returning the upstream
+   * default (`true`) keeps existing user code that branches on this read
+   * working. When `use_arg_checks` ships in Tier C, this becomes a real read.
+   */
+  current_arg_checks(): boolean { return true }
 
   /** Deferred set — fires at runtime (interleaved with sleeps). */
   set(key: string | symbol, value: unknown): this {
