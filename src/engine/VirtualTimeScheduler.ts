@@ -119,6 +119,8 @@ export class VirtualTimeScheduler {
   private tasks = new Map<string, TaskState>()
   private tickTimer: ReturnType<typeof setInterval> | null = null
   private getAudioTime: () => number
+  /** Public read of the current audio-context time (used by current_time at top level — #226). */
+  get audioTime(): number { return this.getAudioTime() }
   private schedAheadTime: number
   private tickInterval: number
   private eventHandlers: EventHandler[] = []

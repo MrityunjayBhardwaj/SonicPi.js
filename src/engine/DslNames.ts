@@ -72,6 +72,21 @@ export const DSL_NAMES = [
   // Tier A — time_warp is transpiler-handled (transpileTimeWarp → __b.at(...)).
   // Runtime stub is a fallback for the regex transpiler path. (#211)
   'time_warp',
+  // Tier B — timing introspection (#226). Inside live_loops these route to
+  // __b.current_* for per-task reads; at top level they read engine state.
+  'current_beat', 'current_beat_duration', 'current_time', 'current_sched_ahead_time',
+  // Tier B — PRNG inspection (#227). Per-task reads/mutations of the rand
+  // stream. All four are pure build-time on the per-loop builder's RNG.
+  'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
+  // Tier B — recording (#228). Deferred ProgramBuilder steps that fire at
+  // scheduled virtual time so the lifecycle sequences with the surrounding
+  // play / sleep program — running them at build time would mis-order
+  // recording_save before any audio plays. Rest-arg + length guards in
+  // ProgramBuilder.recording_* enforce Desktop SP fixed-arity. The handler
+  // wired into runProgram's ctx taps masterOutputNode (downstream of all
+  // SoundLayer param normalization), so the WAV captures exactly what the
+  // user hears. Top-level dslValues entries forward to topLevelBuilder.
+  'recording_start', 'recording_stop', 'recording_save', 'recording_delete',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

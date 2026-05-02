@@ -58,6 +58,18 @@ export interface AudioContext {
    * unset means: just push the bridge change (legacy path).
    */
   onVolumeChange?: (vol: number) => void
+  /**
+   * Recording lifecycle callback (#228). Fires at scheduled virtual time
+   * for `recordingStart` / `recordingStop` / `recordingSave` /
+   * `recordingDelete` steps. Engine-side state machine (Recorder instance,
+   * lastRecording Blob) lives in SonicPiEngine; this callback is the
+   * narrow seam through which the interpreter mutates it. Unset = no-op
+   * (e.g. tests with no Recorder host).
+   */
+  onRecordingEvent?: (
+    kind: 'start' | 'stop' | 'save' | 'delete',
+    filename?: string,
+  ) => void | Promise<void>
 }
 
 /**
@@ -389,6 +401,25 @@ export async function runProgram(
         // Mutates builder defaults at build; this step is here so the change
         // is also visible to a step-time observer (no-op effect on bridge,
         // but keeps the lifecycle parity-correct against desktop SP).
+        break
+
+      case 'recordingStart':
+        await ctx.onRecordingEvent?.('start')
+        break
+
+      case 'recordingStop':
+        // Await so recording_save in the next step sees lastRecording set.
+        // The engine's stop() handler returns a Promise that resolves once
+        // MediaRecorder.onstop has fired and the WAV re-encode finishes.
+        await ctx.onRecordingEvent?.('stop')
+        break
+
+      case 'recordingSave':
+        await ctx.onRecordingEvent?.('save', step.filename)
+        break
+
+      case 'recordingDelete':
+        await ctx.onRecordingEvent?.('delete')
         break
 
       case 'midiOut': {

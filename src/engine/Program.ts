@@ -28,6 +28,14 @@ export type Step =
   | { tag: 'kill'; nodeRef: number }
   | { tag: 'oscSend'; host: string; port: number; path: string; args: unknown[] }
   | { tag: 'useRealTime' }
+  // Recording (#228) — session-lifecycle steps that fire at the scheduled
+  // virtual time. Top-level immediate would mis-sequence: bare-wrapped
+  // recording_save runs before the 8.times play loop's audio actually
+  // plays, so the blob is empty.
+  | { tag: 'recordingStart' }
+  | { tag: 'recordingStop' }
+  | { tag: 'recordingSave'; filename: string }
+  | { tag: 'recordingDelete' }
 
 /** MIDI-out variants — one tag with kind discriminator (issue #195). */
 export type MidiOutKind =

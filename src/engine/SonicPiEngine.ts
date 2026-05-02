@@ -3,6 +3,7 @@ import { ProgramBuilder } from './ProgramBuilder'
 import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioInterpreter'
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
+import { Recorder } from './Recorder'
 import { normalizeFxParams } from './SoundLayer'
 import { DSL_NAMES } from './DslNames'
 import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbox'
@@ -91,6 +92,8 @@ export class SonicPiEngine {
   private loopSeeds = new Map<string, number>()
   /** Per-loop tick counters — persisted across iterations so ring.tick() advances correctly */
   private loopTicks = new Map<string, Map<string, number>>()
+  /** Per-loop beat counter — persisted across iterations so current_beat keeps growing (#226) */
+  private loopBeats = new Map<string, number>()
   /** Tracks which loops have completed their initial sync — persists across hot-swaps. */
   private loopSynced = new Set<string>()
   /**
@@ -127,6 +130,18 @@ export class SonicPiEngine {
   private definedFns = new Map<string, (...args: unknown[]) => unknown>()
   /** Host-provided OSC send handler. Engine fires this; host wires to actual transport. */
   private oscHandler: ((host: string, port: number, path: string, ...args: unknown[]) => void) | null = null
+  /** Active Recorder instance (#228). Null when not recording. */
+  private recorder: Recorder | null = null
+  /** Last completed recording, awaiting recording_save / recording_delete (#228). */
+  private lastRecording: Blob | null = null
+  /**
+   * In-flight stop+encode promise (#228). recording_stop is async — the
+   * MediaRecorder.onstop fires after a chunk flush, then we decode webm and
+   * re-encode as WAV. recording_save must await this so the natural pattern
+   *   recording_start; play …; recording_stop; recording_save "x.wav"
+   * does not save before the blob is ready.
+   */
+  private pendingRecordingStop: Promise<void> | null = null
 
   get schedAhead(): number { return this.schedAheadTime }
 
@@ -325,6 +340,84 @@ export class SonicPiEngine {
       const current_synth_fn = () => defaultSynth
       const current_volume_fn = () => currentVolume
 
+      // Recording (#228) — deferred-step lifecycle. ProgramBuilder pushes
+      // recordingStart/Stop/Save/Delete steps; the AudioInterpreter fires
+      // this single handler at scheduled virtual time. Engine-side state
+      // (this.recorder, this.lastRecording) is the live receiver.
+      //
+      // Why deferred and not top-level immediate: bare top-level user code
+      // gets wrapped into live_loop :__run_once, where __b.sleep advances
+      // virtual time. If the recording_* calls were immediate, they'd all
+      // fire during the build pass — recording_save would run before any
+      // audio plays and lastRecording would be null.
+      //
+      // Tap point is masterOutputNode, downstream of all SoundLayer param
+      // normalization, so the WAV captures exactly what the user hears.
+      const warn = (msg: string) => {
+        if (this.printHandler) this.printHandler(`[Warning] ${msg}`)
+        else console.warn('[SonicPi]', msg)
+      }
+      const recordingHandler = async (
+        kind: 'start' | 'stop' | 'save' | 'delete',
+        filename?: string,
+      ): Promise<void> => {
+        switch (kind) {
+          case 'start': {
+            if (this.recorder && this.recorder.state === 'recording') {
+              warn('recording_start: already recording — call recording_stop first')
+              return
+            }
+            const audioCtx = this.bridge?.audioContext
+            const tap = this.bridge?.masterOutputNode
+            if (!audioCtx || !tap) {
+              warn('recording_start: audio bridge not initialised — recording skipped')
+              return
+            }
+            this.recorder = new Recorder(audioCtx, tap)
+            this.recorder.start()
+            return
+          }
+          case 'stop': {
+            if (!this.recorder || this.recorder.state !== 'recording') {
+              return // silent no-op (matches Desktop SP)
+            }
+            const r = this.recorder
+            this.recorder = null
+            // Track the in-flight stop+encode so a subsequent recording_save
+            // can await it. Without this, the natural script
+            //   recording_start; play …; recording_stop; recording_save "x"
+            // would run save before the blob existed and get nothing.
+            this.pendingRecordingStop = (async () => {
+              try {
+                this.lastRecording = await r.stop()
+              } catch (err) {
+                warn(`recording_stop: ${(err as Error).message}`)
+              }
+            })()
+            await this.pendingRecordingStop
+            return
+          }
+          case 'save': {
+            // If a stop is still encoding, wait for it. Belt-and-braces —
+            // the recordingStop step already awaits, but a user calling
+            // recording_save without an immediately-preceding stop in the
+            // same program (e.g. across re-evaluates) still gets correctness.
+            if (this.pendingRecordingStop) {
+              await this.pendingRecordingStop
+            }
+            if (!this.lastRecording) {
+              warn('recording_save: no completed recording to save (call recording_stop first)')
+              return
+            }
+            Recorder.saveBlobToDownload(this.lastRecording, filename)
+            return
+          }
+          case 'delete':
+            this.lastRecording = null
+            return
+        }
+      }
+
       // Catalog queries
       const synth_names_fn = () => [
         // Bells / oscillators
@@ -517,6 +610,17 @@ export class SonicPiEngine {
           if (task.currentSynth && task.currentSynth !== 'beep') {
             builder.use_synth(task.currentSynth)
           }
+          // Seed introspection state for current_time / current_beat (#226).
+          // task.virtualTime is the iteration-start audio time (advances on sleep).
+          // loopBeats persists current_beat across iterations like loopTicks does.
+          // task.bpm seeds the builder's bpm so current_beat_duration reflects a
+          // top-level use_bpm; user's own use_bpm inside the body overrides.
+          builder.setIterationContext(
+            task.virtualTime,
+            this.loopBeats.get(name) ?? 0,
+            this.schedAheadTime,
+            task.bpm,
+          )
           // Enter per-loop scope so variable writes are isolated.
           // Track build-phase nesting depth so any `live_loop` call that
           // fires synchronously inside builderFn is detected as nested
@@ -532,6 +636,8 @@ export class SonicPiEngine {
           }
           // Persist tick state so ring.tick() / tick() advance across iterations
           this.loopTicks.set(name, builder.getTicks())
+          // Persist beat counter so current_beat keeps advancing across iterations (#226)
+          this.loopBeats.set(name, builder.currentBeatRaw)
           const program = builder.build()
 
           await runProgram(program, {
@@ -547,6 +653,7 @@ export class SonicPiEngine {
             oscHandler: this.oscHandler ?? undefined,
             midiBridge: this.midiBridge,
             onVolumeChange: setVolumeShared,
+            onRecordingEvent: recordingHandler,
           })
 
           // Auto-cue the loop name after each iteration.
@@ -827,8 +934,10 @@ export class SonicPiEngine {
       // the sandbox proxy fall through to these wrappers.
       const tlRrand = (min: number, max: number) => topLevelBuilder.rrand(min, max)
       const tlRrandI = (min: number, max: number) => topLevelBuilder.rrand_i(min, max)
-      const tlRand = (max?: number) => topLevelBuilder.rand(max ?? 1)
-      const tlRandI = (max: number) => topLevelBuilder.rand_i(max)
+      // Forward all args via spread so the builder's arity guard fires for
+      // 2-arg `rand 50, 80` style misuse — matches Desktop SP. (#229)
+      const tlRand = (...args: number[]) => topLevelBuilder.rand(...args)
+      const tlRandI = (...args: number[]) => topLevelBuilder.rand_i(...args)
       const tlChoose = <T>(arr: T[]) => topLevelBuilder.choose(arr)
       const tlDice = (n?: number) => topLevelBuilder.dice(n ?? 6)
       const tlOneIn = (n: number) => topLevelBuilder.one_in(n)
@@ -920,6 +1029,28 @@ export class SonicPiEngine {
         // fallback path; it forwards to topLevelAt's array-of-times shape. (#211)
         (offset: number, fn: (b: ProgramBuilder) => void) =>
           topLevelAt([offset], null, fn),
+        // Tier B — timing introspection (#226). Top-level forms read engine
+        // state directly; inside live_loops the transpiler routes through
+        // BUILDER_METHODS so __b.current_* gives per-task reads.
+        () => 0,                                                    // current_beat: top-level has no beat counter
+        () => 60 / defaultBpm,                                       // current_beat_duration
+        () => scheduler.audioTime,                                   // current_time: audio-context wall clock at top level
+        () => this.schedAheadTime,                                   // current_sched_ahead_time
+        // Tier B — PRNG inspection (#227). Top-level mutates topLevelBuilder's
+        // RNG; inside live_loops these route to __b.* for per-loop RNG.
+        () => topLevelBuilder.current_random_seed(),
+        (n?: number) => topLevelBuilder.rand_back(n ?? 1),
+        (n?: number) => topLevelBuilder.rand_skip(n ?? 1),
+        () => { topLevelBuilder.rand_reset() },
+        // Tier B — recording (#228). Forward to topLevelBuilder so the
+        // arity guards (rest args + length check) live in one place. The
+        // pushed steps fire at scheduled virtual time via recordingHandler
+        // wired into the runProgram ctx above. Inside live_loops the
+        // transpiler routes through __b directly (BUILDER_METHODS).
+        (...args: unknown[]) => { topLevelBuilder.recording_start(...args) },
+        (...args: unknown[]) => { topLevelBuilder.recording_stop(...args) },
+        (...args: unknown[]) => { topLevelBuilder.recording_save(...args) },
+        (...args: unknown[]) => { topLevelBuilder.recording_delete(...args) },
       ]
 
       const codeWarnings = validateCode(transpiledCode)
@@ -1004,6 +1135,15 @@ export class SonicPiEngine {
     // collide with stale note-offs.
     this.midiBridge.cancelPendingNoteOffs()
 
+    // Cancel any in-flight recording so the MediaRecorder releases its
+    // capture stream and the browser's recording indicator clears (#228).
+    // The user's lastRecording (if any) is preserved — they may still call
+    // recording_save in a fresh evaluate().
+    if (this.recorder) {
+      this.recorder.cancel()
+      this.recorder = null
+    }
+
     // Free all scsynth nodes for clean silence
     if (this.bridge) {
       this.bridge.freeAllNodes()
@@ -1019,6 +1159,7 @@ export class SonicPiEngine {
     this.loopBuilders.clear()
     this.loopSeeds.clear()
     this.loopTicks.clear()
+    this.loopBeats.clear()
     this.loopSynced.clear()
     this.globalStore.clear()
     this.definedFns.clear()
@@ -1035,6 +1176,18 @@ export class SonicPiEngine {
 
   dispose(): void {
     if (this.playing) this.stop()
+    // Recording cleanup (#232). stop() handled the recorder when playing,
+    // but a dispose without a prior play still needs to release the
+    // MediaRecorder + capture stream. Also clear lastRecording — unlike
+    // stop() which preserves it for save-across-re-evaluate, dispose ends
+    // the engine's life so any retained Blob (potentially MB-sized) is
+    // pure leak.
+    if (this.recorder) {
+      this.recorder.cancel()
+      this.recorder = null
+    }
+    this.lastRecording = null
+    this.pendingRecordingStop = null
     this.scheduler?.dispose()
     this.scheduler = null
     this.eventStream.dispose()

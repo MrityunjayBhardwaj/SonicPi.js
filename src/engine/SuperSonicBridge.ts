@@ -307,6 +307,16 @@ export class SuperSonicBridge {
     return this.analyserNode
   }
 
+  /**
+   * Master output node — sits between scsynth's mixer output and
+   * `audioContext.destination`. Tap point for the DSL `recording_*`
+   * functions (#228). Downstream of all SoundLayer param normalization,
+   * so recording captures exactly what the user hears.
+   */
+  get masterOutputNode(): AudioNode | null {
+    return this.masterGainNode
+  }
+
   get analyserLeft(): AnalyserNode | null {
     return this.analyserL
   }
