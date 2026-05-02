@@ -78,10 +78,14 @@ export const DSL_NAMES = [
   // Tier B — PRNG inspection (#227). Per-task reads/mutations of the rand
   // stream. All four are pure build-time on the per-loop builder's RNG.
   'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
-  // Tier B — recording (#228). Top-level immediate side effects (session
-  // lifecycle, not music events) — no ProgramBuilder methods. recording_*
-  // tap masterOutputNode on SuperSonicBridge, downstream of all SoundLayer
-  // param normalization, so the WAV captures exactly what the user hears.
+  // Tier B — recording (#228). Deferred ProgramBuilder steps that fire at
+  // scheduled virtual time so the lifecycle sequences with the surrounding
+  // play / sleep program — running them at build time would mis-order
+  // recording_save before any audio plays. Rest-arg + length guards in
+  // ProgramBuilder.recording_* enforce Desktop SP fixed-arity. The handler
+  // wired into runProgram's ctx taps masterOutputNode (downstream of all
+  // SoundLayer param normalization), so the WAV captures exactly what the
+  // user hears. Top-level dslValues entries forward to topLevelBuilder.
   'recording_start', 'recording_stop', 'recording_save', 'recording_delete',
 ] as const
 
