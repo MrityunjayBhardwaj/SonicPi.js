@@ -1176,6 +1176,18 @@ export class SonicPiEngine {
 
   dispose(): void {
     if (this.playing) this.stop()
+    // Recording cleanup (#232). stop() handled the recorder when playing,
+    // but a dispose without a prior play still needs to release the
+    // MediaRecorder + capture stream. Also clear lastRecording — unlike
+    // stop() which preserves it for save-across-re-evaluate, dispose ends
+    // the engine's life so any retained Blob (potentially MB-sized) is
+    // pure leak.
+    if (this.recorder) {
+      this.recorder.cancel()
+      this.recorder = null
+    }
+    this.lastRecording = null
+    this.pendingRecordingStop = null
     this.scheduler?.dispose()
     this.scheduler = null
     this.eventStream.dispose()
