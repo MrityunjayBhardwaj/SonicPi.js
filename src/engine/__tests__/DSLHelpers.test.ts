@@ -1003,3 +1003,52 @@ describe('eval_file / run_file browser-sandbox stubs (Tier B PR #3 #236)', () =>
     engine.dispose()
   })
 })
+
+describe('load_example host bridge (Tier B PR #3 #236)', () => {
+  it('forwards the resolved Example to the registered handler', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const { getExampleNames } = await import('../examples')
+    const firstExample = getExampleNames()[0]
+    expect(firstExample).toBeTruthy()
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const received: { name: string; ruby: string }[] = []
+    engine.setLoadExampleHandler((ex) => { received.push({ name: ex.name, ruby: ex.ruby }) })
+    const result = await engine.evaluate(`load_example :${firstExample.replace(/\s+/g, '_')}`)
+    // The transpiled symbol uses underscores; if the registry name has spaces,
+    // the lookup will fall through to the not-found path. Use a string literal
+    // for a guaranteed exact match instead.
+    if (result.error) {
+      const result2 = await engine.evaluate(`load_example "${firstExample}"`)
+      expect(result2.error).toBeUndefined()
+    }
+    expect(received.length).toBeGreaterThanOrEqual(1)
+    expect(received[0].name).toBe(firstExample)
+    expect(received[0].ruby.length).toBeGreaterThan(0)
+    engine.dispose()
+  })
+
+  it('throws when the name is unknown (lists hint at examples panel)', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    engine.setLoadExampleHandler(() => { /* would-be host */ })
+    const result = await engine.evaluate('load_example "this_example_does_not_exist"')
+    expect(result.error).toBeDefined()
+    expect(result.error!.message).toContain('no example named')
+    engine.dispose()
+  })
+
+  it('throws when no host handler is registered (engine-only harness)', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const { getExampleNames } = await import('../examples')
+    const firstExample = getExampleNames()[0]
+    const engine = new SonicPiEngine()
+    await engine.init()
+    // Deliberately do NOT call setLoadExampleHandler.
+    const result = await engine.evaluate(`load_example "${firstExample}"`)
+    expect(result.error).toBeDefined()
+    expect(result.error!.message).toContain('host editor')
+    engine.dispose()
+  })
+})

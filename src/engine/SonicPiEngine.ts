@@ -8,6 +8,7 @@ import { normalizeFxParams } from './SoundLayer'
 import { DSL_NAMES } from './DslNames'
 import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbox'
 import { autoTranspileDetailed } from './TreeSitterTranspiler'
+import { getExample, type Example } from './examples'
 import { initTreeSitter } from './TreeSitterTranspiler'
 
 /**
@@ -66,6 +67,7 @@ export class SonicPiEngine {
   private runtimeErrorHandler: ((err: Error) => void) | null = null
   private printHandler: ((msg: string) => void) | null = null
   private cueHandler: ((name: string, time: number) => void) | null = null
+  private loadExampleHandler: ((example: Example) => void) | null = null
   /**
    * Per-evaluation dedup set for clamp/range warnings (issue #202, G4).
    * SoundLayer's validateAndClamp emits one warning per out-of-range param,
@@ -1125,6 +1127,25 @@ export class SonicPiEngine {
             'browser sandbox: no filesystem access; use run_code(string) or load_example(:name) instead',
           )
         },
+        // Tier B PR #3 — load_example (#236). Looks up the example by name in
+        // the bundled registry; on hit, calls the host's loadExampleHandler so
+        // the editor replaces its buffer + re-runs. On miss, throws an
+        // informative error listing the available names. If no host handler
+        // is registered (engine-only test harness), throws a different error
+        // explaining the missing wiring rather than silently no-op'ing.
+        (name: string) => {
+          if (typeof name !== 'string') {
+            throw new TypeError(`load_example expects a name (string or symbol), got ${typeof name}`)
+          }
+          const example = getExample(name)
+          if (!example) {
+            throw new Error(`load_example: no example named "${name}". See examples panel for the full list.`)
+          }
+          if (!this.loadExampleHandler) {
+            throw new Error('load_example requires a host editor — no loadExampleHandler registered on the engine.')
+          }
+          this.loadExampleHandler(example)
+        },
       ]
 
       const codeWarnings = validateCode(transpiledCode)
@@ -1313,6 +1334,17 @@ export class SonicPiEngine {
   /** Register a handler for cue events (for the CueLog panel). */
   setCueHandler(handler: (name: string, time: number) => void): void {
     this.cueHandler = handler
+  }
+
+  /**
+   * Register a handler for `load_example(:name)` calls in user code (#236).
+   * The host (App.ts) wires this to its loadExample(example) method which
+   * replaces the editor buffer with the example's Ruby code and runs it.
+   * If unset, load_example throws an informative error so the engine works
+   * standalone without requiring an editor harness.
+   */
+  setLoadExampleHandler(handler: (example: Example) => void): void {
+    this.loadExampleHandler = handler
   }
 
   /**

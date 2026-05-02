@@ -126,6 +126,10 @@ export const DSL_NAMES = [
   // Listed in the public DSL surface so user code that references them
   // gets a clear redirect rather than a silent globalThis lookup miss.
   'eval_file', 'run_file',
+  // Tier B PR #3 — load_example (#236). Looks up an example by name in the
+  // bundled registry then forwards to the host's loadExampleHandler so the
+  // editor replaces its buffer + re-runs. Top-level only (host-bridge).
+  'load_example',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]
