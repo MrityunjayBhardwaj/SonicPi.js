@@ -117,6 +117,7 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['dec',              'Pure: x - 1.'],
   ['define',           'Transpiler emits a JS function decl (TreeSitterTranspiler.transpileDefine). Runtime stub is a no-op.'],
   ['ndefine',          'Alias for define on the transpile path; same JS function decl. (#211 — non-persistence is identical to define until cross-eval persistence ships.)'],
+  ['defonce',          'Transpiler emits `name = defonce(...)` (TreeSitterTranspiler.transpileDefonce). Runtime registrar caches against engine.defonceCache. (#212 / #233)'],
   ['time_warp',        'Transpiler turns `time_warp 0.5 do … end` into `__b.at([0.5], null, …)` (transpileTimeWarp). Runtime stub forwards to topLevelAt for the regex fallback path.'],
   // Random — desktop Sonic Pi resolves these at build-time deterministically (seeded)
   ['rrand',            'Desktop SP convention: resolved at build-time against the live_loop seed.'],

@@ -219,6 +219,69 @@ describe('doubles / halves (#233 Tier B PR #2)', () => {
   })
 })
 
+describe('defonce engine integration (#212 / #233 Tier B PR #2)', () => {
+  it('runs body and caches return value', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    await engine.evaluate(`defonce :pad do
+  42
+end`)
+    const cache = (engine as unknown as { defonceCache: Map<string, unknown> }).defonceCache
+    expect(cache.get('pad')).toBe(42)
+    engine.dispose()
+  })
+
+  it('override: true re-runs body and updates cache', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    await engine.evaluate(`defonce :counter do
+  1
+end`)
+    const cache = (engine as unknown as { defonceCache: Map<string, unknown> }).defonceCache
+    expect(cache.get('counter')).toBe(1)
+
+    // Re-eval with override: true and a different return value
+    await engine.evaluate(`defonce :counter, override: true do
+  99
+end`)
+    expect(cache.get('counter')).toBe(99)
+    engine.dispose()
+  })
+
+  it('cache survives across re-evals without override', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    await engine.evaluate(`defonce :seed do
+  123
+end`)
+    const cache = (engine as unknown as { defonceCache: Map<string, unknown> }).defonceCache
+    expect(cache.get('seed')).toBe(123)
+
+    // Same name, different body — body should NOT execute, cache untouched.
+    await engine.evaluate(`defonce :seed do
+  456
+end`)
+    expect(cache.get('seed')).toBe(123)
+    engine.dispose()
+  })
+
+  it('cache cleared on dispose()', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    await engine.evaluate(`defonce :gone do
+  7
+end`)
+    const cache = (engine as unknown as { defonceCache: Map<string, unknown> }).defonceCache
+    expect(cache.size).toBe(1)
+    engine.dispose()
+    expect(cache.size).toBe(0)
+  })
+})
+
 describe('tuplets (#233 Tier B PR #2)', () => {
   it('bare elements emit play + sleep at full duration', () => {
     const b = new ProgramBuilder()

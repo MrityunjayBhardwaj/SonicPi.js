@@ -102,6 +102,13 @@ export const DSL_NAMES = [
   // pairs per the block (one per leaf element). Density wraps each
   // sub-list so N elements fit in `duration` beats.
   'tuplets',
+  // Tier B PR #2 — defonce (#212 / #233). The transpiler emits a bare
+  // assignment `name = defonce("name", opts, (__b) => { ...; return last })`
+  // so the cached value lands in proxy storage. The runtime registrar caches
+  // against engine.defonceCache; opts.override re-runs the body. Cached
+  // values are spread into persistedFns at the next eval so removing the
+  // defonce line doesn't break still-running live_loops that read `name`.
+  'defonce',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

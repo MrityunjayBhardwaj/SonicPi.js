@@ -937,7 +937,7 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     // `comment` and `uncomment` are control-flow (like if-true/if-false), NOT
     // structural blocks. They stay in bareCode so their content gets the __b.
     // prefix when wrapped. Separating them would produce bare `play()` at top level.
-    } else if (method && !isBareFxNode && (method === 'live_loop' || method === 'define' || method === 'ndefine' || method === 'with_fx' ||
+    } else if (method && !isBareFxNode && (method === 'live_loop' || method === 'define' || method === 'ndefine' || method === 'defonce' || method === 'with_fx' ||
                           method === 'in_thread' || isBareLoopNode)) {
       blocks.push(child)
     } else {
@@ -1041,6 +1041,11 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     // define :name do |args| ... end  (and ndefine — same surface, doesn't persist; #211/#215)
     if (methodName === 'define' || methodName === 'ndefine') {
       return transpileDefine(node, argsNode, blockNode, ctx, methodName)
+    }
+
+    // defonce :name, override: true do ... end  (#212 / #233)
+    if (methodName === 'defonce') {
+      return transpileDefonce(node, argsNode, blockNode, ctx)
     }
 
     // with_fx :name, opts do ... end
@@ -1640,6 +1645,71 @@ function transpileDefine(
     return `${decl};\n${ctx.indent}define(${JSON.stringify(name)}, ${name})`
   }
   return decl
+}
+
+/**
+ * `defonce :name, override: true do ... end`  (#212 / #233)
+ *
+ *   defonce :pad do
+ *     chord(:c, :major)
+ *   end
+ *     →  pad = defonce("pad", {}, (__b) => {
+ *          return __b.chord("c", "major")
+ *        })
+ *
+ * Bare assignment so the Sandbox proxy captures the cached value into
+ * scope-isolated storage (let/const bypass the proxy). The last block
+ * statement is wrapped as `return EXPR` so the caller gets the value
+ * Ruby's implicit-last-expr-return convention would have produced.
+ *
+ * The runtime registrar `defonce(name, opts, fn)` lives in dslValues and
+ * caches against `engine.defonceCache`. Re-evaluating the buffer skips
+ * the body unless `override: true`, mirroring upstream core.rb:2722-2738.
+ */
+function transpileDefonce(
+  node: any, argsNode: any, blockNode: any, ctx: TranspileContext
+): string {
+  const args = argsNode?.namedChildren ?? []
+  let name = 'unnamed'
+  const optPairs: string[] = []
+  for (const arg of args) {
+    if (arg.type === 'simple_symbol') {
+      name = arg.text.slice(1)
+    } else if (arg.type === 'pair') {
+      const key = arg.namedChildren[0]
+      const val = arg.namedChildren[1]
+      const keyName = key.type === 'hash_key_symbol'
+        ? key.text.replace(/:$/, '')
+        : key.type === 'simple_symbol'
+        ? key.text.slice(1)
+        : transpileNode(key, ctx)
+      optPairs.push(`${keyName}: ${transpileNode(val, ctx)}`)
+    }
+  }
+
+  if (!blockNode) {
+    const line = node.startPosition?.row != null ? node.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: defonce :${name} is missing 'do ... end' block`)
+    return `/* parse error: defonce :${name} missing block */`
+  }
+
+  const bodyChildren = blockNode.namedChildren.filter((c: any) => c.type !== 'block_parameters')
+  if (bodyChildren.length === 0) {
+    return `${name} = defonce(${JSON.stringify(name)}, ${optPairs.length > 0 ? `{ ${optPairs.join(', ')} }` : '{}'}, (__b) => undefined)`
+  }
+
+  const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+  const lastIdx = bodyChildren.length - 1
+  const stmts = bodyChildren.map((c: any, i: number) => {
+    const expr = transpileNode(c, bodyCtx)
+    return i === lastIdx
+      ? `${ctx.indent}  return ${expr}`
+      : `${ctx.indent}  ${expr}`
+  })
+
+  const optsStr = optPairs.length > 0 ? `{ ${optPairs.join(', ')} }` : '{}'
+
+  return `${name} = defonce(${JSON.stringify(name)}, ${optsStr}, (__b) => {\n${stmts.join('\n')}\n${ctx.indent}})`
 }
 
 function transpileWithBlock(

@@ -684,6 +684,24 @@ end`)
       expect(result.code).toMatch(/\.current_sched_ahead_time\(\)/)
     })
 
+    it('defonce :name do ... end emits bare-assignment + return on last expr (#233)', () => {
+      const result = treeSitterTranspile(`defonce :pad do
+  chord(:c, :major)
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/pad = defonce\("pad", \{\}, \(__b\) => \{/)
+      expect(result.code).toMatch(/return __b\.chord\("c", "major"\)/)
+    })
+
+    it('defonce with override: true forwards opt to runtime (#233)', () => {
+      const result = treeSitterTranspile(`defonce :foo, override: true do
+  10
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/foo = defonce\("foo", \{ override: true \}, \(__b\) => \{/)
+      expect(result.code).toMatch(/return 10/)
+    })
+
     it('tuplets [list], opts do |x| ... end transpiles to __b.tuplets(...) inside live_loop (#233)', () => {
       const result = treeSitterTranspile(`live_loop :t do
   tuplets [70, [72, 72], 70], swing: 0.2 do |n|
