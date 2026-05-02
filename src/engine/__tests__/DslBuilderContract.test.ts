@@ -64,6 +64,16 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['range',            'Pure constructor.'],
   ['line',             'Pure constructor.'],
   ['spread',           'Pure Euclidean-rhythm constructor.'],
+  ['doubles',          'Pure: ring of successive doubling.'],
+  ['halves',           'Pure: ring of successive halving.'],
+  // Tier B PR #2 — defaults / setting introspection (#233). All four are
+  // pure reads of builder state; inside live_loops the transpiler routes
+  // through __b.* via BUILDER_METHODS, so the per-task builder fulfils the
+  // method-presence requirement. Listed here for top-level dslValues entries.
+  ['current_synth_defaults',  'Pure read of builder._synthDefaults.'],
+  ['current_sample_defaults', 'Pure read of builder._sampleDefaults.'],
+  ['current_arg_checks',      'Constant true — we do not validate arg names yet (Tier C).'],
+  ['current_debug',           'Pure read of builder._debug.'],
   // Pure math
   ['note',             'Pure: note name → MIDI number.'],
   ['note_range',       'Pure constructor.'],
@@ -107,6 +117,7 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['dec',              'Pure: x - 1.'],
   ['define',           'Transpiler emits a JS function decl (TreeSitterTranspiler.transpileDefine). Runtime stub is a no-op.'],
   ['ndefine',          'Alias for define on the transpile path; same JS function decl. (#211 — non-persistence is identical to define until cross-eval persistence ships.)'],
+  ['defonce',          'Transpiler emits `name = defonce(...)` (TreeSitterTranspiler.transpileDefonce). Runtime registrar caches against engine.defonceCache. (#212 / #233)'],
   ['time_warp',        'Transpiler turns `time_warp 0.5 do … end` into `__b.at([0.5], null, …)` (transpileTimeWarp). Runtime stub forwards to topLevelAt for the regex fallback path.'],
   // Random — desktop Sonic Pi resolves these at build-time deterministically (seeded)
   ['rrand',            'Desktop SP convention: resolved at build-time against the live_loop seed.'],

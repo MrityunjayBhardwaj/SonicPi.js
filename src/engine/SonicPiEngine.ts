@@ -23,7 +23,7 @@ const CLAMP_WARN_RE = /clamped to .+ \((min|max)\)$/
 import { friendlyError, formatFriendlyError, type FriendlyError } from './FriendlyErrors'
 import { detectStratum, Stratum } from './Stratum'
 import { SoundEventStream } from './SoundEventStream'
-import { ring, knit, range, line, Ring } from './Ring'
+import { ring, knit, range, line, doubles, halves, Ring } from './Ring'
 import { assert, assert_equal, assert_similar, assert_not, assert_error, inc, dec } from './Asserts'
 import { MidiBridge } from './MidiBridge'
 import { spread } from './EuclideanRhythm'
@@ -128,6 +128,9 @@ export class SonicPiEngine {
    *  next eval's scopeBase so removing a `define` line from the buffer does not
    *  break a still-running live_loop that calls it. (#215) */
   private definedFns = new Map<string, (...args: unknown[]) => unknown>()
+  /** Cached `defonce` values (#212 / #233). Survive across re-evals — that's
+   *  the whole point. Cleared only on full engine reset / dispose. */
+  private defonceCache = new Map<string, unknown>()
   /** Host-provided OSC send handler. Engine fires this; host wires to actual transport. */
   private oscHandler: ((host: string, port: number, path: string, ...args: unknown[]) => void) | null = null
   /** Active Recorder instance (#228). Null when not recording. */
@@ -1051,6 +1054,40 @@ export class SonicPiEngine {
         (...args: unknown[]) => { topLevelBuilder.recording_stop(...args) },
         (...args: unknown[]) => { topLevelBuilder.recording_save(...args) },
         (...args: unknown[]) => { topLevelBuilder.recording_delete(...args) },
+        // Tier B PR #2 — pure ring constructors (#233)
+        doubles, halves,
+        // Tier B PR #2 — defaults / setting introspection (#233). Forward
+        // to topLevelBuilder so the value reflects top-level use_*_defaults
+        // calls. Inside live_loops the transpiler routes through __b.
+        () => topLevelBuilder.current_synth_defaults(),
+        () => topLevelBuilder.current_sample_defaults(),
+        () => topLevelBuilder.current_arg_checks(),
+        () => topLevelBuilder.current_debug(),
+        // Tier B PR #2 — block-form tuplets (#233). Forwards to topLevelBuilder
+        // so steps land on the top-level program. Inside live_loops the
+        // transpiler emits `__b.tuplets(...)` directly via BUILDER_METHODS.
+        (list: unknown, optsOrFn: unknown, maybeFn?: unknown) => {
+          topLevelBuilder.tuplets(
+            list as readonly unknown[],
+            optsOrFn as Parameters<typeof topLevelBuilder.tuplets>[1],
+            maybeFn as Parameters<typeof topLevelBuilder.tuplets>[2],
+          )
+        },
+        // Tier B PR #2 — defonce (#212 / #233). Cache lookup; runs body once
+        // (or again on `override: true`). The transpiler emits a bare
+        // assignment `name = defonce(...)` so the Sandbox proxy captures the
+        // cached value into scope-isolated storage. Spread back into
+        // persistedFns above so `name` reads still work after the line is
+        // removed from the buffer (matches define persistence #215).
+        (name: string, opts: { override?: boolean }, fn: (b: ProgramBuilder) => unknown) => {
+          if (typeof name !== 'string' || typeof fn !== 'function') return undefined
+          if (!opts?.override && this.defonceCache.has(name)) {
+            return this.defonceCache.get(name)
+          }
+          const value = fn(topLevelBuilder)
+          this.defonceCache.set(name, value)
+          return value
+        },
       ]
 
       const codeWarnings = validateCode(transpiledCode)
@@ -1059,9 +1096,15 @@ export class SonicPiEngine {
         else console.warn('[SonicPi]', warning)
       }
 
-      // Seed prior `define`-bound functions so they remain callable even if
-      // the user removes the define line from the buffer. (#215)
-      const persistedFns = Object.fromEntries(this.definedFns)
+      // Seed prior `define`-bound functions and `defonce`-cached values so
+      // they remain callable / readable even if the user removes the line
+      // from the buffer. defonceCache is spread first so a same-named define
+      // wins (defines are functions; conflicts are user error either way).
+      // (#215 + #233)
+      const persistedFns: Record<string, unknown> = {
+        ...Object.fromEntries(this.defonceCache),
+        ...Object.fromEntries(this.definedFns),
+      }
       const sandbox = createIsolatedExecutor(transpiledCode, dslNames, persistedFns)
       scopeHandle = sandbox.scopeHandle
       await sandbox.execute(...dslValues)
@@ -1163,6 +1206,7 @@ export class SonicPiEngine {
     this.loopSynced.clear()
     this.globalStore.clear()
     this.definedFns.clear()
+    this.defonceCache.clear()
     this.persistentFx.clear()
     this.reusableFx.clear()
     this.loopFxScope.clear()
@@ -1199,6 +1243,7 @@ export class SonicPiEngine {
     this.loopSeeds.clear()
     this.globalStore.clear()
     this.definedFns.clear()
+    this.defonceCache.clear()
   }
 
   /** Register a handler for runtime errors inside `live_loop` bodies. */

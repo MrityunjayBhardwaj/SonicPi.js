@@ -254,6 +254,44 @@ export function stretch<T>(arr: T[] | Ring<T>, n: number): Ring<T> {
 }
 
 /**
+ * `doubles(start, n)` → ring of successive doubling: `doubles(60, 4)` → `Ring([60, 120, 240, 480])`.
+ * Negative count delegates to `halves(start, -n)`.
+ * Mirrors upstream `core.rb:1950-1960`.
+ */
+export function doubles(start: number, num_doubles: number = 1): Ring<number> {
+  if (typeof start !== 'number') {
+    throw new Error(`Start value for doubles needs to be a number, got: ${String(start)}`)
+  }
+  if (num_doubles < 0) return halves(start, -num_doubles)
+  const out: number[] = []
+  let v = start
+  for (let i = 0; i < num_doubles; i++) {
+    out.push(v)
+    v *= 2
+  }
+  return new Ring(out)
+}
+
+/**
+ * `halves(start, n)` → ring of successive halving: `halves(60, 4)` → `Ring([60, 30, 15, 7.5])`.
+ * Negative count delegates to `doubles(start, -n)`.
+ * Mirrors upstream `core.rb:1919-1929`.
+ */
+export function halves(start: number, num_halves: number = 1): Ring<number> {
+  if (typeof start !== 'number') {
+    throw new Error(`Start value for halves needs to be a number, got: ${String(start)}`)
+  }
+  if (num_halves < 0) return doubles(start, -num_halves)
+  const out: number[] = []
+  let v = start
+  for (let i = 0; i < num_halves; i++) {
+    out.push(v)
+    v /= 2
+  }
+  return new Ring(out)
+}
+
+/**
  * Line: generate a line of N values between start and end.
  * line(60, 72, 5) → Ring([60, 63, 66, 69, 72])
  */

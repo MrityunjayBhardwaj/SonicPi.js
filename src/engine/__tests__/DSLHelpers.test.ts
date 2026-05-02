@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { SeededRandom } from '../SeededRandom'
-import { Ring, ring, ramp, stretch, Ramp } from '../Ring'
+import { Ring, ring, ramp, stretch, doubles, halves, Ramp } from '../Ring'
 import { spread } from '../EuclideanRhythm'
 import { noteToMidi, midiToFreq, noteToFreq, noteInfo } from '../NoteToFreq'
 import { MidiBridge } from '../MidiBridge'
@@ -169,6 +169,228 @@ describe('Global tick context (#211 Tier A)', () => {
     b.tick('foo'); b.tick('foo') // counter at 1
     expect(b.look('foo', 5)).toBe(6)
     expect(b.look('foo')).toBe(1) // still 1
+  })
+})
+
+describe('doubles / halves (#233 Tier B PR #2)', () => {
+  it('doubles produces successive doubling', () => {
+    expect(doubles(60, 4).toArray()).toEqual([60, 120, 240, 480])
+  })
+
+  it('halves produces successive halving', () => {
+    expect(halves(60, 4).toArray()).toEqual([60, 30, 15, 7.5])
+  })
+
+  it('doubles defaults to count 1', () => {
+    expect(doubles(7).toArray()).toEqual([7])
+  })
+
+  it('halves defaults to count 1', () => {
+    expect(halves(7).toArray()).toEqual([7])
+  })
+
+  it('doubles with negative count delegates to halves', () => {
+    expect(doubles(60, -3).toArray()).toEqual(halves(60, 3).toArray())
+  })
+
+  it('halves with negative count delegates to doubles', () => {
+    expect(halves(10, -3).toArray()).toEqual(doubles(10, 3).toArray())
+  })
+
+  it('doubles returns a Ring (cyclic indexing)', () => {
+    const r = doubles(1, 3)
+    expect(r.at(0)).toBe(1)
+    expect(r.at(1)).toBe(2)
+    expect(r.at(2)).toBe(4)
+    expect(r.at(3)).toBe(1) // cycles
+  })
+
+  it('doubles rejects non-numeric start', () => {
+    expect(() => doubles('hi' as unknown as number, 2)).toThrow(/needs to be a number/)
+  })
+
+  it('halves rejects non-numeric start', () => {
+    expect(() => halves('hi' as unknown as number, 2)).toThrow(/needs to be a number/)
+  })
+
+  it('count 0 returns empty ring', () => {
+    expect(doubles(60, 0).toArray()).toEqual([])
+    expect(halves(60, 0).toArray()).toEqual([])
+  })
+})
+
+describe('defonce engine integration (#212 / #233 Tier B PR #2)', () => {
+  it('runs body and caches return value', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    await engine.evaluate(`defonce :pad do
+  42
+end`)
+    const cache = (engine as unknown as { defonceCache: Map<string, unknown> }).defonceCache
+    expect(cache.get('pad')).toBe(42)
+    engine.dispose()
+  })
+
+  it('override: true re-runs body and updates cache', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    await engine.evaluate(`defonce :counter do
+  1
+end`)
+    const cache = (engine as unknown as { defonceCache: Map<string, unknown> }).defonceCache
+    expect(cache.get('counter')).toBe(1)
+
+    // Re-eval with override: true and a different return value
+    await engine.evaluate(`defonce :counter, override: true do
+  99
+end`)
+    expect(cache.get('counter')).toBe(99)
+    engine.dispose()
+  })
+
+  it('cache survives across re-evals without override', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    await engine.evaluate(`defonce :seed do
+  123
+end`)
+    const cache = (engine as unknown as { defonceCache: Map<string, unknown> }).defonceCache
+    expect(cache.get('seed')).toBe(123)
+
+    // Same name, different body — body should NOT execute, cache untouched.
+    await engine.evaluate(`defonce :seed do
+  456
+end`)
+    expect(cache.get('seed')).toBe(123)
+    engine.dispose()
+  })
+
+  it('cache cleared on dispose()', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    await engine.evaluate(`defonce :gone do
+  7
+end`)
+    const cache = (engine as unknown as { defonceCache: Map<string, unknown> }).defonceCache
+    expect(cache.size).toBe(1)
+    engine.dispose()
+    expect(cache.size).toBe(0)
+  })
+})
+
+describe('tuplets (#233 Tier B PR #2)', () => {
+  it('bare elements emit play + sleep at full duration', () => {
+    const b = new ProgramBuilder()
+    b.tuplets([60, 62, 64], (b2, n) => { b2.play(n) })
+    const program = b.build()
+    // play, sleep, play, sleep, play, sleep
+    expect(program.length).toBe(6)
+    expect(program[0].tag).toBe('play')
+    expect(program[1].tag).toBe('sleep')
+    expect((program[1] as { tag: 'sleep'; beats: number }).beats).toBe(1)
+    expect((program[0] as { tag: 'play'; note: number }).note).toBe(60)
+    expect((program[2] as { tag: 'play'; note: number }).note).toBe(62)
+    expect((program[4] as { tag: 'play'; note: number }).note).toBe(64)
+  })
+
+  it('sub-list scales sleep by density factor 1/N', () => {
+    const b = new ProgramBuilder()
+    b.tuplets([[60, 62, 64]], (b2, n) => { b2.play(n) })
+    const program = b.build()
+    // 3 (play, sleep) pairs inside density 3
+    expect(program.length).toBe(6)
+    // Each sleep is duration / density = 1 / 3
+    const sleeps = program.filter(s => s.tag === 'sleep') as { tag: 'sleep'; beats: number }[]
+    expect(sleeps.length).toBe(3)
+    for (const s of sleeps) expect(s.beats).toBeCloseTo(1 / 3, 6)
+  })
+
+  it('mixed bare + sub-list produces correct step ordering', () => {
+    const b = new ProgramBuilder()
+    b.tuplets([70, [72, 72], 70], (b2, n) => { b2.play(n) })
+    const program = b.build()
+    // 70 → play, sleep(1)
+    // [72, 72] → density 2 → play, sleep(0.5), play, sleep(0.5)
+    // 70 → play, sleep(1)
+    expect(program.length).toBe(8)
+    const sleeps = program.filter(s => s.tag === 'sleep') as { tag: 'sleep'; beats: number }[]
+    expect(sleeps[0].beats).toBe(1)
+    expect(sleeps[1].beats).toBeCloseTo(0.5, 6)
+    expect(sleeps[2].beats).toBeCloseTo(0.5, 6)
+    expect(sleeps[3].beats).toBe(1)
+  })
+
+  it('duration opt overrides default beat-per-element', () => {
+    const b = new ProgramBuilder()
+    b.tuplets([60, 62], { duration: 0.5 }, (b2, n) => { b2.play(n) })
+    const program = b.build()
+    const sleeps = program.filter(s => s.tag === 'sleep') as { tag: 'sleep'; beats: number }[]
+    expect(sleeps[0].beats).toBe(0.5)
+    expect(sleeps[1].beats).toBe(0.5)
+  })
+
+  it('swing opt produces an at-block on swung beats', () => {
+    const b = new ProgramBuilder()
+    // [72, 72] is size 2 (matches default swing_pulse 2), swing_offset+1=1,
+    // so idx 1 swings: ((1+1)%2 === 0). Element at idx 0 plays straight.
+    b.tuplets([[72, 72]], { swing: 0.1 }, (b2, n) => { b2.play(n) })
+    const program = b.build()
+    const tags = program.map(s => s.tag)
+    expect(tags).toContain('thread') // at(...) uses thread step
+  })
+
+  it('Ring as input is accepted', () => {
+    const b = new ProgramBuilder()
+    b.tuplets(ring(60, 62, 64), (b2, n) => { b2.play(n) })
+    expect(b.build().length).toBe(6)
+  })
+
+  it('throws when block is missing', () => {
+    const b = new ProgramBuilder()
+    expect(() => (b as unknown as { tuplets: (...a: unknown[]) => void }).tuplets([60, 62])).toThrow(/requires a block/)
+    expect(() => b.tuplets([60, 62], {} as never)).toThrow(/requires a block/)
+  })
+})
+
+describe('introspection (#233 Tier B PR #2)', () => {
+  it('current_synth_defaults reflects use_synth_defaults', () => {
+    const b = new ProgramBuilder()
+    expect(b.current_synth_defaults()).toEqual({})
+    b.use_synth_defaults({ amp: 0.5, cutoff: 80 })
+    expect(b.current_synth_defaults()).toEqual({ amp: 0.5, cutoff: 80 })
+  })
+
+  it('current_sample_defaults reflects use_sample_defaults', () => {
+    const b = new ProgramBuilder()
+    expect(b.current_sample_defaults()).toEqual({})
+    b.use_sample_defaults({ rate: 0.5 })
+    expect(b.current_sample_defaults()).toEqual({ rate: 0.5 })
+  })
+
+  it('current_synth_defaults returns a copy (mutations do not leak)', () => {
+    const b = new ProgramBuilder()
+    b.use_synth_defaults({ amp: 0.5 })
+    const snapshot = b.current_synth_defaults()
+    snapshot.amp = 99
+    expect(b.current_synth_defaults().amp).toBe(0.5)
+  })
+
+  it('current_debug defaults to true and reflects use_debug', () => {
+    const b = new ProgramBuilder()
+    expect(b.current_debug()).toBe(true)
+    b.use_debug(false)
+    expect(b.current_debug()).toBe(false)
+    b.use_debug(true)
+    expect(b.current_debug()).toBe(true)
+  })
+
+  it('current_arg_checks returns true (matches Desktop SP default)', () => {
+    const b = new ProgramBuilder()
+    expect(b.current_arg_checks()).toBe(true)
   })
 })
 

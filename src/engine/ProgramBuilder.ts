@@ -529,14 +529,90 @@ export class ProgramBuilder {
     return this
   }
 
+  /**
+   * Tier B PR #2 (#233) — block-form tuplet scheduling.
+   *
+   * `tuplets [70, [72, 72], 70, [82, 82, 82]] do |n| play n end`
+   *   - Bare element → `block.call(n); sleep duration` (default 1 beat).
+   *   - Sub-list of size N → fits N `block + sleep` calls into `duration`
+   *     beats by wrapping in `with_density(N)`.
+   *
+   * Optional `swing:` opt offsets every Nth tuplet by that many beats via
+   * `at([swing], …)`. Swing is density-scaled inside sub-lists so the
+   * offset stays proportional to the local pulse. Mirrors upstream
+   * `core.rb:486-512`. Pre-resolved at build time (the block runs N times
+   * synchronously, pushing N play+sleep step pairs); the resulting steps
+   * fire at scheduled virtual time exactly like a hand-written sequence.
+   */
+  tuplets<T = unknown>(
+    tuplet_list: ReadonlyArray<T | ReadonlyArray<T>> | Ring<T | T[]>,
+    optsOrFn:
+      | { duration?: number; swing?: number; swing_pulse?: number; swing_offset?: number }
+      | ((b: ProgramBuilder, value: T) => void),
+    maybeFn?: (b: ProgramBuilder, value: T) => void,
+  ): this {
+    const opts = typeof optsOrFn === 'function' ? {} : optsOrFn
+    const fn = typeof optsOrFn === 'function' ? optsOrFn : maybeFn
+    if (typeof fn !== 'function') {
+      throw new Error('tuplets requires a block')
+    }
+
+    const duration = opts.duration ?? 1
+    const swing = opts.swing ?? 0
+    const swing_pulse = opts.swing_pulse ?? 2
+    const swing_offset = (opts.swing_offset ?? 0) + 1
+
+    const items = tuplet_list instanceof Ring
+      ? tuplet_list.toArray()
+      : Array.from(tuplet_list)
+
+    for (const el of items) {
+      if (Array.isArray(el)) {
+        const n = el.length
+        this.with_density(n, b => {
+          el.forEach((tuplet, idx) => {
+            const should_swing =
+              swing !== 0 &&
+              (n % swing_pulse === 0) &&
+              ((idx + swing_offset) % swing_pulse === 0)
+            if (should_swing) {
+              // Density-scale the swing so the offset stays proportional
+              // to the local pulse (mirrors upstream's __with_spider_time_density
+              // which time-scales everything inside the block).
+              b.at([swing / n], null, inner => fn(inner, tuplet as T))
+            } else {
+              fn(b, tuplet as T)
+            }
+            b.sleep(duration)
+          })
+        })
+      } else {
+        fn(this, el as T)
+        this.sleep(duration)
+      }
+    }
+    return this
+  }
+
   /** Return the current synth name. */
   get current_synth_name(): string { return this.currentSynth }
 
-  /** Return the current synth defaults hash. */
-  get current_synth_defaults_hash(): Record<string, number> { return { ...this._synthDefaults } }
-
-  /** Return the current sample defaults hash. */
-  get current_sample_defaults_hash(): Record<string, number> { return { ...this._sampleDefaults } }
+  /**
+   * Tier B PR #2 (#233) — defaults / setting introspection. All four are
+   * called bare (`puts current_debug`) so they're methods returning a value,
+   * not getters — see BARE_CALLABLE in TreeSitterTranspiler.ts which emits
+   * `__b.NAME()` with parens.
+   */
+  current_synth_defaults(): Record<string, number> { return { ...this._synthDefaults } }
+  current_sample_defaults(): Record<string, number> { return { ...this._sampleDefaults } }
+  current_debug(): boolean { return this._debug }
+  /**
+   * We don't validate synth arg names against synthinfo — unknown args are
+   * silently dropped at SoundLayer normalization. Returning the upstream
+   * default (`true`) keeps existing user code that branches on this read
+   * working. When `use_arg_checks` ships in Tier C, this becomes a real read.
+   */
+  current_arg_checks(): boolean { return true }
 
   /** Deferred set — fires at runtime (interleaved with sleeps). */
   set(key: string | symbol, value: unknown): this {

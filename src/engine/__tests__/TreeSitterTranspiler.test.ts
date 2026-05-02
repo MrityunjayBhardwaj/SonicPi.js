@@ -684,6 +684,63 @@ end`)
       expect(result.code).toMatch(/\.current_sched_ahead_time\(\)/)
     })
 
+    it('defonce :name do ... end emits bare-assignment + return on last expr (#233)', () => {
+      const result = treeSitterTranspile(`defonce :pad do
+  chord(:c, :major)
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/pad = defonce\("pad", \{\}, \(__b\) => \{/)
+      expect(result.code).toMatch(/return __b\.chord\("c", "major"\)/)
+    })
+
+    it('defonce with override: true forwards opt to runtime (#233)', () => {
+      const result = treeSitterTranspile(`defonce :foo, override: true do
+  10
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/foo = defonce\("foo", \{ override: true \}, \(__b\) => \{/)
+      expect(result.code).toMatch(/return 10/)
+    })
+
+    it('tuplets [list], opts do |x| ... end transpiles to __b.tuplets(...) inside live_loop (#233)', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  tuplets [70, [72, 72], 70], swing: 0.2 do |n|
+    play n
+  end
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/\.tuplets\(\[70, \[72, 72\], 70\], \{ swing: 0\.2 \}, \(__b, n\)/)
+      expect(result.code).toMatch(/__b\.play\(n,/)
+    })
+
+    it('tuplets without opts hash transpiles with empty options object (#233)', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  tuplets [60, 62, 64] do |n|
+    play n
+  end
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/\.tuplets\(\[60, 62, 64\], \{\}, \(__b, n\)/)
+    })
+
+    it('current_synth_defaults / current_debug etc. inside live_loop route via __b (#233)', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  use_synth_defaults amp: 0.5
+  puts current_synth_defaults
+  puts current_sample_defaults
+  puts current_arg_checks
+  puts current_debug
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toMatch(/\.current_synth_defaults\(\)/)
+      expect(result.code).toMatch(/\.current_sample_defaults\(\)/)
+      expect(result.code).toMatch(/\.current_arg_checks\(\)/)
+      expect(result.code).toMatch(/\.current_debug\(\)/)
+    })
+
     it('with_fx at top level (outside live_loop)', () => {
       const result = treeSitterTranspile(`with_fx :reverb, mix: 0.7 do
   live_loop :t do

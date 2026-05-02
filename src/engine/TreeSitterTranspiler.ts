@@ -234,7 +234,7 @@ const BUILDER_METHODS = new Set([
   // Utility
   'factor_q', 'bools', 'play_pattern_timed', 'sample_duration', 'stretch', 'ramp',
   'hz_to_midi', 'midi_to_hz', 'quantise', 'quantize', 'octs',
-  'kill', 'play_chord', 'play_pattern',
+  'kill', 'play_chord', 'play_pattern', 'tuplets',
   'with_octave', 'with_random_seed', 'with_density',
   'noteToMidi', 'midiToFreq', 'noteToFreq', 'note_info',
   // Data constructors
@@ -251,6 +251,10 @@ const BUILDER_METHODS = new Set([
   // Tier B — PRNG inspection (#227). Per-task RNG mutations — route through
   // __b so they hit the calling builder's seeded random stream.
   'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
+  // Tier B PR #2 — defaults / setting introspection (#233). Per-task pure
+  // reads — route through __b so per-loop use_*_defaults are visible.
+  'current_synth_defaults', 'current_sample_defaults',
+  'current_arg_checks', 'current_debug',
   // Deferred-step DSL contract (issue #193 — must mirror methods on
   // ProgramBuilder so they fire at scheduled virtual time, not build time).
   'stop_loop', 'set_volume', 'use_osc', 'osc',
@@ -337,6 +341,10 @@ const BARE_CALLABLE = new Set([
   // so it doesn't need this list — but including it means a bare
   // `recording_save` (forgotten filename) trips the arity guard at build.
   'recording_start', 'recording_stop', 'recording_delete', 'recording_save',
+  // Tier B PR #2 — defaults / setting introspection (#233). Routinely called
+  // bare in user code (`puts current_debug`, `if current_arg_checks`).
+  'current_synth_defaults', 'current_sample_defaults',
+  'current_arg_checks', 'current_debug',
 ])
 
 /**
@@ -929,7 +937,7 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     // `comment` and `uncomment` are control-flow (like if-true/if-false), NOT
     // structural blocks. They stay in bareCode so their content gets the __b.
     // prefix when wrapped. Separating them would produce bare `play()` at top level.
-    } else if (method && !isBareFxNode && (method === 'live_loop' || method === 'define' || method === 'ndefine' || method === 'with_fx' ||
+    } else if (method && !isBareFxNode && (method === 'live_loop' || method === 'define' || method === 'ndefine' || method === 'defonce' || method === 'with_fx' ||
                           method === 'in_thread' || isBareLoopNode)) {
       blocks.push(child)
     } else {
@@ -1035,6 +1043,11 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return transpileDefine(node, argsNode, blockNode, ctx, methodName)
     }
 
+    // defonce :name, override: true do ... end  (#212 / #233)
+    if (methodName === 'defonce') {
+      return transpileDefonce(node, argsNode, blockNode, ctx)
+    }
+
     // with_fx :name, opts do ... end
     if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose' || methodName === 'with_arg_bpm_scaling' || methodName === 'with_synth_defaults' || methodName === 'with_sample_defaults' || methodName === 'with_random_seed' || methodName === 'with_octave' || methodName === 'with_density') {
       return transpileWithBlock(methodName, argsNode, blockNode, ctx)
@@ -1053,6 +1066,11 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     // time_warp offset do ... end
     if (methodName === 'time_warp') {
       return transpileTimeWarp(argsNode, blockNode, ctx)
+    }
+
+    // tuplets [list], opts do |x| ... end  (#233)
+    if (methodName === 'tuplets') {
+      return transpileTuplets(argsNode, blockNode, ctx)
     }
 
     // assert_error do … end → assert_error((__b) => { … })  (#216)
@@ -1629,6 +1647,71 @@ function transpileDefine(
   return decl
 }
 
+/**
+ * `defonce :name, override: true do ... end`  (#212 / #233)
+ *
+ *   defonce :pad do
+ *     chord(:c, :major)
+ *   end
+ *     →  pad = defonce("pad", {}, (__b) => {
+ *          return __b.chord("c", "major")
+ *        })
+ *
+ * Bare assignment so the Sandbox proxy captures the cached value into
+ * scope-isolated storage (let/const bypass the proxy). The last block
+ * statement is wrapped as `return EXPR` so the caller gets the value
+ * Ruby's implicit-last-expr-return convention would have produced.
+ *
+ * The runtime registrar `defonce(name, opts, fn)` lives in dslValues and
+ * caches against `engine.defonceCache`. Re-evaluating the buffer skips
+ * the body unless `override: true`, mirroring upstream core.rb:2722-2738.
+ */
+function transpileDefonce(
+  node: any, argsNode: any, blockNode: any, ctx: TranspileContext
+): string {
+  const args = argsNode?.namedChildren ?? []
+  let name = 'unnamed'
+  const optPairs: string[] = []
+  for (const arg of args) {
+    if (arg.type === 'simple_symbol') {
+      name = arg.text.slice(1)
+    } else if (arg.type === 'pair') {
+      const key = arg.namedChildren[0]
+      const val = arg.namedChildren[1]
+      const keyName = key.type === 'hash_key_symbol'
+        ? key.text.replace(/:$/, '')
+        : key.type === 'simple_symbol'
+        ? key.text.slice(1)
+        : transpileNode(key, ctx)
+      optPairs.push(`${keyName}: ${transpileNode(val, ctx)}`)
+    }
+  }
+
+  if (!blockNode) {
+    const line = node.startPosition?.row != null ? node.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: defonce :${name} is missing 'do ... end' block`)
+    return `/* parse error: defonce :${name} missing block */`
+  }
+
+  const bodyChildren = blockNode.namedChildren.filter((c: any) => c.type !== 'block_parameters')
+  if (bodyChildren.length === 0) {
+    return `${name} = defonce(${JSON.stringify(name)}, ${optPairs.length > 0 ? `{ ${optPairs.join(', ')} }` : '{}'}, (__b) => undefined)`
+  }
+
+  const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+  const lastIdx = bodyChildren.length - 1
+  const stmts = bodyChildren.map((c: any, i: number) => {
+    const expr = transpileNode(c, bodyCtx)
+    return i === lastIdx
+      ? `${ctx.indent}  return ${expr}`
+      : `${ctx.indent}  ${expr}`
+  })
+
+  const optsStr = optPairs.length > 0 ? `{ ${optPairs.join(', ')} }` : '{}'
+
+  return `${name} = defonce(${JSON.stringify(name)}, ${optsStr}, (__b) => {\n${stmts.join('\n')}\n${ctx.indent}})`
+}
+
 function transpileWithBlock(
   methodName: string, argsNode: any, blockNode: any, ctx: TranspileContext
 ): string {
@@ -1841,6 +1924,52 @@ function transpileTimeWarp(
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
   const bodyStr = transpileBlockBody(blockNode, bodyCtx)
   return `${prefix}at([${offset}], null, (__b) => {\n${bodyStr}\n${ctx.indent}})`
+}
+
+/**
+ * `tuplets [list], opts do |x| ... end`  (#233)
+ *
+ *   tuplets [70, [72, 72]], swing: 0.2 do |n| play n end
+ *     →  __b.tuplets([70, [72, 72]], { swing: 0.2 }, (__b, n) => { __b.play(n) })
+ *
+ * The first positional arg is the list. Remaining keyword pairs become an
+ * options object. Block params come through as additional callback args.
+ */
+function transpileTuplets(
+  argsNode: any, blockNode: any, ctx: TranspileContext
+): string {
+  if (!blockNode) {
+    const line = argsNode?.startPosition?.row != null ? argsNode.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: tuplets is missing 'do ... end' block`)
+    return `/* parse error: tuplets missing block */`
+  }
+
+  const args = argsNode?.namedChildren ?? []
+  const positional = args.filter((a: any) => a.type !== 'pair').map((a: any) => transpileNode(a, ctx))
+  const pairs = args.filter((a: any) => a.type === 'pair')
+
+  const listExpr = positional[0] ?? '[]'
+  const optsExpr = pairs.length > 0
+    ? '{ ' + pairs.map((p: any) => {
+        const key = p.namedChildren[0]
+        const val = p.namedChildren[1]
+        const keyName = key.type === 'hash_key_symbol'
+          ? key.text.replace(/:$/, '')
+          : key.type === 'simple_symbol'
+          ? key.text.slice(1)
+          : transpileNode(key, ctx)
+        return `${keyName}: ${transpileNode(val, ctx)}`
+      }).join(', ') + ' }'
+    : '{}'
+
+  const prefix = ctx.insideLoop ? '__b.' : ''
+  const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+  const params = blockNode.namedChildren.find((c: any) => c.type === 'block_parameters')
+  const paramNames = params?.namedChildren.map((c: any) => c.text) ?? []
+  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
+  const paramStr = paramNames.length > 0 ? ', ' + paramNames.join(', ') : ''
+
+  return `${prefix}tuplets(${listExpr}, ${optsExpr}, (__b${paramStr}) => {\n${bodyStr}\n${ctx.indent}})`
 }
 
 function transpileDensity(

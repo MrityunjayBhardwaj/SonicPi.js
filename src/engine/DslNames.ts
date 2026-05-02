@@ -87,6 +87,28 @@ export const DSL_NAMES = [
   // SoundLayer param normalization), so the WAV captures exactly what the
   // user hears. Top-level dslValues entries forward to topLevelBuilder.
   'recording_start', 'recording_stop', 'recording_save', 'recording_delete',
+  // Tier B PR #2 — pure ring constructors (#233). Both delegate to each
+  // other for negative counts (matches upstream `core.rb:1919-1970`).
+  'doubles', 'halves',
+  // Tier B PR #2 — defaults / setting introspection (#233). Inside live_loops
+  // these route via __b for per-task reads; at top level they read the
+  // topLevelBuilder's state. current_arg_checks returns constant true (we
+  // don't validate arg names yet — see ProgramBuilder).
+  'current_synth_defaults', 'current_sample_defaults',
+  'current_arg_checks', 'current_debug',
+  // Tier B PR #2 — block-form tuplet scheduling (#233). The transpiler
+  // routes `tuplets [...] do |x| ... end` to __b.tuplets(list, opts, cb),
+  // resolving the list/opts at build time then pushing N play+sleep step
+  // pairs per the block (one per leaf element). Density wraps each
+  // sub-list so N elements fit in `duration` beats.
+  'tuplets',
+  // Tier B PR #2 — defonce (#212 / #233). The transpiler emits a bare
+  // assignment `name = defonce("name", opts, (__b) => { ...; return last })`
+  // so the cached value lands in proxy storage. The runtime registrar caches
+  // against engine.defonceCache; opts.override re-runs the body. Cached
+  // values are spread into persistedFns at the next eval so removing the
+  // defonce line doesn't break still-running live_loops that read `name`.
+  'defonce',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]
