@@ -26,6 +26,12 @@ export type Step =
   | { tag: 'stop' }
   | { tag: 'stopLoop'; name: string }
   | { tag: 'setVolume'; vol: number }
+  // Tier C PR #3 (#255). Mixer setters fire at scheduled virtual time so
+  // sweeps (`set_mixer_control! lpf: 30; sleep 4; reset_mixer!`) sequence
+  // against playback instead of collapsing at beat 0 like setVolume did
+  // pre-#197. opts is the raw user hash; bridge coerces to /n_set.
+  | { tag: 'setMixerControl'; opts: Record<string, number> }
+  | { tag: 'resetMixer' }
   | { tag: 'useOsc'; host: string; port: number }
   | { tag: 'midiOut'; kind: MidiOutKind; args: unknown[] }
   | { tag: 'kill'; nodeRef: number }

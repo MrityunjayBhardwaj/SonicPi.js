@@ -411,6 +411,19 @@ export async function runProgram(
         break
       }
 
+      case 'setMixerControl':
+        // Mixer-param sweep at the scheduled time (#255). Same lifecycle
+        // reasoning as setVolume: top-level immediate would collapse a
+        // `set_mixer_control! lpf: 30; sleep 4; reset_mixer!` pair to two
+        // calls at beat 0.
+        ctx.bridge?.setMixerControl(step.opts)
+        break
+
+      case 'resetMixer':
+        // Restore the MIXER config defaults (#255).
+        ctx.bridge?.resetMixer()
+        break
+
       case 'useOsc':
         // Mutates builder defaults at build; this step is here so the change
         // is also visible to a step-time observer (no-op effect on bridge,

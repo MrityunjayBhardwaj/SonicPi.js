@@ -1252,6 +1252,40 @@ export class SonicPiEngine {
           const known = this.bridge?.getSampleDuration(name)
           return { name, duration: known ?? duration ?? 8 }
         },
+        // Tier C PR #3 — set_mixer_control! / reset_mixer! (#255). Deferred
+        // ProgramBuilder steps. Top-level forms forward to topLevelBuilder so
+        // a bare `set_mixer_control! lpf: 30; sleep 4; reset_mixer!` sequences
+        // against playback (mirrors set_volume / recording lifecycle).
+        (opts: Record<string, number>) => { topLevelBuilder.set_mixer_control(opts) },
+        (...args: unknown[]) => { topLevelBuilder.reset_mixer(...args) },
+        // Tier C PR #3 — scsynth_info / status (#255). Pure host-queries from
+        // the bridge. Both return a flat info dict; in tests with no bridge
+        // they return safe placeholder shapes so user code that reads .field
+        // doesn't crash.
+        () => this.bridge?.getScsynthInfo() ?? {
+          sample_rate: 44100, sample_dur: 1 / 44100,
+          radians_per_sample: (2 * Math.PI) / 44100,
+          control_rate: 44100 / 64, control_dur: 64 / 44100,
+          subsample_offset: 0,
+          num_output_busses: 16, num_input_busses: 16,
+          num_audio_busses: 1024, num_control_busses: 4096,
+          num_buffers: 4096,
+        },
+        () => this.bridge?.getStatus() ?? {
+          ugens: 0, synths: 0, groups: 0, sdefs: 0,
+          avg_cpu: 0, peak_cpu: 0,
+          nom_samp_rate: 44100, act_samp_rate: 44100,
+          audio_busses: 1024, control_busses: 4096,
+        },
+        // Tier C PR #3 — vt / bt / rt (#255). Pure BPM math + virtual-time
+        // alias. At top level use_bpm only updates `defaultBpm` (it does not
+        // call topLevelBuilder.use_bpm), and `current_time` reads
+        // scheduler.audioTime (line 1051) — so we mirror those sources here.
+        // Inside live_loops the transpiler routes through __b via
+        // BUILDER_METHODS, where per-task _currentBpm and _audioTime are correct.
+        () => scheduler.audioTime,                                   // vt: thread's local virtual run time
+        (t: number) => t * 60 / defaultBpm,                          // bt: beats → seconds at current bpm
+        (t: number) => t * defaultBpm / 60,                          // rt: seconds → beats (bypasses bpm scaling)
       ]
 
       const codeWarnings = validateCode(transpiledCode)
