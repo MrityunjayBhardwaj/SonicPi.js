@@ -1148,3 +1148,156 @@ describe('sync_bpm at top level surfaces a warning (Tier B PR #3 #239)', () => {
     engine.dispose()
   })
 })
+
+describe('Tier C PR #1 — state wrappers (#251) — builder semantics', () => {
+  // These exercise ProgramBuilder directly (the engine.evaluate layer can't
+  // observe top-level setter state easily because puts goes through a deferred
+  // step that the scheduler runs only on play()). Engine wiring is covered by
+  // the DslBuilderContract test plus the SP9-style routing already in place.
+  it('use_arg_checks toggles the flag; current_arg_checks reflects it', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    expect(b.current_arg_checks()).toBe(true)
+    b.use_arg_checks(false)
+    expect(b.current_arg_checks()).toBe(false)
+    b.use_arg_checks(true)
+    expect(b.current_arg_checks()).toBe(true)
+  })
+
+  it('use_timing_guarantees toggles the flag; current_timing_guarantees reflects it', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    expect(b.current_timing_guarantees()).toBe(false)
+    b.use_timing_guarantees(true)
+    expect(b.current_timing_guarantees()).toBe(true)
+  })
+
+  it('use_merged_synth_defaults merges into existing map (does not replace)', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    b.use_synth_defaults({ amp: 0.5, release: 2 })
+    b.use_merged_synth_defaults({ cutoff: 80 })
+    expect(b.current_synth_defaults()).toEqual({ amp: 0.5, release: 2, cutoff: 80 })
+  })
+
+  it('use_merged_synth_defaults overlays — newer keys overwrite', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    b.use_synth_defaults({ amp: 0.5 })
+    b.use_merged_synth_defaults({ amp: 2 })
+    expect(b.current_synth_defaults()).toEqual({ amp: 2 })
+  })
+
+  it('use_merged_sample_defaults merges (does not replace)', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    b.use_sample_defaults({ rate: 0.5 })
+    b.use_merged_sample_defaults({ amp: 2 })
+    expect(b.current_sample_defaults()).toEqual({ rate: 0.5, amp: 2 })
+  })
+
+  it('with_arg_checks block restores previous flag after exit', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    const seen: boolean[] = [b.current_arg_checks()]
+    b.with_arg_checks(false, (b2) => { seen.push(b2.current_arg_checks()) })
+    seen.push(b.current_arg_checks())
+    expect(seen).toEqual([true, false, true])
+  })
+
+  it('with_debug block restores previous flag after exit', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    const seen: boolean[] = [b.current_debug()]
+    b.with_debug(false, (b2) => { seen.push(b2.current_debug()) })
+    seen.push(b.current_debug())
+    expect(seen).toEqual([true, false, true])
+  })
+
+  it('with_timing_guarantees block restores previous flag after exit', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    const seen: boolean[] = [b.current_timing_guarantees()]
+    b.with_timing_guarantees(true, (b2) => { seen.push(b2.current_timing_guarantees()) })
+    seen.push(b.current_timing_guarantees())
+    expect(seen).toEqual([false, true, false])
+  })
+
+  it('with_merged_synth_defaults restores previous map after exit', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    b.use_synth_defaults({ amp: 0.5 })
+    const seen: Record<string, number>[] = [{ ...b.current_synth_defaults() }]
+    b.with_merged_synth_defaults({ release: 4 }, (b2) => {
+      seen.push({ ...b2.current_synth_defaults() })
+    })
+    seen.push({ ...b.current_synth_defaults() })
+    expect(seen).toEqual([
+      { amp: 0.5 },
+      { amp: 0.5, release: 4 },
+      { amp: 0.5 },
+    ])
+  })
+
+  it('with_merged_sample_defaults restores previous map after exit', async () => {
+    const { ProgramBuilder } = await import('../ProgramBuilder')
+    const b = new ProgramBuilder()
+    b.use_sample_defaults({ rate: 0.5 })
+    const seen: Record<string, number>[] = [{ ...b.current_sample_defaults() }]
+    b.with_merged_sample_defaults({ amp: 2 }, (b2) => {
+      seen.push({ ...b2.current_sample_defaults() })
+    })
+    seen.push({ ...b.current_sample_defaults() })
+    expect(seen).toEqual([
+      { rate: 0.5 },
+      { rate: 0.5, amp: 2 },
+      { rate: 0.5 },
+    ])
+  })
+
+  it('engine routes top-level use_arg_checks through to topLevelBuilder', async () => {
+    // Smoke test that the dslValues forwarder works end-to-end. Asserts the
+    // call doesn't throw and the engine remains in a re-evaluable state. The
+    // actual flag mutation is covered by the builder-level tests above.
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`use_arg_checks false
+use_timing_guarantees true
+use_merged_synth_defaults amp: 0.5
+use_merged_sample_defaults rate: 0.8`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+
+  it('engine accepts with_* block forms inside live_loop without error', async () => {
+    // The block-opener path routes `with_*` inside live_loops to `__b.with_*`
+    // — the primary use case for these wrappers. (Top-level usage is rarely
+    // meaningful because the wrapped state has no audio side-effects when
+    // there are no synth dispatches between the toggles.)
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`live_loop :test do
+  with_arg_checks false do
+    play 60
+  end
+  with_debug false do
+    play 62
+  end
+  with_timing_guarantees true do
+    play 64
+  end
+  with_merged_synth_defaults release: 2 do
+    play 66
+  end
+  with_merged_sample_defaults amp: 0.5 do
+    sample :bd_haus
+  end
+  sleep 1
+  stop
+end`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+})

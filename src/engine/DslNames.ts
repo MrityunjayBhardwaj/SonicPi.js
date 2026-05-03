@@ -92,10 +92,10 @@ export const DSL_NAMES = [
   'doubles', 'halves',
   // Tier B PR #2 — defaults / setting introspection (#233). Inside live_loops
   // these route via __b for per-task reads; at top level they read the
-  // topLevelBuilder's state. current_arg_checks returns constant true (we
-  // don't validate arg names yet — see ProgramBuilder).
+  // topLevelBuilder's state. current_arg_checks/current_timing_guarantees
+  // are flag readers — Tier C wired the toggle setters that drive them.
   'current_synth_defaults', 'current_sample_defaults',
-  'current_arg_checks', 'current_debug',
+  'current_arg_checks', 'current_debug', 'current_timing_guarantees',
   // Tier B PR #2 — block-form tuplet scheduling (#233). The transpiler
   // routes `tuplets [...] do |x| ... end` to __b.tuplets(list, opts, cb),
   // resolving the list/opts at build time then pushing N play+sleep step
@@ -130,6 +130,16 @@ export const DSL_NAMES = [
   // bundled registry then forwards to the host's loadExampleHandler so the
   // editor replaces its buffer + re-runs. Top-level only (host-bridge).
   'load_example',
+  // Tier C PR #1 — state wrappers (#251). Toggle/merge family. Imperative
+  // forms mutate _argChecks/_debug/_timingGuarantees/_synthDefaults/
+  // _sampleDefaults on the builder; block forms save → set → run → restore.
+  // Inside live_loops the transpiler routes via __b through BUILDER_METHODS
+  // for the imperative forms and via the block-opener path (line ~1052) for
+  // the with_* forms. Top-level dslValues forward to topLevelBuilder.
+  'use_arg_checks', 'use_timing_guarantees',
+  'use_merged_synth_defaults', 'use_merged_sample_defaults',
+  'with_arg_checks', 'with_debug', 'with_timing_guarantees',
+  'with_merged_synth_defaults', 'with_merged_sample_defaults',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

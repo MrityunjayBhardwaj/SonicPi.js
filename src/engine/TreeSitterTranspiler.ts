@@ -254,7 +254,14 @@ const BUILDER_METHODS = new Set([
   // Tier B PR #2 — defaults / setting introspection (#233). Per-task pure
   // reads — route through __b so per-loop use_*_defaults are visible.
   'current_synth_defaults', 'current_sample_defaults',
-  'current_arg_checks', 'current_debug',
+  'current_arg_checks', 'current_debug', 'current_timing_guarantees',
+  // Tier C PR #1 — state wrappers (#251). Imperative toggle/merge family
+  // routes through __b so per-task state mutations don't leak to siblings.
+  // Block forms are registered separately at the block-opener path below.
+  'use_arg_checks', 'use_timing_guarantees',
+  'use_merged_synth_defaults', 'use_merged_sample_defaults',
+  'with_arg_checks', 'with_debug', 'with_timing_guarantees',
+  'with_merged_synth_defaults', 'with_merged_sample_defaults',
   // Deferred-step DSL contract (issue #193 — must mirror methods on
   // ProgramBuilder so they fire at scheduled virtual time, not build time).
   'stop_loop', 'set_volume', 'use_osc', 'osc',
@@ -1049,7 +1056,7 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     }
 
     // with_fx :name, opts do ... end
-    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose' || methodName === 'with_arg_bpm_scaling' || methodName === 'with_synth_defaults' || methodName === 'with_sample_defaults' || methodName === 'with_random_seed' || methodName === 'with_octave' || methodName === 'with_density') {
+    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose' || methodName === 'with_arg_bpm_scaling' || methodName === 'with_synth_defaults' || methodName === 'with_sample_defaults' || methodName === 'with_random_seed' || methodName === 'with_octave' || methodName === 'with_density' || methodName === 'with_arg_checks' || methodName === 'with_debug' || methodName === 'with_timing_guarantees' || methodName === 'with_merged_synth_defaults' || methodName === 'with_merged_sample_defaults') {
       return transpileWithBlock(methodName, argsNode, blockNode, ctx)
     }
 
