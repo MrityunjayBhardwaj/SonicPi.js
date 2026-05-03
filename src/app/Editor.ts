@@ -57,6 +57,18 @@ const SP_BUILTINS = new Set([
   'current_arg_checks', 'current_debug',
   // Tier B PR #3 — sync_bpm, dynamic eval, load_example, live_audio
   'sync_bpm', 'run_code', 'eval_file', 'run_file', 'load_example', 'live_audio',
+  // Tier C PR #1 — state wrappers
+  'use_arg_checks', 'use_timing_guarantees',
+  'use_merged_synth_defaults', 'use_merged_sample_defaults',
+  'with_arg_checks', 'with_debug', 'with_timing_guarantees',
+  'with_merged_synth_defaults', 'with_merged_sample_defaults',
+  'current_timing_guarantees',
+  // Tier C PR #2 — sample/buffer registry
+  'sample_paths', 'sample_buffer', 'sample_free', 'sample_free_all',
+  'load_samples', 'buffer',
+  // Tier C PR #3 — mixer + introspection (set_mixer_control! / reset_mixer!
+  // enter as bare names; transpiler strips trailing ! at parse time)
+  'set_mixer_control', 'reset_mixer', 'scsynth_info', 'status', 'vt', 'bt', 'rt',
 ])
 // Block-opening keywords that increase indent on the next line
 const SP_BLOCK_OPENERS = new Set(['do', 'then', 'begin', 'else', 'elsif', 'rescue', 'ensure'])
@@ -196,6 +208,32 @@ function buildCompletions(): CompletionItem[] {
     run_file: 'File-based run (browser: use load_example instead)',
     load_example: 'Load a bundled example into the editor',
     live_audio: 'Named live audio stream from soundcard',
+    // Tier C PR #1 — state wrappers
+    use_arg_checks: 'Enable or disable arg-name checking',
+    with_arg_checks: 'Block-scoped enable/disable of arg-name checking',
+    use_timing_guarantees: 'Drop synth/sample triggers that arrive late',
+    with_timing_guarantees: 'Block-scoped late-trigger drop policy',
+    use_merged_synth_defaults: 'Merge new synth defaults with the existing ones',
+    with_merged_synth_defaults: 'Block-scoped merge of synth defaults',
+    use_merged_sample_defaults: 'Merge new sample defaults with the existing ones',
+    with_merged_sample_defaults: 'Block-scoped merge of sample defaults',
+    with_debug: 'Block-scoped enable/disable of debug logging',
+    current_timing_guarantees: 'Get current timing-guarantees setting',
+    // Tier C PR #2 — sample/buffer registry
+    sample_paths: 'Ring of known sample names (optional substring filter)',
+    sample_buffer: 'Buffer-info object for a named sample',
+    sample_free: 'Drop a single sample from the loaded cache',
+    sample_free_all: 'Drop every sample from the loaded cache',
+    load_samples: 'Pre-load bundled samples to avoid first-trigger latency',
+    buffer: 'Browser stub: returns {name, duration} for a named buffer',
+    // Tier C PR #3 — mixer + introspection
+    set_mixer_control: 'Control the main mixer (lpf/hpf/amp/bypass)',
+    reset_mixer: 'Reset the main mixer to its default settings',
+    scsynth_info: 'Audio engine info (sample rate, bus counts, etc.)',
+    status: 'Synthesis environment status (active synths, CPU load)',
+    vt: 'Current thread\'s virtual run time (alias of current_time)',
+    bt: 'Beat-time conversion: scales seconds by current BPM',
+    rt: 'Real-time conversion: bypasses BPM scaling',
   }
   for (const [name, info] of Object.entries(dslFunctions)) {
     items.push({ label: name, type: 'function', info })
