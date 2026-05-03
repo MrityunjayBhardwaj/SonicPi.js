@@ -1278,12 +1278,14 @@ export class SonicPiEngine {
           audio_busses: 1024, control_busses: 4096,
         },
         // Tier C PR #3 — vt / bt / rt (#255). Pure BPM math + virtual-time
-        // alias. Top-level reads topLevelBuilder so the values reflect any
-        // top-level use_bpm. Inside live_loops the transpiler routes through
-        // __b via BUILDER_METHODS so the calling task's bpm wins.
-        () => topLevelBuilder.vt(),
-        (t: number) => topLevelBuilder.bt(t),
-        (t: number) => topLevelBuilder.rt(t),
+        // alias. At top level use_bpm only updates `defaultBpm` (it does not
+        // call topLevelBuilder.use_bpm), and `current_time` reads
+        // scheduler.audioTime (line 1051) — so we mirror those sources here.
+        // Inside live_loops the transpiler routes through __b via
+        // BUILDER_METHODS, where per-task _currentBpm and _audioTime are correct.
+        () => scheduler.audioTime,                                   // vt: thread's local virtual run time
+        (t: number) => t * 60 / defaultBpm,                          // bt: beats → seconds at current bpm
+        (t: number) => t * defaultBpm / 60,                          // rt: seconds → beats (bypasses bpm scaling)
       ]
 
       const codeWarnings = validateCode(transpiledCode)

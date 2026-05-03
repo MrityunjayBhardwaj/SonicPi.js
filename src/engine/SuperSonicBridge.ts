@@ -349,11 +349,11 @@ export class SuperSonicBridge {
 
   /**
    * Set arbitrary mixer params (Tier C PR #3 #255 — set_mixer_control! DSL).
-   * Allowlist enforces SP9 (param name on our side ≠ synthdef's vocabulary):
-   * the sonic-pi-mixer synthdef accepts pre_amp/amp/hpf/lpf and four bypass
-   * flags; anything else is silently ignored by scsynth, so we filter +
-   * surface a console warning instead. Returns the names actually applied
-   * for telemetry / test assertion.
+   * The allowlist matches the sonic-pi-mixer synthdef's parameter vocabulary
+   * (pre_amp/amp/hpf/lpf and four bypass flags). Param names not in this
+   * set are silently dropped by scsynth, so we filter + surface a console
+   * warning instead — making the parameter-name boundary loud rather than
+   * quiet. Returns the names actually applied for telemetry / test assertion.
    */
   setMixerControl(opts: Record<string, number>): string[] {
     if (!this.sonic) return []

@@ -101,9 +101,50 @@ describe('ProgramBuilder bt / rt / vt (#255)', () => {
     void b.bt(1)
     void b.rt(1)
     void b.vt()
-    // Only the use_bpm step from above; bt/rt/vt are pure
+    // Only the use_bpm step pushed above; bt/rt/vt are pure reads.
     const program = b.build()
-    expect(program.every(s => s.tag !== 'setMixerControl' && s.tag !== 'resetMixer')).toBe(true)
-    expect(program.find(s => s.tag === 'useBpm')).toBeDefined()
+    expect(program.length).toBe(1)
+    expect(program[0].tag).toBe('useBpm')
+  })
+})
+
+describe('Top-level bt / rt / vt route to defaultBpm + scheduler audioTime (#257)', () => {
+  // Regression for the self-review gap: top-level use_bpm only mutates
+  // defaultBpm (it does not call topLevelBuilder.use_bpm). The forwarders
+  // had been routing through topLevelBuilder which read stale state, so
+  // `use_bpm 120; bt(1)` returned 1.0 instead of 0.5. assert_equal throws
+  // synchronously at top level so it surfaces through r.error if the math
+  // regresses — puts is deferred and would never fire in the test harness.
+  it('bt at top level scales with defaultBpm after use_bpm', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`use_bpm 120
+assert_equal bt(1), 0.5`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+
+  it('rt at top level scales with defaultBpm after use_bpm', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`use_bpm 120
+assert_equal rt(1), 2.0`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+
+  it('bt and rt are inverses across bpm changes at top level', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`use_bpm 140
+assert_equal bt(rt(1)), 1.0
+use_bpm 60
+assert_equal bt(1), 1.0
+assert_equal rt(1), 1.0`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
   })
 })
