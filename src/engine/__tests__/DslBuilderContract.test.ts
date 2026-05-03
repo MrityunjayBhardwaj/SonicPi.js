@@ -161,6 +161,14 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['eval_file',        'Browser-sandbox stub: throws redirect to run_code/load_example. No filesystem access in browser.'],
   ['run_file',         'Browser-sandbox stub: throws redirect to run_code/load_example. No filesystem access in browser.'],
   ['load_example',     'Host-bridge: looks up by name in examples registry, forwards to host loadExampleHandler. Top-level only.'],
+  // Tier C PR #2 — sample/buffer registry (#253). Bridge cache queries +
+  // mutations. None affect the audio Program, so no deferred step needed.
+  ['sample_paths',     'Host-query: returns bundled+custom sample names from the catalog. Pure read.'],
+  ['sample_buffer',    'Host-query: returns { name, duration } from the bridge cache. Pure read.'],
+  ['sample_free',      'Bridge-cache mutation: drops one entry from loadedSamples. Affects which bufNum a future sample call uses, not the running program.'],
+  ['sample_free_all',  'Bridge-cache mutation: clears loadedSamples. Same as above, all entries.'],
+  ['load_samples',     'Bridge preload: fire-and-forget warmup of the loadedSamples cache. The actual sample call still awaits via the same dedup path.'],
+  ['buffer',           'Host-query browser stub: returns { name, duration }. User-buffer recording is deferred to a later PR; this exists so .duration reads work.'],
 ])
 
 describe('DSL builder contract (issue #193)', () => {

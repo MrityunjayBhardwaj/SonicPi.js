@@ -1182,6 +1182,76 @@ export class SonicPiEngine {
         (enabled: boolean, fn: (b: ProgramBuilder) => void) => { topLevelBuilder.with_timing_guarantees(enabled, fn) },
         (opts: Record<string, number>, fn: (b: ProgramBuilder) => void) => { topLevelBuilder.with_merged_synth_defaults(opts, fn) },
         (opts: Record<string, number>, fn: (b: ProgramBuilder) => void) => { topLevelBuilder.with_merged_sample_defaults(opts, fn) },
+        // Tier C PR #2 — sample/buffer registry (#253). Top-level host stubs.
+        // sample_paths returns the bundled+custom names (browser equivalent of
+        // Desktop SP's filesystem paths). Optional `filter` substring match
+        // matches the upstream sound.rb behavior loosely. Without `filter`,
+        // returns every name we know about.
+        (filter?: string) => {
+          const all = sample_names()
+          const loaded = this.bridge?.getLoadedSampleNames() ?? []
+          // Union: bundled catalog + any extras already loaded (e.g. user uploads
+          // not in the static catalog). Dedupe via Set, preserve catalog order.
+          const merged = [...all]
+          for (const name of loaded) if (!merged.includes(name)) merged.push(name)
+          if (typeof filter === 'string' && filter.length > 0) {
+            return merged.filter(n => n.includes(filter))
+          }
+          return merged
+        },
+        // sample_buffer(name) — returns a buffer-info dictionary. Unlike Desktop
+        // SP's Buffer object, recording into the buffer is out of scope for
+        // this PR; we expose name + duration so user code that asks for
+        // sample_buffer(:foo).duration works.
+        (name: string) => {
+          if (typeof name !== 'string') {
+            throw new TypeError(`sample_buffer expects a name (string or symbol), got ${typeof name}`)
+          }
+          const dur = this.bridge?.getSampleDuration(name)
+          return { name, duration: dur ?? 0 }
+        },
+        // sample_free(name) — drop a single sample from the loaded cache.
+        // Returns true if it was loaded, false otherwise. The bufNum slot is
+        // not recycled (would require reference counting); the cost is one
+        // integer of waste per freed sample.
+        (name: string) => {
+          if (typeof name !== 'string') return false
+          return this.bridge?.freeSample(name) ?? false
+        },
+        // sample_free_all — drop every sample from the loaded cache. Returns
+        // the count freed. Useful before benchmarks or for memory pressure.
+        () => {
+          return this.bridge?.freeAllSamples() ?? 0
+        },
+        // load_samples(*names) — preload a list of samples so the first
+        // sample :name call is instant (no first-load CDN fetch latency).
+        // Accepts varargs so `load_samples :bd_haus, :sn_dub` works; the
+        // transpiler unpacks symbols into individual string args.
+        (...names: unknown[]) => {
+          if (!this.bridge) return
+          const flat = names.flat() as unknown[]
+          for (const n of flat) {
+            if (typeof n === 'string') {
+              // Fire and don't await — preload is best-effort. The first
+              // actual sample :n call still awaits via the same dedup path.
+              void this.bridge.preloadSample(n).catch(() => { /* silent */ })
+            }
+          }
+        },
+        // buffer(name, duration?) — browser stub. Desktop SP allocates a
+        // recording buffer; we don't have user-buffer recording yet, so the
+        // call returns a buffer-info shape that mirrors sample_buffer. This
+        // unblocks code that calls .duration on the result without erroring.
+        (name: string, duration?: number) => {
+          if (typeof name !== 'string') {
+            throw new TypeError(`buffer expects a name (string or symbol), got ${typeof name}`)
+          }
+          // If we already have a sample with this name cached, surface its
+          // duration. Otherwise return the requested duration (defaulting
+          // to 8 — the desktop default for a fresh recording buffer).
+          const known = this.bridge?.getSampleDuration(name)
+          return { name, duration: known ?? duration ?? 8 }
+        },
       ]
 
       const codeWarnings = validateCode(transpiledCode)
