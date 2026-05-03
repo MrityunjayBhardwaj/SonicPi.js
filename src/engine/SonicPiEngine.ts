@@ -686,6 +686,13 @@ export class SonicPiEngine {
           const existing = scheduler.getTask(name)
           if (existing && existing.running) {
             scheduler.hotSwap(name, asyncFn)
+            // Mirror the regular hot-swap path (#262): freeAllNodes ran during
+            // the outer's reEvaluate, so the inner's old loopBus is dead. Bind
+            // task.outBus to the freshly-allocated bus, and refresh bpm /
+            // currentSynth so a top-level use_bpm/use_synth change propagates.
+            existing.bpm = defaultBpm
+            existing.currentSynth = defaultSynth
+            existing.outBus = loopBus
           } else {
             // New inner declared during hot-swap (e.g. user added it on Run).
             scheduler.registerLoop(name, asyncFn, { bpm: defaultBpm, synth: defaultSynth })
