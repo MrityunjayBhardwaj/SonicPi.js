@@ -676,7 +676,23 @@ export class SonicPiEngine {
           scheduler.fireCue(name, name)
         }
 
-        if (isReEvaluate) {
+        if (this.buildNestingDepth > 0 && isReEvaluate) {
+          // Nested hot-swap (issue #199): this call is firing from inside an
+          // outer live_loop's iteration, AFTER the top-level evaluate()'s
+          // pendingLoops reconciliation has already completed. Routing
+          // through pendingLoops would be futile — nobody picks up the entry.
+          // Hot-swap directly via the scheduler to refresh the inner closure
+          // (SV6: preserves virtualTime, bpm, density, random state).
+          const existing = scheduler.getTask(name)
+          if (existing && existing.running) {
+            scheduler.hotSwap(name, asyncFn)
+          } else {
+            // New inner declared during hot-swap (e.g. user added it on Run).
+            scheduler.registerLoop(name, asyncFn, { bpm: defaultBpm, synth: defaultSynth })
+            const task = scheduler.getTask(name)
+            if (task) task.outBus = loopBus
+          }
+        } else if (isReEvaluate) {
           pendingLoops.set(name, asyncFn)
           pendingDefaults.set(name, { bpm: defaultBpm, synth: defaultSynth })
         } else {

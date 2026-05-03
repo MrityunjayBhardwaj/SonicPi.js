@@ -312,6 +312,87 @@ live_loop("drums", (b) => {
     engine.dispose()
   })
 
+  // Issue #199 — nested live_loop inner body must hot-swap on Run.
+  // Pre-fix, the inner's asyncFn closure was never replaced because the
+  // synchronous inner registration fired inside the outer's iteration
+  // (after the top-level evaluate's pendingLoops had already been
+  // reconciled), so the new inner closure went into a dead map. Inner
+  // kept playing the OLD body forever. The fix routes nested+isReEvaluate
+  // through scheduler.hotSwap() directly, preserving virtualTime (SV6).
+  it('nested live_loop inner body refreshes on hot-swap (#199)', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+
+    const events: SoundEvent[] = []
+    engine.components.streaming!.eventStream.on((e) => events.push(e))
+
+    // First evaluate — inner plays note 60.
+    await engine.evaluate(`
+      live_loop :outer do
+        live_loop :inner do
+          play 60
+          sleep 1
+        end
+        sleep 4
+      end
+    `)
+    engine.play()
+
+    type Sched = {
+      tick: (t: number) => void
+      getTask: (n: string) => { virtualTime: number } | undefined
+    }
+    const scheduler = (engine as unknown as { scheduler: Sched }).scheduler
+
+    // Tick enough for the outer to iterate at least twice (forces the
+    // first-occurrence-wins guard to be exercised) and for inner to play.
+    for (let i = 0; i < 3; i++) {
+      scheduler.tick(20)
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    const innerVtBefore = scheduler.getTask('inner')!.virtualTime
+
+    const innerNotesBefore = events
+      .filter((e) => e.trackId === 'inner' && e.midiNote !== null)
+      .map((e) => e.midiNote)
+    expect(innerNotesBefore.length).toBeGreaterThan(0)
+    expect(innerNotesBefore.every((n) => n === 60)).toBe(true)
+
+    // Hot-swap: same outer, inner body now plays 72.
+    events.length = 0
+    await engine.evaluate(`
+      live_loop :outer do
+        live_loop :inner do
+          play 72
+          sleep 1
+        end
+        sleep 4
+      end
+    `)
+
+    // Outer iterates after the swap, re-declares the inner — that path is
+    // the one #199 fixed. Tick to let the new inner closure run.
+    for (let i = 0; i < 4; i++) {
+      scheduler.tick(20)
+      await new Promise((r) => setTimeout(r, 5))
+    }
+
+    const innerNotesAfter = events
+      .filter((e) => e.trackId === 'inner' && e.midiNote !== null)
+      .map((e) => e.midiNote)
+    expect(innerNotesAfter.length).toBeGreaterThan(0)
+    // Pre-fix: every entry would still be 60. Fixed: post-swap entries are 72.
+    expect(innerNotesAfter.some((n) => n === 72)).toBe(true)
+    expect(innerNotesAfter.every((n) => n === 72)).toBe(true)
+
+    // SV6: hot-swap preserves virtualTime (inner's clock keeps moving forward,
+    // not reset to a fresh task's now).
+    const innerVtAfter = scheduler.getTask('inner')!.virtualTime
+    expect(innerVtAfter).toBeGreaterThanOrEqual(innerVtBefore)
+
+    engine.dispose()
+  })
+
   it('eventStream receives events during playback', async () => {
     const engine = new SonicPiEngine()
     await engine.init()
