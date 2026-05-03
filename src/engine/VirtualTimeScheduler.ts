@@ -89,6 +89,16 @@ export interface SchedulerEvent {
 
 export type EventHandler = (event: SchedulerEvent) => void
 
+/**
+ * Payload returned to a sync waiter when the cue fires (#236).
+ * `bpm` carries the cuer's BPM at fire-time so waiters using `bpm_sync: true`
+ * can inherit it (matches desktop `__change_spider_bpm_time_and_beat!`).
+ */
+export interface SyncPayload {
+  args: unknown[]
+  bpm: number
+}
+
 export interface SchedulerOptions {
   /** AudioContext (or mock) for timing */
   getAudioTime?: () => number
@@ -130,12 +140,12 @@ export class VirtualTimeScheduler {
   /** Map from `${time}:${taskId}` to insertion order for stable sorting */
   // entryOrder Map removed — insertion order stored directly on SleepEntry (#75)
   private _running = false
-  /** Cue state: last cue per name with virtual time and args */
-  private cueMap = new Map<string, { time: number; args: unknown[] }>()
+  /** Cue state: last cue per name with virtual time, args, and cuer's BPM. */
+  private cueMap = new Map<string, { time: number; args: unknown[]; bpm: number }>()
   /** Tasks waiting for a cue */
   private syncWaiters = new Map<string, Array<{
     taskId: string
-    resolve: (args: unknown[]) => void
+    resolve: (payload: SyncPayload) => void
   }>>()
 
   constructor(options: SchedulerOptions = {}) {
@@ -333,8 +343,12 @@ export class VirtualTimeScheduler {
   fireCue(name: string, taskId: string, args: unknown[] = []): void {
     const task = this.tasks.get(taskId)
     const cueVirtualTime = task?.virtualTime ?? this.getAudioTime()
+    // Synthetic external sources ('__midi__', '__osc__', #151) have no real
+    // task — fall back to the engine's startup BPM so sync_bpm waiters still
+    // get a defined value rather than NaN.
+    const cueBpm = task?.bpm ?? 60
 
-    this.cueMap.set(name, { time: cueVirtualTime, args })
+    this.cueMap.set(name, { time: cueVirtualTime, args, bpm: cueBpm })
 
     // Emit cue event for UI (CueLog panel)
     this.emitEvent({
@@ -357,7 +371,7 @@ export class VirtualTimeScheduler {
           // Inherit cue's virtual time (SV5)
           waiterTask.virtualTime = cueVirtualTime
         }
-        waiter.resolve(args)
+        waiter.resolve({ args, bpm: cueBpm })
       }
       this.syncWaiters.delete(pattern)
     }
@@ -365,15 +379,17 @@ export class VirtualTimeScheduler {
 
   /**
    * Wait for a cue. The calling task suspends until fireCue(name) is called.
-   * On resume, the task inherits the cue's virtual time (SV5).
+   * On resume, the task inherits the cue's virtual time (SV5). The resolved
+   * payload also carries the cuer's BPM so callers using `bpm_sync: true`
+   * (sync_bpm, #236) can mutate the waiter's task.bpm.
    */
-  waitForSync(name: string, taskId: string): Promise<unknown[]> {
+  waitForSync(name: string, taskId: string): Promise<SyncPayload> {
     // Always wait for a FRESH cue — never resolve from stale cueMap entries.
     // In Sonic Pi, sync(:name) parks the thread until a NEW cue fires.
     // get(:name) returns existing values; sync waits for the next one.
     // Without this, loops synced to met1 start at vt=0 instead of waiting
     // for met1's first beat (met1's auto-cue fires before synced loops run).
-    return new Promise<unknown[]>((resolve) => {
+    return new Promise<SyncPayload>((resolve) => {
       const waiters = this.syncWaiters.get(name) ?? []
       waiters.push({ taskId, resolve })
       this.syncWaiters.set(name, waiters)

@@ -8,6 +8,7 @@ import { normalizeFxParams } from './SoundLayer'
 import { DSL_NAMES } from './DslNames'
 import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbox'
 import { autoTranspileDetailed } from './TreeSitterTranspiler'
+import { getExample, type Example } from './examples'
 import { initTreeSitter } from './TreeSitterTranspiler'
 
 /**
@@ -66,6 +67,7 @@ export class SonicPiEngine {
   private runtimeErrorHandler: ((err: Error) => void) | null = null
   private printHandler: ((msg: string) => void) | null = null
   private cueHandler: ((name: string, time: number) => void) | null = null
+  private loadExampleHandler: ((example: Example) => void) | null = null
   /**
    * Per-evaluation dedup set for clamp/range warnings (issue #202, G4).
    * SoundLayer's validateAndClamp emits one warning per out-of-range param,
@@ -128,6 +130,15 @@ export class SonicPiEngine {
    *  next eval's scopeBase so removing a `define` line from the buffer does not
    *  break a still-running live_loop that calls it. (#215) */
   private definedFns = new Map<string, (...args: unknown[]) => unknown>()
+  /**
+   * True only while evaluating the synchronous top-level body of user code
+   * (the window between `sandbox.execute(...)` start and resolve in
+   * `evaluate()`). Used by `run_code` and `load_example` to refuse calls
+   * that come from inside a live_loop body's later async iteration —
+   * re-entering `evaluate` from there would dispose the running scheduler
+   * mid-iteration. (#240 / #241)
+   */
+  private inTopLevelEval = false
   /** Cached `defonce` values (#212 / #233). Survive across re-evals — that's
    *  the whole point. Cleared only on full engine reset / dispose. */
   private defonceCache = new Map<string, unknown>()
@@ -1088,6 +1099,75 @@ export class SonicPiEngine {
           this.defonceCache.set(name, value)
           return value
         },
+        // Tier B PR #3 — sync_bpm (#236). Inside live_loops the transpiler
+        // routes `sync_bpm :name` to `__b.sync_bpm(name)` via BUILDER_METHODS.
+        // At top level outside in_thread/live_loop the call has no effect —
+        // top-level code runs once linearly and there's no concurrent
+        // context to park. Surface that as a printHandler warning so the
+        // user gets an actionable signal instead of a silent no-op (#239).
+        (name: string) => {
+          topLevelBuilder.sync_bpm(name)
+          if (this.printHandler) {
+            this.printHandler(`[Warning] sync_bpm :${name} at top level has no effect — wrap in in_thread or call from inside a live_loop body.`)
+          }
+        },
+        // Tier B PR #3 — run_code (#236). Host-side dynamic eval. Replaces
+        // all running loops with the supplied code, equivalent to pressing
+        // Run with a fresh buffer. Returns a Promise that resolves when the
+        // new evaluation completes. Refuses calls from inside a live_loop
+        // body iteration — re-entering evaluate() from there would dispose
+        // the running scheduler mid-iteration. (#240)
+        (code: string) => {
+          if (typeof code !== 'string') {
+            throw new TypeError(`run_code expects a string, got ${typeof code}`)
+          }
+          if (!this.inTopLevelEval) {
+            throw new Error(
+              'run_code can only be called at top level — calling it from inside a live_loop body re-enters the engine which is not supported. Use cue/sync to coordinate between loops instead.',
+            )
+          }
+          return this.evaluate(code)
+        },
+        // Tier B PR #3 — eval_file / run_file (#236). Both stubs throw an
+        // informative error redirecting users to the working alternatives.
+        // Sonic Pi Web has no filesystem; on desktop these read a .rb file
+        // from disk. We surface that limitation explicitly rather than
+        // silently no-op'ing, so user-error from copy-pasted desktop code
+        // gets a useful message in the editor's runtime-error overlay.
+        (_path: string) => {
+          throw new Error(
+            'browser sandbox: no filesystem access; use run_code(string) or load_example(:name) instead',
+          )
+        },
+        (_path: string) => {
+          throw new Error(
+            'browser sandbox: no filesystem access; use run_code(string) or load_example(:name) instead',
+          )
+        },
+        // Tier B PR #3 — load_example (#236). Looks up the example by name in
+        // the bundled registry; on hit, calls the host's loadExampleHandler so
+        // the editor replaces its buffer + re-runs. On miss, throws an
+        // informative error listing the available names. If no host handler
+        // is registered (engine-only test harness), throws a different error
+        // explaining the missing wiring rather than silently no-op'ing.
+        (name: string) => {
+          if (typeof name !== 'string') {
+            throw new TypeError(`load_example expects a name (string or symbol), got ${typeof name}`)
+          }
+          if (!this.inTopLevelEval) {
+            throw new Error(
+              'load_example can only be called at top level — calling it from inside a live_loop replaces the running buffer mid-iteration which is not supported.',
+            )
+          }
+          const example = getExample(name)
+          if (!example) {
+            throw new Error(`load_example: no example named "${name}". See examples panel for the full list.`)
+          }
+          if (!this.loadExampleHandler) {
+            throw new Error('load_example requires a host editor — no loadExampleHandler registered on the engine.')
+          }
+          this.loadExampleHandler(example)
+        },
       ]
 
       const codeWarnings = validateCode(transpiledCode)
@@ -1107,7 +1187,17 @@ export class SonicPiEngine {
       }
       const sandbox = createIsolatedExecutor(transpiledCode, dslNames, persistedFns)
       scopeHandle = sandbox.scopeHandle
-      await sandbox.execute(...dslValues)
+      // Set the re-entry guard while the synchronous top-level body runs.
+      // run_code / load_example check this flag and refuse if false (i.e.
+      // called later from inside a live_loop body iteration). Save+restore
+      // pattern handles legitimate nested run_code at top level. (#240/#241)
+      const prevInTopLevelEval = this.inTopLevelEval
+      this.inTopLevelEval = true
+      try {
+        await sandbox.execute(...dslValues)
+      } finally {
+        this.inTopLevelEval = prevInTopLevelEval
+      }
 
       if (isReEvaluate) {
         const oldLoops = scheduler.getRunningLoopNames()
@@ -1276,6 +1366,17 @@ export class SonicPiEngine {
   /** Register a handler for cue events (for the CueLog panel). */
   setCueHandler(handler: (name: string, time: number) => void): void {
     this.cueHandler = handler
+  }
+
+  /**
+   * Register a handler for `load_example(:name)` calls in user code (#236).
+   * The host (App.ts) wires this to its loadExample(example) method which
+   * replaces the editor buffer with the example's Ruby code and runs it.
+   * If unset, load_example throws an informative error so the engine works
+   * standalone without requiring an editor harness.
+   */
+  setLoadExampleHandler(handler: (example: Example) => void): void {
+    this.loadExampleHandler = handler
   }
 
   /**

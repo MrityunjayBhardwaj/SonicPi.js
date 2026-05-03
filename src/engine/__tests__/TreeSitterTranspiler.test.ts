@@ -1198,6 +1198,51 @@ end`)
       expect(steps[1].name).toBe('bass')
     })
 
+    it('sync_bpm emits a sync step with bpmSync flag (#236)', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  sync_bpm :tick
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('sync')
+      expect(steps[0].name).toBe('tick')
+      expect(steps[0].bpmSync).toBe(true)
+    })
+
+    it('live_audio :foo, :stop emits a stop step (Ruby symbol form, #243)', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  live_audio :foo, :stop
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('liveAudio')
+      expect(steps[0].name).toBe('foo')
+      expect(steps[0].stop).toBe(true)
+    })
+
+    it('live_audio "foo", "stop" emits a stop step (string form, #243)', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  live_audio "foo", "stop"
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('liveAudio')
+      expect(steps[0].name).toBe('foo')
+      expect(steps[0].stop).toBe(true)
+    })
+
+    it('live_audio :foo, input: 3 still emits a start step with opts (#243)', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  live_audio :foo, input: 3
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      expect(steps[0].tag).toBe('liveAudio')
+      expect(steps[0].name).toBe('foo')
+      expect(steps[0].stop).toBeUndefined()
+      expect(steps[0].opts.input).toBe(3)
+    })
+
     it('define creates callable function with b injection', () => {
       const { steps, error } = executeTranspiled(`define :hit do
   sample :bd_haus

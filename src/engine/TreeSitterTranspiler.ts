@@ -212,7 +212,7 @@ interface TranspileContext {
  */
 const BUILDER_METHODS = new Set([
   // Core
-  'play', 'sleep', 'wait', 'sample', 'sync', 'cue', 'set',
+  'play', 'sleep', 'wait', 'sample', 'sync', 'sync_bpm', 'cue', 'set',
   'use_synth', 'use_bpm', 'use_random_seed',
   'control', 'stop', 'live_audio',
   'with_fx', 'in_thread', 'at',

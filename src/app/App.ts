@@ -967,6 +967,13 @@ export class App {
           this.cueLog.logCue(name, this.cueLog.currentRun, time * 1000)
         })
 
+        this.engine.setLoadExampleHandler((example) => {
+          // Forward `load_example :name` calls in user code to the editor's
+          // existing load-example flow (#236). Replaces buffer + auto-runs
+          // when already playing — same shape as the dropdown selection.
+          void this.loadExample(example)
+        })
+
         this.console.logSystem('  Loading synthdefs + initialising scsynth...')
         try {
           await this.engine.init()

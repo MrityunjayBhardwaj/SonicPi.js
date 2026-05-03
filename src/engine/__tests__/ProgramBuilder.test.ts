@@ -659,5 +659,24 @@ describe('ProgramBuilder', () => {
       const step = steps[0] as Extract<(typeof steps)[0], { tag: 'liveAudio' }>
       expect(step.opts.stereo).toBe(1)
     })
+
+    it('live_audio(name, "stop") emits a stop step (#236)', () => {
+      const b = new ProgramBuilder()
+      b.live_audio('mic', 'stop')
+      const steps = b.build()
+
+      expect(steps).toHaveLength(1)
+      const step = steps[0] as Extract<(typeof steps)[0], { tag: 'liveAudio' }>
+      expect(step.tag).toBe('liveAudio')
+      expect(step.name).toBe('mic')
+      expect(step.stop).toBe(true)
+    })
+
+    it('live_audio(name) without :stop has no stop flag', () => {
+      const b = new ProgramBuilder()
+      b.live_audio('mic')
+      const step = b.build()[0] as Extract<ReturnType<typeof b.build>[0], { tag: 'liveAudio' }>
+      expect(step.stop).toBeUndefined()
+    })
   })
 })

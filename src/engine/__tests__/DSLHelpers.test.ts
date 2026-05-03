@@ -979,3 +979,152 @@ describe('MidiBridge — output send routing', () => {
     expect(out.sent[0][0]).toBe(0x9F) // 0x90 | 15
   })
 })
+
+describe('eval_file / run_file browser-sandbox stubs (Tier B PR #3 #236)', () => {
+  it('eval_file throws an informative error redirecting to run_code / load_example', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const result = await engine.evaluate('eval_file "some/path.rb"')
+    expect(result.error).toBeDefined()
+    expect(result.error!.message).toContain('browser sandbox')
+    expect(result.error!.message).toMatch(/run_code|load_example/)
+    engine.dispose()
+  })
+
+  it('run_file throws the same redirect message', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const result = await engine.evaluate('run_file "some/path.rb"')
+    expect(result.error).toBeDefined()
+    expect(result.error!.message).toContain('browser sandbox')
+    expect(result.error!.message).toMatch(/run_code|load_example/)
+    engine.dispose()
+  })
+})
+
+describe('load_example host bridge (Tier B PR #3 #236)', () => {
+  it('forwards the resolved Example to the registered handler', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const { getExampleNames } = await import('../examples')
+    const firstExample = getExampleNames()[0]
+    expect(firstExample).toBeTruthy()
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const received: { name: string; ruby: string }[] = []
+    engine.setLoadExampleHandler((ex) => { received.push({ name: ex.name, ruby: ex.ruby }) })
+    const result = await engine.evaluate(`load_example :${firstExample.replace(/\s+/g, '_')}`)
+    // The transpiled symbol uses underscores; if the registry name has spaces,
+    // the lookup will fall through to the not-found path. Use a string literal
+    // for a guaranteed exact match instead.
+    if (result.error) {
+      const result2 = await engine.evaluate(`load_example "${firstExample}"`)
+      expect(result2.error).toBeUndefined()
+    }
+    expect(received.length).toBeGreaterThanOrEqual(1)
+    expect(received[0].name).toBe(firstExample)
+    expect(received[0].ruby.length).toBeGreaterThan(0)
+    engine.dispose()
+  })
+
+  it('throws when the name is unknown (lists hint at examples panel)', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    engine.setLoadExampleHandler(() => { /* would-be host */ })
+    const result = await engine.evaluate('load_example "this_example_does_not_exist"')
+    expect(result.error).toBeDefined()
+    expect(result.error!.message).toContain('no example named')
+    engine.dispose()
+  })
+
+  it('throws when no host handler is registered (engine-only harness)', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const { getExampleNames } = await import('../examples')
+    const firstExample = getExampleNames()[0]
+    const engine = new SonicPiEngine()
+    await engine.init()
+    // Deliberately do NOT call setLoadExampleHandler.
+    const result = await engine.evaluate(`load_example "${firstExample}"`)
+    expect(result.error).toBeDefined()
+    expect(result.error!.message).toContain('host editor')
+    engine.dispose()
+  })
+})
+
+describe('run_code / load_example re-entry guards (Tier B PR #3 #240/#241)', () => {
+  it('run_code inside a live_loop body throws the re-entry guard error', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const errors: string[] = []
+    engine.setRuntimeErrorHandler((e) => { errors.push(e.message) })
+
+    const r = await engine.evaluate(`live_loop :a do
+  run_code "play 60"
+  sleep 1
+end`)
+    expect(r.error).toBeUndefined()
+    // Start the scheduler so the live_loop body iterations execute. The first
+    // iteration's body-build throws synchronously; the scheduler's loop wrapper
+    // catches it and routes to onLoopError → runtimeErrorHandler.
+    engine.play()
+    for (let i = 0; i < 50 && errors.length === 0; i++) {
+      await new Promise(r => setTimeout(r, 10))
+    }
+    engine.stop()
+    expect(errors.some(m => m.includes('run_code can only be called at top level'))).toBe(true)
+    engine.dispose()
+  })
+
+  it('load_example inside a live_loop body throws the re-entry guard error', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const { getExampleNames } = await import('../examples')
+    const exampleName = getExampleNames()[0]
+    const engine = new SonicPiEngine()
+    await engine.init()
+    engine.setLoadExampleHandler(() => { /* would-be host */ })
+    const errors: string[] = []
+    engine.setRuntimeErrorHandler((e) => { errors.push(e.message) })
+
+    const r = await engine.evaluate(`live_loop :a do
+  load_example "${exampleName}"
+  sleep 1
+end`)
+    expect(r.error).toBeUndefined()
+    engine.play()
+    for (let i = 0; i < 50 && errors.length === 0; i++) {
+      await new Promise(r => setTimeout(r, 10))
+    }
+    engine.stop()
+    expect(errors.some(m => m.includes('load_example can only be called at top level'))).toBe(true)
+    engine.dispose()
+  })
+
+  it('run_code at top level still works (guard is OFF during synchronous top-level body)', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    // run_code at top level just kicks off another evaluate. We can't easily
+    // observe the inner program from here, but the absence of an error proves
+    // the top-level guard is OFF when expected.
+    const r = await engine.evaluate(`run_code "play 60"`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+})
+
+describe('sync_bpm at top level surfaces a warning (Tier B PR #3 #239)', () => {
+  it('logs an SV19 warning when called outside in_thread/live_loop', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const printed: string[] = []
+    engine.setPrintHandler((m) => { printed.push(m) })
+    const r = await engine.evaluate('sync_bpm :nope')
+    expect(r.error).toBeUndefined()
+    expect(printed.some(m => m.includes('sync_bpm') && m.includes('top level has no effect'))).toBe(true)
+    engine.dispose()
+  })
+})

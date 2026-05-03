@@ -109,6 +109,27 @@ export const DSL_NAMES = [
   // values are spread into persistedFns at the next eval so removing the
   // defonce line doesn't break still-running live_loops that read `name`.
   'defonce',
+  // Tier B PR #3 — sync_bpm (#236). Deferred ProgramBuilder step that wraps
+  // sync with bpm_sync: true. Inside live_loops the transpiler routes
+  // through __b.sync_bpm via BUILDER_METHODS; at top level the runtime stub
+  // forwards to topLevelBuilder.sync_bpm. Cuer's BPM travels through the
+  // extended cueMap entry; AudioInterpreter's sync handler mutates task.bpm
+  // when step.bpmSync is true.
+  'sync_bpm',
+  // Tier B PR #3 — run_code (#236). Host-side dynamic eval — calls back into
+  // engine.evaluate with the supplied string. Top-level only; throws inside
+  // live_loops to match desktop spider re-entry semantics.
+  'run_code',
+  // Tier B PR #3 — eval_file / run_file (#236). Browser-sandbox stubs: the
+  // engine has no filesystem access, so both throw an informative error
+  // pointing users at run_code(string) / load_example(:name) instead.
+  // Listed in the public DSL surface so user code that references them
+  // gets a clear redirect rather than a silent globalThis lookup miss.
+  'eval_file', 'run_file',
+  // Tier B PR #3 — load_example (#236). Looks up an example by name in the
+  // bundled registry then forwards to the host's loadExampleHandler so the
+  // editor replaces its buffer + re-runs. Top-level only (host-bridge).
+  'load_example',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

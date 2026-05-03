@@ -234,9 +234,19 @@ export class ProgramBuilder {
     return this
   }
 
-  sync(name: string): this {
-    this.steps.push({ tag: 'sync', name })
+  sync(name: string, opts?: { bpm_sync?: boolean }): this {
+    const bpmSync = opts?.bpm_sync === true
+    this.steps.push(bpmSync ? { tag: 'sync', name, bpmSync: true } : { tag: 'sync', name })
     return this
+  }
+
+  /**
+   * sync_bpm — alias for sync with bpm_sync: true (#236).
+   * Inherits both virtual time AND BPM from the cuer at wake time.
+   * Matches desktop `core.rb:4490-4494`.
+   */
+  sync_bpm(name: string): this {
+    return this.sync(name, { bpm_sync: true })
   }
 
   control(nodeRef: number, params: Record<string, number>): this {
@@ -320,8 +330,17 @@ export class ProgramBuilder {
     return this
   }
 
-  live_audio(name: string, opts?: Record<string, number>): this {
-    this.steps.push({ tag: 'liveAudio', name, opts: opts ?? {} })
+  live_audio(name: string, optsOrStop?: Record<string, number> | 'stop', maybeOpts?: Record<string, number>): this {
+    // `live_audio :name, :stop` (#236) — kills the named live_audio synth.
+    // Symbols transpile to JS strings, so the second arg is "stop" when the
+    // user writes `:stop`. Match upstream `sound.rb:195-197` which dispatches
+    // on args[1] == :stop. Also accept `live_audio :name, :stop, opts` for
+    // forward-compat though desktop ignores trailing args after :stop.
+    if (optsOrStop === 'stop') {
+      this.steps.push({ tag: 'liveAudio', name, opts: maybeOpts ?? {}, stop: true })
+      return this
+    }
+    this.steps.push({ tag: 'liveAudio', name, opts: (optsOrStop as Record<string, number>) ?? {} })
     return this
   }
 

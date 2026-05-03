@@ -155,6 +155,12 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['get_pitch_bend',   'Stale-read P2.'],
   ['get_note_on',      'Stale-read P2.'],
   ['get_note_off',     'Stale-read P2.'],
+  // Tier B PR #3 — host-bridge (#236). Calls back into engine.evaluate at
+  // the meta layer; not a deferred step on any builder. Top-level only.
+  ['run_code',         'Host-bridge: forwards to engine.evaluate(). Replaces running loops with a fresh evaluation. No deferred-step semantics.'],
+  ['eval_file',        'Browser-sandbox stub: throws redirect to run_code/load_example. No filesystem access in browser.'],
+  ['run_file',         'Browser-sandbox stub: throws redirect to run_code/load_example. No filesystem access in browser.'],
+  ['load_example',     'Host-bridge: looks up by name in examples registry, forwards to host loadExampleHandler. Top-level only.'],
 ])
 
 describe('DSL builder contract (issue #193)', () => {
