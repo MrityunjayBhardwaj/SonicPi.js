@@ -1105,13 +1105,24 @@ export class App {
     this.saveBuffers()
     this.sessionLog.logLoadExample(example.name, example.ruby)
     this.console.logSystem(`  Loaded: ${example.name} — ${example.description}`)
-    if (this.playing) {
-      this.engine!.stop()
-      // Wait for pre-scheduled audio in the lookahead buffer to drain before
-      // starting the new example — otherwise scsynth plays the tail of the old one.
-      await new Promise(r => setTimeout(r, this.engine!.schedAhead * 1000 + 50))
-      await this.handlePlay()
+    // Always replay so the DSL `load_example "..."` works on first run.
+    // The previous `if (this.playing)` guard raced with handlePlay setting
+    // playing=true AFTER `await evaluate` returned — meaning the DSL handler
+    // (fire-and-forget from inside evaluate) saw playing=false and skipped.
+    //
+    // The setTimeout yield is mandatory: when triggered from the DSL, we are
+    // synchronously inside the outer evaluate. engine.evaluate is not
+    // reentrant — we must let the outer call finish before recursing into
+    // handlePlay. The drain delay also lets pre-scheduled audio in the
+    // lookahead buffer flush so scsynth doesn't play the tail of the old run.
+    if (this.engine && this.playing) {
+      const drainMs = this.engine.schedAhead * 1000 + 50
+      this.engine.stop()
+      await new Promise(r => setTimeout(r, drainMs))
+    } else {
+      await new Promise(r => setTimeout(r, 0))
     }
+    await this.handlePlay()
   }
 
   private async handleSave(): Promise<void> {
