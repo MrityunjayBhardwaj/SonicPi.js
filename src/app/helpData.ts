@@ -522,6 +522,233 @@ end`,
 sleep 4
 live_audio :mic, :stop`,
   },
+
+  // Tier C PR #1 — state wrappers (use_*, with_*, current_*)
+  use_arg_checks: {
+    signature: 'use_arg_checks(true_or_false)',
+    description: 'Enable or disable arg-name checking. When on, calls like `play 50, foo: 1` warn about the unknown opt `foo`. See with_arg_checks for a block-scoped variant.',
+    params: [
+      { name: 'true_or_false', type: 'boolean', desc: 'Whether to check arg names' },
+    ],
+    example: `play 50, release: 5  # Args are checked
+use_arg_checks false
+play 50, release: 5  # Args are not checked`,
+  },
+  with_arg_checks: {
+    signature: 'with_arg_checks(true_or_false) do ... end',
+    description: 'Block-scoped form of use_arg_checks — restores the previous setting after the block exits.',
+    params: [
+      { name: 'true_or_false', type: 'boolean', desc: 'Whether to check arg names inside the block' },
+    ],
+    example: `use_arg_checks true
+with_arg_checks false do
+  play 50, release: 3  # Args are not checked
+end
+play 90  # Args are checked again`,
+  },
+  use_timing_guarantees: {
+    signature: 'use_timing_guarantees(true_or_false)',
+    description: 'When true, synth and sample triggers are inhibited if the scheduler is running late. When false (default), late triggers still fire. See with_timing_guarantees for a block-scoped variant.',
+    params: [
+      { name: 'true_or_false', type: 'boolean', desc: 'Whether to drop late triggers' },
+    ],
+    example: `use_timing_guarantees true
+sample :loop_amen  # dropped if even slightly late`,
+  },
+  with_timing_guarantees: {
+    signature: 'with_timing_guarantees(true_or_false) do ... end',
+    description: 'Block-scoped form of use_timing_guarantees — restores the previous setting after the block exits.',
+    params: [
+      { name: 'true_or_false', type: 'boolean', desc: 'Whether to drop late triggers inside the block' },
+    ],
+    example: `with_timing_guarantees true do
+  sample :loop_amen  # dropped if late
+end`,
+  },
+  use_merged_synth_defaults: {
+    signature: 'use_merged_synth_defaults(opts)',
+    description: 'Like use_synth_defaults, but merges the new opts with any existing defaults instead of replacing them.',
+    params: [
+      { name: 'opts', type: 'hash', desc: 'Default arg values to merge in' },
+    ],
+    example: `use_merged_synth_defaults amp: 0.5
+play 50  # amp 0.5
+use_merged_synth_defaults cutoff: 80
+play 50  # amp 0.5 + cutoff 80`,
+  },
+  with_merged_synth_defaults: {
+    signature: 'with_merged_synth_defaults(opts) do ... end',
+    description: 'Block-scoped form of use_merged_synth_defaults — restores the previous defaults after the block exits.',
+    params: [
+      { name: 'opts', type: 'hash', desc: 'Default arg values to merge in for the block' },
+    ],
+    example: `with_merged_synth_defaults amp: 0.5, pan: 1 do
+  play 50  # amp 0.5, pan 1
+end`,
+  },
+  use_merged_sample_defaults: {
+    signature: 'use_merged_sample_defaults(opts)',
+    description: 'Like use_sample_defaults, but merges the new opts with any existing defaults instead of replacing them.',
+    params: [
+      { name: 'opts', type: 'hash', desc: 'Default arg values to merge in' },
+    ],
+    example: `use_merged_sample_defaults amp: 0.5, cutoff: 70
+sample :loop_amen  # amp 0.5, cutoff 70
+use_merged_sample_defaults cutoff: 90
+sample :loop_amen  # amp 0.5, cutoff 90`,
+  },
+  with_merged_sample_defaults: {
+    signature: 'with_merged_sample_defaults(opts) do ... end',
+    description: 'Block-scoped form of use_merged_sample_defaults — restores the previous defaults after the block exits.',
+    params: [
+      { name: 'opts', type: 'hash', desc: 'Default arg values to merge in for the block' },
+    ],
+    example: `with_merged_sample_defaults cutoff: 90 do
+  sample :loop_amen  # uses merged defaults
+end`,
+  },
+  with_debug: {
+    signature: 'with_debug(true_or_false) do ... end',
+    description: 'Block-scoped form of use_debug — restores the previous debug setting after the block exits.',
+    params: [
+      { name: 'true_or_false', type: 'boolean', desc: 'Whether to log debug messages inside the block' },
+    ],
+    example: `with_debug false do
+  play 50  # no debug log
+end`,
+  },
+  current_timing_guarantees: {
+    signature: 'current_timing_guarantees()',
+    description: 'Return whether timing guarantees are currently active (true/false).',
+    params: [],
+    example: 'puts current_timing_guarantees',
+  },
+
+  // Tier C PR #2 — sample/buffer registry
+  sample_paths: {
+    signature: 'sample_paths(filter)',
+    description: 'Return a ring of every sample name known to the engine (bundled catalog + any extra samples already loaded). In the browser, the optional `filter` is matched as a substring (not a filesystem glob).',
+    params: [
+      { name: 'filter', type: 'string', desc: 'Optional substring filter on sample names' },
+    ],
+    example: `puts sample_paths.length      # all bundled sample names
+puts sample_paths "loop_amen" # names containing "loop_amen"`,
+  },
+  sample_buffer: {
+    signature: 'sample_buffer(name)',
+    description: 'Return a buffer-info object for a named sample. The browser stub exposes `.name` and `.duration` so code that reads `sample_buffer(:foo).duration` works. Recording into named buffers is not yet wired.',
+    params: [
+      { name: 'name', type: 'string|symbol', desc: 'Sample name' },
+    ],
+    example: 'puts sample_buffer(:loop_amen).duration',
+  },
+  sample_free: {
+    signature: 'sample_free(name)',
+    description: 'Drop a single sample from the loaded cache. The next `sample :name` call will re-load it. Returns true if it was loaded, false otherwise.',
+    params: [
+      { name: 'name', type: 'string|symbol', desc: 'Sample name to free' },
+    ],
+    example: `sample :loop_amen
+sample_free :loop_amen   # frees from memory
+sample :loop_amen        # re-loads`,
+  },
+  sample_free_all: {
+    signature: 'sample_free_all()',
+    description: 'Drop every sample from the loaded cache. Returns the number freed. Useful before benchmarks or under memory pressure.',
+    params: [],
+    example: `sample :loop_amen
+sample :ambi_lunar_land
+sample_free_all          # both freed
+sample :loop_amen        # re-loads`,
+  },
+  load_samples: {
+    signature: 'load_samples(*names)',
+    description: 'Pre-load a list of bundled-catalog samples so the first `sample :name` call is instant (no first-load CDN fetch latency). Browser variant: takes one or more sample symbols/names — filesystem paths and globs are not supported.',
+    params: [
+      { name: 'names', type: 'symbols', desc: 'One or more bundled sample names' },
+    ],
+    example: 'load_samples :bd_haus, :sn_dub, :loop_amen',
+  },
+  buffer: {
+    signature: 'buffer(name, duration?)',
+    description: 'Browser stub for the desktop named-buffer API. Returns a buffer-info shape `{name, duration}` so code that reads `.duration` works. Recording into the buffer (via the `:record` FX) is not yet wired — duration defaults to 8 beats when the name is unknown.',
+    params: [
+      { name: 'name', type: 'string|symbol', desc: 'Buffer name' },
+      { name: 'duration', type: 'number', default: '8', desc: 'Requested duration (beats)' },
+    ],
+    example: `b = buffer(:foo, 8)
+puts b.duration   # => 8`,
+  },
+
+  // Tier C PR #3 — mixer + introspection
+  set_mixer_control: {
+    signature: 'set_mixer_control! opts',
+    description: 'Control the main mixer that all sound passes through. Useful for sweeping a global lpf/hpf or trimming overall amp. Reset to defaults with reset_mixer!.',
+    params: [
+      { name: 'pre_amp', type: 'number', default: '1', desc: 'Amplitude before the FX stage' },
+      { name: 'amp', type: 'number', default: '1', desc: 'Amplitude after the FX stage' },
+      { name: 'lpf', type: 'number', default: '135.5', desc: 'Global low-pass cutoff (MIDI)' },
+      { name: 'hpf', type: 'number', default: '0', desc: 'Global high-pass cutoff (MIDI)' },
+      { name: 'lpf_bypass', type: 'number', default: '0', desc: 'Bypass global lpf (1 = bypass)' },
+      { name: 'hpf_bypass', type: 'number', default: '0', desc: 'Bypass global hpf (1 = bypass)' },
+    ],
+    example: 'set_mixer_control! lpf: 30, lpf_slide: 16  # slide global lpf to 30 over 16 beats',
+  },
+  reset_mixer: {
+    signature: 'reset_mixer!',
+    description: 'Reset the main mixer to its default settings — undoes any changes made via set_mixer_control!.',
+    params: [],
+    example: `set_mixer_control! lpf: 70
+sample :loop_amen
+sleep 3
+reset_mixer!
+sample :loop_amen   # back to normal cutoff`,
+  },
+  scsynth_info: {
+    signature: 'scsynth_info()',
+    description: 'Return a flat dict of information about the running audio synthesiser (sample rate, control rate, bus counts, etc.). When no audio bridge is connected, returns a safe placeholder shape.',
+    params: [],
+    example: `info = scsynth_info
+puts info.sample_rate        # => 44100
+puts info.num_audio_busses   # => 1024`,
+  },
+  status: {
+    signature: 'status()',
+    description: 'Return a flat dict describing the synthesis environment (active ugens/synths/groups, CPU load, sample rate, bus counts). Mostly useful for debugging.',
+    params: [],
+    example: `s = status
+puts s.synths     # currently active synths
+puts s.avg_cpu    # average CPU load`,
+  },
+  vt: {
+    signature: 'vt()',
+    description: 'Return the current thread\'s virtual run time, in seconds. Alias of current_time.',
+    params: [],
+    example: `puts vt   # => 0
+sleep 1
+puts vt   # => 1`,
+  },
+  bt: {
+    signature: 'bt(seconds)',
+    description: 'Beat-time conversion — scales the given seconds to the current BPM (returns `seconds * 60 / bpm`). Useful for adding bpm scaling to a literal duration.',
+    params: [
+      { name: 'seconds', type: 'number', desc: 'Number to scale by current BPM' },
+    ],
+    example: `use_bpm 120
+puts bt(1)   # => 0.5
+use_bpm 30
+puts bt(1)   # => 2`,
+  },
+  rt: {
+    signature: 'rt(seconds)',
+    description: 'Real-time conversion — bypasses BPM scaling, returning a value in beats that corresponds to a literal real-time duration (returns `seconds * bpm / 60`). Useful when you want a sleep that\'s always one wall-clock second regardless of BPM.',
+    params: [
+      { name: 'seconds', type: 'number', desc: 'Real-time seconds to convert to beats' },
+    ],
+    example: `use_bpm 120
+sleep 1       # half a real second
+sleep rt(1)   # a full real second`,
+  },
 }
 
 // ---------------------------------------------------------------------------
