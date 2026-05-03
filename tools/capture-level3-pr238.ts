@@ -194,10 +194,9 @@ async function testLiveAudioStop() {
 
 async function testLoadExample() {
   console.log('\n=== TEST 2: load_example(:name) — buffer replaced + new example plays ===')
-  console.log('  Note: tests the "already playing" path. The first-run path has a')
-  console.log('  pre-existing host race in App.handlePlay (this.playing set AFTER')
-  console.log('  evaluate completes, so loadExample\'s `if (this.playing)` check')
-  console.log('  fails on first run — tracked separately).')
+  console.log('  Tests the "already playing" path: a buzz live_loop runs first,')
+  console.log('  then load_example "Basic Beat" replaces the buffer + auto-replays.')
+  console.log('  TEST 3 covers the first-run path (#246 fix).')
   const browser = await chromium.launch({
     headless: false,
     args: ['--autoplay-policy=no-user-gesture-required'],
@@ -255,18 +254,73 @@ async function testLoadExample() {
   return pass
 }
 
+async function testLoadExampleFirstRun() {
+  console.log('\n=== TEST 3: load_example(:name) on FIRST RUN (#246 fix) ===')
+  console.log('  Engine has never played. Buffer = `load_example "Basic Beat"`.')
+  console.log('  Without the fix, loadExample\'s `if (this.playing)` guard saw')
+  console.log('  playing=false (set AFTER await evaluate) and silently skipped')
+  console.log('  the replay. With the fix, the buffer replays unconditionally.')
+  const browser = await chromium.launch({
+    headless: false,
+    args: ['--autoplay-policy=no-user-gesture-required'],
+  })
+  const page = await setupPage(browser, 'load_example_first_run')
+
+  // Step 1 — fresh app, engine never played. Run `load_example "Basic Beat"`.
+  await setEditorAndRun(page, `load_example "Basic Beat"`)
+
+  // Poll for buffer replacement to "Basic Beat" content. Longer window than
+  // Test 2 because the fresh-engine init (~2-4s) happens inline.
+  let editorContent = ''
+  for (let i = 0; i < 80; i++) {
+    editorContent = await readEditor(page)
+    if (editorContent.includes('live_loop :drums') && editorContent.includes('bd_haus')) break
+    await page.waitForTimeout(150)
+  }
+  const bufferReplaced = editorContent.includes('live_loop :drums') &&
+                          editorContent.includes('bd_haus') &&
+                          editorContent.includes('sn_dub')
+  console.log(`  Buffer replaced to Basic Beat: ${bufferReplaced ? '✓' : '✗'}`)
+
+  // Wait for the recursive handlePlay's evaluate + drums to start playing.
+  await page.waitForTimeout(2500)
+
+  const wav = await recordFor(page, 4000)
+  await browser.close()
+
+  if (!wav) {
+    console.log('  ✗ FAIL — no WAV captured')
+    return false
+  }
+  const wavPath = resolve(OUT_DIR, 'load_example_first_run.wav')
+  writeFileSync(wavPath, wav)
+
+  const stats = analyzeWav(wav)
+  console.log(`  WAV: ${wavPath}`)
+  console.log(`  duration=${stats.duration.toFixed(2)}s  peak=${stats.peak.toFixed(4)}  rms=${stats.rms.toFixed(4)}`)
+
+  // Acceptance: peak > 0.01 (drum hits audible), buffer replaced.
+  const audible = stats.peak > 0.01
+  const pass = bufferReplaced && audible
+  console.log(`  Verdict: ${pass ? '✓ PASS' : '✗ FAIL'} — buffer replaced (${bufferReplaced}), example audible (${audible})`)
+  return pass
+}
+
 async function main() {
   const results = {
     live_audio_stop: false,
     load_example: false,
+    load_example_first_run: false,
   }
   results.live_audio_stop = await testLiveAudioStop()
   results.load_example = await testLoadExample()
+  results.load_example_first_run = await testLoadExampleFirstRun()
 
   console.log('\n=== SUMMARY ===')
-  console.log(`  live_audio :stop: ${results.live_audio_stop ? '✓ PASS' : '✗ FAIL'}`)
-  console.log(`  load_example:     ${results.load_example ? '✓ PASS' : '✗ FAIL'}`)
-  process.exit((results.live_audio_stop && results.load_example) ? 0 : 1)
+  console.log(`  live_audio :stop:           ${results.live_audio_stop ? '✓ PASS' : '✗ FAIL'}`)
+  console.log(`  load_example (replay):      ${results.load_example ? '✓ PASS' : '✗ FAIL'}`)
+  console.log(`  load_example (first run):   ${results.load_example_first_run ? '✓ PASS' : '✗ FAIL'}`)
+  process.exit((results.live_audio_stop && results.load_example && results.load_example_first_run) ? 0 : 1)
 }
 
 main().catch((err) => {
