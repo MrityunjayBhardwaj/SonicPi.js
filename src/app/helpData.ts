@@ -385,6 +385,143 @@ end`,
   stop
 end`,
   },
+
+  // Tier B PR #2 — ring helpers
+  doubles: {
+    signature: 'doubles(start, num)',
+    description: 'Ring of `num` values starting at `start`, each twice the previous (start, 2*start, 4*start, ...). Negative `num` yields halves.',
+    params: [
+      { name: 'start', type: 'number', desc: 'First value' },
+      { name: 'num', type: 'number', desc: 'Number of doublings (positive) or halvings (negative)' },
+    ],
+    example: 'play_pattern doubles(60, 4)  # 60, 120, 240, 480',
+  },
+  halves: {
+    signature: 'halves(start, num)',
+    description: 'Ring of `num` values starting at `start`, each half the previous (start, start/2, start/4, ...). Negative `num` yields doubles.',
+    params: [
+      { name: 'start', type: 'number', desc: 'First value' },
+      { name: 'num', type: 'number', desc: 'Number of halvings (positive) or doublings (negative)' },
+    ],
+    example: 'play_pattern halves(120, 4)  # 120, 60, 30, 15',
+  },
+
+  // Tier B PR #2 — defaults / setting introspection
+  current_synth_defaults: {
+    signature: 'current_synth_defaults()',
+    description: 'Return the current synth defaults map — keys are arg names, values are the defaults set via use_synth_defaults.',
+    params: [],
+    example: `use_synth_defaults amp: 0.5, release: 2
+puts current_synth_defaults  # => { amp: 0.5, release: 2 }`,
+  },
+  current_sample_defaults: {
+    signature: 'current_sample_defaults()',
+    description: 'Return the current sample defaults map — keys are arg names, values are the defaults set via use_sample_defaults.',
+    params: [],
+    example: `use_sample_defaults rate: 0.5
+puts current_sample_defaults`,
+  },
+  current_arg_checks: {
+    signature: 'current_arg_checks()',
+    description: 'Return whether arg-name checking is currently active (true/false).',
+    params: [],
+    example: 'puts current_arg_checks',
+  },
+  current_debug: {
+    signature: 'current_debug()',
+    description: 'Return whether debug logging is currently enabled (true/false).',
+    params: [],
+    example: 'puts current_debug',
+  },
+
+  // Tier B PR #2 — tuplets
+  tuplets: {
+    signature: 'tuplets(notes, opts) do |x| ... end',
+    description: 'Schedule N notes evenly across `duration` beats. Block runs once per element with the value bound to the block param.',
+    params: [
+      { name: 'notes', type: 'array', desc: 'List of values to iterate over' },
+      { name: 'duration', type: 'number', default: '1', desc: 'Total beats for the tuplet' },
+    ],
+    example: `tuplets [60, 64, 67], duration: 1 do |n|
+  play n
+end`,
+  },
+
+  // Tier B PR #2 — defonce
+  defonce: {
+    signature: 'name = defonce("name") do ... end',
+    description: 'Cache the result of a block by name — subsequent runs reuse the cached value, surviving hot-swap. Ideal for expensive computations.',
+    params: [
+      { name: 'name', type: 'string', desc: 'Cache key (must be unique)' },
+      { name: 'override', type: 'boolean', default: 'false', desc: 'Force re-evaluation' },
+    ],
+    example: `notes = defonce("scale") do
+  scale(:c4, :minor).to_a
+end
+play notes.choose`,
+  },
+
+  // Tier B PR #3 — sync_bpm
+  sync_bpm: {
+    signature: 'sync_bpm cue_name',
+    description: 'Like sync, but also adopts the cuer\'s BPM. Inside live_loops only.',
+    params: [
+      { name: 'cue_name', type: 'symbol', desc: 'Cue name to wait for' },
+    ],
+    example: `live_loop :follower do
+  sync_bpm :tempo
+  play :c4
+  sleep 1
+end`,
+  },
+
+  // Tier B PR #3 — dynamic eval
+  run_code: {
+    signature: 'run_code(code_string)',
+    description: 'Dynamically evaluate a Sonic Pi code string. Top-level only — throws inside live_loops.',
+    params: [
+      { name: 'code', type: 'string', desc: 'Sonic Pi source to evaluate' },
+    ],
+    example: 'run_code "play :c4; sleep 1; play :e4"',
+  },
+  eval_file: {
+    signature: 'eval_file(path)',
+    description: 'File-based eval — not supported in the browser sandbox. Use run_code(string) or load_example(:name) instead.',
+    params: [
+      { name: 'path', type: 'string', desc: 'File path (always rejected in browser)' },
+    ],
+    example: '# eval_file "snippet.rb"  # browser: throws — use run_code instead',
+  },
+  run_file: {
+    signature: 'run_file(path)',
+    description: 'File-based run — not supported in the browser sandbox. Use run_code(string) or load_example(:name) instead.',
+    params: [
+      { name: 'path', type: 'string', desc: 'File path (always rejected in browser)' },
+    ],
+    example: '# run_file "snippet.rb"  # browser: throws — use load_example instead',
+  },
+  load_example: {
+    signature: 'load_example(name)',
+    description: 'Look up a bundled example by name and load it into the editor — replaces the buffer + auto-runs. Top-level only.',
+    params: [
+      { name: 'name', type: 'string|symbol', desc: 'Example name as shown in View > Examples' },
+    ],
+    example: 'load_example "Basic Beat"',
+  },
+
+  // Tier B PR #3 — live_audio :stop overload (live_audio itself is engine-side)
+  live_audio: {
+    signature: 'live_audio :name [, :stop] [, opts]',
+    description: 'Named live audio stream from the soundcard. Pass :stop as the second arg to kill a running stream.',
+    params: [
+      { name: 'name', type: 'symbol', desc: 'Stream identifier' },
+      { name: 'amp', type: 'number', default: '1', desc: 'Volume' },
+      { name: 'pan', type: 'number', default: '0', desc: 'Stereo pan (-1 to 1)' },
+    ],
+    example: `live_audio :mic, amp: 0.5
+sleep 4
+live_audio :mic, :stop`,
+  },
 }
 
 // ---------------------------------------------------------------------------

@@ -51,6 +51,12 @@ const SP_BUILTINS = new Set([
   'rrand', 'rrand_i', 'rand', 'rand_i', 'choose', 'dice', 'one_in',
   'ring', 'knit', 'range', 'line', 'spread', 'chord', 'scale',
   'chord_invert', 'note', 'note_range', 'tick', 'look',
+  // Tier B PR #2 — ring helpers, defaults introspection, tuplets, defonce
+  'doubles', 'halves', 'tuplets', 'defonce',
+  'current_synth_defaults', 'current_sample_defaults',
+  'current_arg_checks', 'current_debug',
+  // Tier B PR #3 — sync_bpm, dynamic eval, load_example, live_audio
+  'sync_bpm', 'run_code', 'eval_file', 'run_file', 'load_example', 'live_audio',
 ])
 // Block-opening keywords that increase indent on the next line
 const SP_BLOCK_OPENERS = new Set(['do', 'then', 'begin', 'else', 'elsif', 'rescue', 'ensure'])
@@ -174,6 +180,22 @@ function buildCompletions(): CompletionItem[] {
     range: 'Create a numeric range',
     line: 'Create a linear ramp between values',
     loop: 'Infinite loop (use sleep inside!)',
+    // Tier B PR #2
+    doubles: 'Ring of N doublings starting at value',
+    halves: 'Ring of N halvings starting at value',
+    tuplets: 'Schedule N notes evenly across N beats',
+    defonce: 'Cache a block result by name (survives hot-swap)',
+    current_synth_defaults: 'Get current synth defaults map',
+    current_sample_defaults: 'Get current sample defaults map',
+    current_arg_checks: 'Get current arg-check setting',
+    current_debug: 'Get current debug setting',
+    // Tier B PR #3
+    sync_bpm: 'Sync to a cue and adopt its BPM',
+    run_code: 'Dynamically evaluate a Sonic Pi code string',
+    eval_file: 'File-based eval (browser: use run_code instead)',
+    run_file: 'File-based run (browser: use load_example instead)',
+    load_example: 'Load a bundled example into the editor',
+    live_audio: 'Named live audio stream from soundcard',
   }
   for (const [name, info] of Object.entries(dslFunctions)) {
     items.push({ label: name, type: 'function', info })
