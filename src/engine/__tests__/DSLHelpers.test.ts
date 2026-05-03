@@ -1005,26 +1005,46 @@ describe('eval_file / run_file browser-sandbox stubs (Tier B PR #3 #236)', () =>
 })
 
 describe('load_example host bridge (Tier B PR #3 #236)', () => {
-  it('forwards the resolved Example to the registered handler', async () => {
+  it('forwards the resolved Example to the registered handler (string form)', async () => {
     const { SonicPiEngine } = await import('../SonicPiEngine')
     const { getExampleNames } = await import('../examples')
+    // Use the string form unconditionally — exact match against the registry
+    // name regardless of spaces. Symbols only work for space-free names; the
+    // earlier hedged variant masked which path was actually exercised.
     const firstExample = getExampleNames()[0]
     expect(firstExample).toBeTruthy()
     const engine = new SonicPiEngine()
     await engine.init()
     const received: { name: string; ruby: string }[] = []
     engine.setLoadExampleHandler((ex) => { received.push({ name: ex.name, ruby: ex.ruby }) })
-    const result = await engine.evaluate(`load_example :${firstExample.replace(/\s+/g, '_')}`)
-    // The transpiled symbol uses underscores; if the registry name has spaces,
-    // the lookup will fall through to the not-found path. Use a string literal
-    // for a guaranteed exact match instead.
-    if (result.error) {
-      const result2 = await engine.evaluate(`load_example "${firstExample}"`)
-      expect(result2.error).toBeUndefined()
-    }
-    expect(received.length).toBeGreaterThanOrEqual(1)
+    const result = await engine.evaluate(`load_example "${firstExample}"`)
+    expect(result.error).toBeUndefined()
+    expect(received.length).toBe(1)
     expect(received[0].name).toBe(firstExample)
     expect(received[0].ruby.length).toBeGreaterThan(0)
+    engine.dispose()
+  })
+
+  it('forwards via the symbol form for space-free example names', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const { getExampleNames } = await import('../examples')
+    // Pick the first registry name that's a valid bare Ruby symbol so we're
+    // exercising the symbol-resolution path, not the string-literal path.
+    const spaceFree = getExampleNames().find(n => /^[A-Za-z_]\w*$/.test(n))
+    if (!spaceFree) {
+      // No space-free names in the bundled registry — symbol path can't be
+      // tested with current fixtures. The string-form test above still covers
+      // the handler-forwarding contract.
+      return
+    }
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const received: { name: string; ruby: string }[] = []
+    engine.setLoadExampleHandler((ex) => { received.push({ name: ex.name, ruby: ex.ruby }) })
+    const result = await engine.evaluate(`load_example :${spaceFree}`)
+    expect(result.error).toBeUndefined()
+    expect(received.length).toBe(1)
+    expect(received[0].name).toBe(spaceFree)
     engine.dispose()
   })
 
