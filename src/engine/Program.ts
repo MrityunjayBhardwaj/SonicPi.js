@@ -14,7 +14,10 @@ export type Step =
   | { tag: 'useBpm'; bpm: number }
   | { tag: 'control'; nodeRef: number; params: Record<string, number> }
   | { tag: 'cue'; name: string; args?: unknown[] }
-  | { tag: 'sync'; name: string; bpmSync?: boolean }
+  // bpmSync is `?: true` (not `?: boolean`): ProgramBuilder.sync_bpm pushes
+  // the flag only when set, so the field is either absent or `true` — the
+  // tighter type makes the discriminator unambiguous.
+  | { tag: 'sync'; name: string; bpmSync?: true }
   | { tag: 'fx'; name: string; opts: Record<string, number>; body: Program; nodeRef?: number }
   | { tag: 'thread'; body: Program }
   | { tag: 'print'; message: string }

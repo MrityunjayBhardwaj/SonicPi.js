@@ -45,6 +45,13 @@ export const DEFAULT_SCHED_AHEAD_TIME = 0.3
 export const DEFAULT_TICK_INTERVAL_MS = 25
 
 /**
+ * Fallback BPM used by `fireCue` for synthetic external sources (`__midi__`,
+ * `__osc__`) whose tasks aren't tracked. Matches `SonicPiEngine`'s startup
+ * `defaultBpm = 60`. If you change one, change the other.
+ */
+export const DEFAULT_TASK_BPM = 60
+
+/**
  * Tiebreak weight applied to insertion order when two sleep entries share the same
  * virtual time. 1e-12 s is far below any audio scheduling precision (≥1 ms), so it
  * never shifts actual timing — it only produces a deterministic total order in the heap.
@@ -93,6 +100,11 @@ export type EventHandler = (event: SchedulerEvent) => void
  * Payload returned to a sync waiter when the cue fires (#236).
  * `bpm` carries the cuer's BPM at fire-time so waiters using `bpm_sync: true`
  * can inherit it (matches desktop `__change_spider_bpm_time_and_beat!`).
+ *
+ * Breaking change since v1.5.x: `waitForSync` previously returned
+ * `Promise<unknown[]>`. External embedders calling `scheduler.waitForSync`
+ * directly should migrate `args = await waitForSync(...)` to
+ * `{ args } = await waitForSync(...)`.
  */
 export interface SyncPayload {
   args: unknown[]
@@ -346,7 +358,7 @@ export class VirtualTimeScheduler {
     // Synthetic external sources ('__midi__', '__osc__', #151) have no real
     // task — fall back to the engine's startup BPM so sync_bpm waiters still
     // get a defined value rather than NaN.
-    const cueBpm = task?.bpm ?? 60
+    const cueBpm = task?.bpm ?? DEFAULT_TASK_BPM
 
     this.cueMap.set(name, { time: cueVirtualTime, args, bpm: cueBpm })
 
