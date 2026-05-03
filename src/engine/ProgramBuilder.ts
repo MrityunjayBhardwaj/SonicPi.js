@@ -38,6 +38,8 @@ export class ProgramBuilder {
   private _synthDefaults: Record<string, number> = {}
   private _sampleDefaults: Record<string, number> = {}
   private _debug: boolean = true
+  private _argChecks: boolean = true
+  private _timingGuarantees: boolean = false
   private _argBpmScaling: boolean = true
   private _currentBpm: number = 60
   // Iteration-context fields for current_time / current_beat introspection (#226).
@@ -631,7 +633,8 @@ export class ProgramBuilder {
    * default (`true`) keeps existing user code that branches on this read
    * working. When `use_arg_checks` ships in Tier C, this becomes a real read.
    */
-  current_arg_checks(): boolean { return true }
+  current_arg_checks(): boolean { return this._argChecks }
+  current_timing_guarantees(): boolean { return this._timingGuarantees }
 
   /** Deferred set — fires at runtime (interleaved with sleeps). */
   set(key: string | symbol, value: unknown): this {
@@ -819,6 +822,36 @@ export class ProgramBuilder {
     return this
   }
 
+  /** Merge new opts into the existing synth defaults (vs `use_synth_defaults` which replaces). */
+  use_merged_synth_defaults(opts: Record<string, number>): this {
+    this._synthDefaults = { ...this._synthDefaults, ...opts }
+    return this
+  }
+
+  /** Merge new opts into the existing sample defaults. */
+  use_merged_sample_defaults(opts: Record<string, number>): this {
+    this._sampleDefaults = { ...this._sampleDefaults, ...opts }
+    return this
+  }
+
+  /** Block-form merge of synth defaults — restores the previous map after the block. */
+  with_merged_synth_defaults(opts: Record<string, number>, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._synthDefaults
+    this._synthDefaults = { ...prev, ...opts }
+    buildFn(this)
+    this._synthDefaults = prev
+    return this
+  }
+
+  /** Block-form merge of sample defaults — restores the previous map after the block. */
+  with_merged_sample_defaults(opts: Record<string, number>, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._sampleDefaults
+    this._sampleDefaults = { ...prev, ...opts }
+    buildFn(this)
+    this._sampleDefaults = prev
+    return this
+  }
+
   // --- BPM block ---
 
   /** Temporarily set BPM for a block. Sleeps inside are scaled. Restores previous BPM after. */
@@ -888,6 +921,54 @@ export class ProgramBuilder {
     this._argBpmScaling = enabled
     buildFn(this)
     this._argBpmScaling = prev
+    return this
+  }
+
+  /**
+   * Toggle synth-arg validation. Default: true. We always validate today, so
+   * this primarily exists to gate the validator without surprising users
+   * coming from desktop. `current_arg_checks` reads the same flag.
+   */
+  use_arg_checks(enabled: boolean): this {
+    this._argChecks = enabled
+    return this
+  }
+
+  /** Block-form arg-checks toggle — restores previous flag after the block. */
+  with_arg_checks(enabled: boolean, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._argChecks
+    this._argChecks = enabled
+    buildFn(this)
+    this._argChecks = prev
+    return this
+  }
+
+  /** Block-form debug toggle — restores previous flag after the block. */
+  with_debug(enabled: boolean, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._debug
+    this._debug = enabled
+    buildFn(this)
+    this._debug = prev
+    return this
+  }
+
+  /**
+   * Toggle strict-timing mode. Desktop SP drops synth dispatches that miss
+   * their schedule window; in the browser our scheduler is already best-effort
+   * with a generous lookahead, so the flag is recorded for parity but doesn't
+   * change behavior today. `current_timing_guarantees` reads the same flag.
+   */
+  use_timing_guarantees(enabled: boolean): this {
+    this._timingGuarantees = enabled
+    return this
+  }
+
+  /** Block-form timing-guarantees toggle — restores previous flag after the block. */
+  with_timing_guarantees(enabled: boolean, buildFn: (b: ProgramBuilder) => void): this {
+    const prev = this._timingGuarantees
+    this._timingGuarantees = enabled
+    buildFn(this)
+    this._timingGuarantees = prev
     return this
   }
 

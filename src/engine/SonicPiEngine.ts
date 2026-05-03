@@ -1074,6 +1074,7 @@ export class SonicPiEngine {
         () => topLevelBuilder.current_sample_defaults(),
         () => topLevelBuilder.current_arg_checks(),
         () => topLevelBuilder.current_debug(),
+        () => topLevelBuilder.current_timing_guarantees(),
         // Tier B PR #2 — block-form tuplets (#233). Forwards to topLevelBuilder
         // so steps land on the top-level program. Inside live_loops the
         // transpiler emits `__b.tuplets(...)` directly via BUILDER_METHODS.
@@ -1168,6 +1169,19 @@ export class SonicPiEngine {
           }
           this.loadExampleHandler(example)
         },
+        // Tier C PR #1 — state wrappers (#251). Imperative forms forward to
+        // topLevelBuilder so top-level toggles persist into per-task __b state
+        // when live_loops are scheduled. Block forms wrap a build callback the
+        // sandbox-emitted IIFE supplies, mirroring with_synth_defaults.
+        (enabled: boolean) => { topLevelBuilder.use_arg_checks(enabled) },
+        (enabled: boolean) => { topLevelBuilder.use_timing_guarantees(enabled) },
+        (opts: Record<string, number>) => { topLevelBuilder.use_merged_synth_defaults(opts) },
+        (opts: Record<string, number>) => { topLevelBuilder.use_merged_sample_defaults(opts) },
+        (enabled: boolean, fn: (b: ProgramBuilder) => void) => { topLevelBuilder.with_arg_checks(enabled, fn) },
+        (enabled: boolean, fn: (b: ProgramBuilder) => void) => { topLevelBuilder.with_debug(enabled, fn) },
+        (enabled: boolean, fn: (b: ProgramBuilder) => void) => { topLevelBuilder.with_timing_guarantees(enabled, fn) },
+        (opts: Record<string, number>, fn: (b: ProgramBuilder) => void) => { topLevelBuilder.with_merged_synth_defaults(opts, fn) },
+        (opts: Record<string, number>, fn: (b: ProgramBuilder) => void) => { topLevelBuilder.with_merged_sample_defaults(opts, fn) },
       ]
 
       const codeWarnings = validateCode(transpiledCode)
