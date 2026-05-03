@@ -140,6 +140,13 @@ export const DSL_NAMES = [
   'use_merged_synth_defaults', 'use_merged_sample_defaults',
   'with_arg_checks', 'with_debug', 'with_timing_guarantees',
   'with_merged_synth_defaults', 'with_merged_sample_defaults',
+  // Tier C PR #2 — sample/buffer registry (#253). Top-level host-bridge stubs
+  // for the sample-cache surface. sample_paths returns the bundled+custom
+  // names list (no real fs in browser). sample_buffer/buffer return browser
+  // shapes of the desktop Buffer object — duration-bearing info dictionaries
+  // since user-buffer recording is deferred to a later PR.
+  'sample_paths', 'sample_buffer', 'sample_free', 'sample_free_all',
+  'load_samples', 'buffer',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]

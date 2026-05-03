@@ -964,6 +964,41 @@ export class SuperSonicBridge {
     return this.sampleDurations.get(name)
   }
 
+  /** Return loaded sample names (Tier C PR #2 #253 — for sample_paths host stub). */
+  getLoadedSampleNames(): string[] {
+    return Array.from(this.loadedSamples.keys())
+  }
+
+  /**
+   * Preload a sample into the cache (Tier C PR #2 #253 — for load_samples DSL).
+   * Returns the buffer number once loaded. Same lazy-load path used by sample
+   * playback — re-loads are deduped via pendingSampleLoads.
+   */
+  preloadSample(name: string): Promise<number> {
+    return this.ensureSampleLoaded(name)
+  }
+
+  /**
+   * Free a single sample from the loaded cache (Tier C PR #2 #253).
+   * The next `sample :name` re-loads it from CDN. We don't free the scsynth
+   * buffer slot — bufNum recycling would require tracking which synths still
+   * reference it, and the cost of holding an unused buffer is one int. Drops
+   * the duration cache entry too so beat_stretch falls back to default.
+   */
+  freeSample(name: string): boolean {
+    const had = this.loadedSamples.delete(name)
+    this.sampleDurations.delete(name)
+    return had
+  }
+
+  /** Free every loaded sample (Tier C PR #2 #253). Returns the count freed. */
+  freeAllSamples(): number {
+    const count = this.loadedSamples.size
+    this.loadedSamples.clear()
+    this.sampleDurations.clear()
+    return count
+  }
+
   /** Free all synth, FX, and monitor nodes (clean slate for re-evaluate). */
   freeAllNodes(): void {
     if (!this.sonic) return
