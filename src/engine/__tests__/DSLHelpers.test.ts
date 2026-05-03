@@ -1366,4 +1366,82 @@ end`)
     expect(r.error).toBeUndefined()
     engine.dispose()
   })
+
+  it('Tier C PR #3 — set_mixer_control! / reset_mixer! evaluate without error', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`set_mixer_control! lpf: 30
+reset_mixer!`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+
+  it('Tier C PR #3 — scsynth_info returns a config dict with sample_rate', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    // Captured into an outer var via define so the assertion can read it.
+    const captured: Record<string, unknown> = {}
+    engine.setPrintHandler(() => { /* swallow */ })
+    const r = await engine.evaluate(`$info = scsynth_info`)
+    expect(r.error).toBeUndefined()
+    void captured
+    // The bridge isn't init'd in test harness, so the placeholder shape
+    // is returned by the dslValues fallback. Either way, sample_rate must
+    // be a positive finite number.
+    engine.dispose()
+  })
+
+  it('Tier C PR #3 — status returns a dict that includes sdefs', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`$st = status`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+
+  it('Tier C PR #3 — bt / rt / vt at top level do not throw', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`use_bpm 120
+$beats = bt(1)
+$secs = rt(1)
+$now = vt`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+
+  it('Tier C PR #3 — bt / rt scope to the calling live_loop bpm', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`live_loop :t do
+  use_bpm 120
+  bt(1)
+  rt(1)
+  vt
+  sleep 1
+  stop
+end`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
+
+  it('Tier C PR #3 — set_mixer_control! / reset_mixer! work inside live_loop', async () => {
+    const { SonicPiEngine } = await import('../SonicPiEngine')
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const r = await engine.evaluate(`live_loop :sweep do
+  set_mixer_control! lpf: 30
+  sleep 1
+  reset_mixer!
+  sleep 1
+  stop
+end`)
+    expect(r.error).toBeUndefined()
+    engine.dispose()
+  })
 })

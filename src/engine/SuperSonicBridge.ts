@@ -348,6 +348,93 @@ export class SuperSonicBridge {
   }
 
   /**
+   * Set arbitrary mixer params (Tier C PR #3 #255 — set_mixer_control! DSL).
+   * Allowlist enforces SP9 (param name on our side ≠ synthdef's vocabulary):
+   * the sonic-pi-mixer synthdef accepts pre_amp/amp/hpf/lpf and four bypass
+   * flags; anything else is silently ignored by scsynth, so we filter +
+   * surface a console warning instead. Returns the names actually applied
+   * for telemetry / test assertion.
+   */
+  setMixerControl(opts: Record<string, number>): string[] {
+    if (!this.sonic) return []
+    const ALLOWED = new Set([
+      'pre_amp', 'amp', 'hpf', 'lpf',
+      'hpf_bypass', 'lpf_bypass', 'limiter_bypass', 'leak_dc_bypass',
+    ])
+    const applied: string[] = []
+    for (const [key, value] of Object.entries(opts)) {
+      if (!ALLOWED.has(key)) {
+        console.warn(`[SonicPi] set_mixer_control! ignoring unknown param "${key}". Known: ${[...ALLOWED].join(', ')}`)
+        continue
+      }
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue
+      this.sonic.send('/n_set', this.mixerNodeId, key, value)
+      applied.push(key)
+    }
+    return applied
+  }
+
+  /**
+   * Reset mixer to MIXER config defaults (Tier C PR #3 #255 — reset_mixer! DSL).
+   * Mirrors the initialization sequence in connect() so a sweep can be
+   * undone in one call.
+   */
+  resetMixer(): void {
+    if (!this.sonic) return
+    this.sonic.send('/n_set', this.mixerNodeId,
+      'amp', MIXER.AMP,
+      'pre_amp', MIXER.PRE_AMP,
+      'hpf', MIXER.HPF,
+      'lpf', MIXER.LPF,
+      'limiter_bypass', MIXER.LIMITER_BYPASS,
+      'hpf_bypass', 0,
+      'lpf_bypass', 0,
+      'leak_dc_bypass', 0,
+    )
+  }
+
+  /**
+   * Snapshot scsynth-side info for the `scsynth_info` DSL fn (#255).
+   * SuperSonic doesn't expose all of scsynth's runtime constants; we surface
+   * what we know (sample_rate, num_buffers from MIXER/AUDIO_BUFFERS config)
+   * and fill the rest with the values from a default scsynth instance so
+   * user code that does `scsynth_info.sample_rate` gets a real number.
+   */
+  getScsynthInfo(): Record<string, number> {
+    const sampleRate = this.sonic?.audioContext.sampleRate ?? 44100
+    return {
+      sample_rate: sampleRate,
+      sample_dur: 1 / sampleRate,
+      radians_per_sample: (2 * Math.PI) / sampleRate,
+      control_rate: sampleRate / 64,
+      control_dur: 64 / sampleRate,
+      subsample_offset: 0,
+      num_output_busses: 16,
+      num_input_busses: 16,
+      num_audio_busses: 1024,
+      num_control_busses: 4096,
+      num_buffers: 4096,
+    }
+  }
+
+  /** Snapshot for the `status` DSL fn (#255). Counts loaded synthdefs. */
+  getStatus(): Record<string, number> {
+    const sampleRate = this.sonic?.audioContext.sampleRate ?? 44100
+    return {
+      ugens: 0,                                 // not tracked in WASM scsynth
+      synths: 0,                                // not tracked
+      groups: 2,                                // synthGroup + fxGroup + mixerGroup vary; report 2 as floor
+      sdefs: this.loadedSynthDefs.size,
+      avg_cpu: 0,                               // not exposed by SuperSonic
+      peak_cpu: 0,
+      nom_samp_rate: sampleRate,
+      act_samp_rate: sampleRate,
+      audio_busses: 1024,
+      control_busses: 4096,
+    }
+  }
+
+  /**
    * Enable OSC trace logging — callback receives formatted trace strings
    * matching desktop Sonic Pi's output style.
    *

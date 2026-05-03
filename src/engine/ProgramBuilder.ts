@@ -219,6 +219,14 @@ export class ProgramBuilder {
   /** Duration of one beat in seconds at the current bpm. (#226) */
   current_beat_duration(): number { return 60 / this._currentBpm }
 
+  // Tier C PR #3 (#255). bt/rt are pure BPM math — NOT current_beat / current_time
+  // wrappers (audit-corrected scope). vt is an alias of current_time (= the
+  // thread's local virtual run time). Per-task bpm scoping matters: a
+  // bt(1) inside a live_loop at use_bpm 120 must read THAT loop's bpm.
+  bt(t: number): number { return t * 60 / this._currentBpm }
+  rt(t: number): number { return t * this._currentBpm / 60 }
+  vt(): number { return this.current_time() }
+
   /**
    * Logical (virtual) time in seconds at the current build position. Quantised
    * to the most recent sleep — matches Desktop SP's "wall-clock time quantised
@@ -377,6 +385,28 @@ export class ProgramBuilder {
    */
   set_volume(vol: number): this {
     this.steps.push({ tag: 'setVolume', vol })
+    return this
+  }
+
+  // --- Mixer setters (Tier C PR #3, #255) — deferred steps -----------------
+  // Fire at scheduled virtual time so sweeps sequence against playback.
+  // `set_mixer_control!` accepts an opts hash (pre_amp/amp/hpf/lpf/*_bypass);
+  // `reset_mixer!` restores the MIXER config defaults. Cross-engine ethic:
+  // arity is enforced where the step pushes (here), not in the bridge.
+
+  set_mixer_control(opts: Record<string, number>): this {
+    if (typeof opts !== 'object' || opts === null) {
+      throw new TypeError(`set_mixer_control! expects an opts hash, got ${typeof opts}`)
+    }
+    this.steps.push({ tag: 'setMixerControl', opts })
+    return this
+  }
+
+  reset_mixer(...args: unknown[]): this {
+    if (args.length > 0) {
+      throw new Error(`reset_mixer! expects no arguments, got ${args.length}`)
+    }
+    this.steps.push({ tag: 'resetMixer' })
     return this
   }
 

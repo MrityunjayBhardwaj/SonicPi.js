@@ -248,6 +248,10 @@ const BUILDER_METHODS = new Set([
   // Tier B — timing introspection (#226). Per-task pure reads — must route
   // through __b so the value reflects the calling task, not engine state.
   'current_beat', 'current_beat_duration', 'current_time', 'current_sched_ahead_time',
+  // Tier C PR #3 — bt/rt/vt (#255). Per-task pure reads (bt/rt depend on the
+  // calling task's bpm; vt is a current_time alias). Inside live_loops the
+  // task's __b carries the right bpm; top-level dslValues forward to topLevelBuilder.
+  'bt', 'rt', 'vt',
   // Tier B — PRNG inspection (#227). Per-task RNG mutations — route through
   // __b so they hit the calling builder's seeded random stream.
   'current_random_seed', 'rand_back', 'rand_skip', 'rand_reset',
@@ -275,6 +279,10 @@ const BUILDER_METHODS = new Set([
   // would fire recording_save before any notes from the surrounding
   // `8.times do` had played, leaving the WAV empty.
   'recording_start', 'recording_stop', 'recording_save', 'recording_delete',
+  // Tier C PR #3 — mixer setters (#255). Deferred so a `set_mixer_control!
+  // lpf: 30; sleep 4; reset_mixer!` sweep sequences with playback. Same
+  // lifecycle reasoning as set_volume (#197).
+  'set_mixer_control', 'reset_mixer',
   // Budget
   '__checkBudget__',
 ])

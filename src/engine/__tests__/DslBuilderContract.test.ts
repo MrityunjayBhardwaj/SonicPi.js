@@ -169,6 +169,16 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   ['sample_free_all',  'Bridge-cache mutation: clears loadedSamples. Same as above, all entries.'],
   ['load_samples',     'Bridge preload: fire-and-forget warmup of the loadedSamples cache. The actual sample call still awaits via the same dedup path.'],
   ['buffer',           'Host-query browser stub: returns { name, duration }. User-buffer recording is deferred to a later PR; this exists so .duration reads work.'],
+  // Tier C PR #3 — mixer + introspection (#255). scsynth_info / status are
+  // pure host-queries from the bridge (no Program effect). vt is a thin
+  // alias of current_time. bt / rt are pure BPM math on the calling builder.
+  // set_mixer_control / reset_mixer ARE deferred steps and live on
+  // ProgramBuilder — they are NOT in this exemption list.
+  ['scsynth_info',     'Host-query: returns the SuperSonic scsynth config dict. Pure read.'],
+  ['status',           'Host-query: returns the engine status snapshot. Pure read.'],
+  ['vt',               'Pure read — alias of current_time. Inside live_loops the transpiler routes to __b.vt(); top-level reads topLevelBuilder.'],
+  ['bt',               'Pure BPM math: t * 60 / bpm. Beats → seconds. Per-task bpm comes from __b inside live_loops.'],
+  ['rt',               'Pure BPM math: t * bpm / 60. Seconds → beats. Per-task bpm comes from __b inside live_loops.'],
 ])
 
 describe('DSL builder contract (issue #193)', () => {

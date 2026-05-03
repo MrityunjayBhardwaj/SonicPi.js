@@ -33,6 +33,7 @@ function createMockSuperSonic() {
     node: { connect: vi.fn() },
     audioContext: {
       currentTime: 0,
+      sampleRate: 44100,
       destination: { connect: vi.fn() },
       createAnalyser: vi.fn(() => ({
         fftSize: 2048,
@@ -225,6 +226,85 @@ describe('SuperSonicBridge', () => {
     const bundleStr = new TextDecoder().decode(bundles[0])
     expect(bundleStr).not.toContain('cutoff_release')
     expect(bundleStr).not.toContain('cutoff_min')
+  })
+
+  // Tier C PR #3 — mixer + introspection (#255).
+
+  it('setMixerControl /n_sets allowlisted params, ignores unknowns with a warning', async () => {
+    const { mockSonic, sent } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+    sent.length = 0  // discard init messages
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => { /* swallow */ })
+    const applied = bridge.setMixerControl({ lpf: 30, hpf: 200, nonsense: 1 })
+    warnSpy.mockRestore()
+
+    expect(applied).toEqual(['lpf', 'hpf'])
+    // Each allowed param fires its own /n_set call.
+    const sets = sent.filter(m => m.address === '/n_set')
+    expect(sets.length).toBe(2)
+    expect(sets[0].args[1]).toBe('lpf')
+    expect(sets[1].args[1]).toBe('hpf')
+  })
+
+  it('setMixerControl skips non-finite values silently', async () => {
+    const { mockSonic, sent } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+    sent.length = 0
+
+    const applied = bridge.setMixerControl({ lpf: NaN, hpf: 200 })
+    expect(applied).toEqual(['hpf'])
+  })
+
+  it('resetMixer /n_sets all five MIXER defaults plus three bypass clears', async () => {
+    const { mockSonic, sent } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+    sent.length = 0
+
+    bridge.resetMixer()
+
+    const sets = sent.filter(m => m.address === '/n_set')
+    expect(sets.length).toBe(1)
+    // All eight params packed into one /n_set call.
+    const args = sets[0].args as Array<string | number>
+    const paramNames = args.filter((_, i) => i > 0 && i % 2 === 1)
+    expect(paramNames).toEqual([
+      'amp', 'pre_amp', 'hpf', 'lpf', 'limiter_bypass',
+      'hpf_bypass', 'lpf_bypass', 'leak_dc_bypass',
+    ])
+  })
+
+  it('getScsynthInfo returns a config dict with sample-rate-derived fields', async () => {
+    const { mockSonic } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    const info = bridge.getScsynthInfo()
+    expect(info.sample_rate).toBe(44100)
+    expect(info.sample_dur).toBeCloseTo(1 / 44100)
+    expect(info.control_rate).toBeCloseTo(44100 / 64)
+    expect(info.num_buffers).toBe(4096)
+  })
+
+  it('getStatus reports loaded synthdef count', async () => {
+    const { mockSonic } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    const status = bridge.getStatus()
+    // After init, the mixer synthdef ('sonic-pi-mixer') is registered.
+    expect(status.sdefs).toBeGreaterThanOrEqual(1)
+    expect(status.nom_samp_rate).toBe(44100)
+    expect(status.act_samp_rate).toBe(44100)
   })
 
   it('dispose cleans up', async () => {

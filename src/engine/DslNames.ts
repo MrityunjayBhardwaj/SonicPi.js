@@ -147,6 +147,14 @@ export const DSL_NAMES = [
   // since user-buffer recording is deferred to a later PR.
   'sample_paths', 'sample_buffer', 'sample_free', 'sample_free_all',
   'load_samples', 'buffer',
+  // Tier C PR #3 — mixer + introspection (#255). set_mixer_control! /
+  // reset_mixer! are deferred ProgramBuilder steps (mirror set_volume
+  // lifecycle so sweeps sequence with playback). scsynth_info / status
+  // are pure host-queries from the bridge. vt is an alias of current_time.
+  // bt / rt are pure BPM math (NOT current_beat wrappers — see #255 audit).
+  'set_mixer_control', 'reset_mixer',
+  'scsynth_info', 'status',
+  'vt', 'bt', 'rt',
 ] as const
 
 export type DslName = typeof DSL_NAMES[number]
