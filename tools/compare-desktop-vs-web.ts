@@ -5,7 +5,8 @@
  *
  * Useful for parity verification: "does our engine produce the same audio
  * shape as Desktop SP for this snippet?" — the desktop side is the canonical
- * reference (SV8: WAV observation over event-log inference).
+ * reference (audio WAV is the gold standard for observation; the event log
+ * is inference about what should happen, not observation of what did).
  *
  * Prereqs (BOTH must hold):
  *   1. Sonic Pi.app must be running (`open -a "Sonic Pi"` and wait ~10s).
