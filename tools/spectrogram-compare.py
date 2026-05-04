@@ -260,8 +260,20 @@ def main() -> int:
         print(f"Web WAV not found: {web_path}", file=sys.stderr)
         return 1
 
-    audio_d, sr_d = load_mono(desktop_path)
-    audio_w, sr_w = load_mono(web_path)
+    audio_d, sr_d_raw = load_mono(desktop_path)
+    audio_w, sr_w_raw = load_mono(web_path)
+
+    # Sample-rate normalization (issue #266): if the two WAVs are at different
+    # sample rates (44.1k vs 48k machines), every downstream metric — mel,
+    # MFCC, peak-freq, l2 — would compare frames that don't align in time or
+    # frequency, producing false divergence. Resample the lower-SR side up to
+    # the higher SR so all metrics see a single consistent grid.
+    sr = max(sr_d_raw, sr_w_raw)
+    if sr_d_raw != sr:
+        audio_d = librosa.resample(audio_d.astype(np.float32), orig_sr=sr_d_raw, target_sr=sr)
+    if sr_w_raw != sr:
+        audio_w = librosa.resample(audio_w.astype(np.float32), orig_sr=sr_w_raw, target_sr=sr)
+    sr_d = sr_w = sr
 
     mel_d = mel_db(audio_d, sr_d)
     mel_w = mel_db(audio_w, sr_w)
@@ -298,13 +310,15 @@ def main() -> int:
     metrics = {
         "desktop": {
             "path": desktop_path,
-            "sample_rate": int(sr_d),
+            "sample_rate": int(sr_d_raw),
+            "sample_rate_normalized": int(sr_d),
             "duration_s": float(audio_d.shape[0] / sr_d),
             "peak_freq_hz": peak_frequency(audio_d, sr_d),
         },
         "web": {
             "path": web_path,
-            "sample_rate": int(sr_w),
+            "sample_rate": int(sr_w_raw),
+            "sample_rate_normalized": int(sr_w),
             "duration_s": float(audio_w.shape[0] / sr_w),
             "peak_freq_hz": peak_frequency(audio_w, sr_w),
         },

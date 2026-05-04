@@ -358,8 +358,15 @@ async function main(): Promise<void> {
   // name from --file basename or defaults to "inline" for raw code. So we
   // pass --name only to the desktop side and locate the web report via the
   // "Capture saved: <path>" line printed by capture.ts.
+  //
+  // Recording-mechanism parity (issue #266): desktop wraps user code with
+  // recording_start/stop internally (capture-desktop.ts:202). To match its
+  // DSL clock semantics on web, pass --wrap-recording to capture.ts so it
+  // takes the codeDrivesRecording branch instead of the UI Rec button path.
+  // Both sides now record from user-code t=0 to user-code t=duration.
+  const durationSec = args.duration / 1000.0
   const desktopArgs = [args.code, '--duration', String(args.duration), '--name', args.name]
-  const webArgs     = [args.code, '--duration', String(args.duration)]
+  const webArgs     = [args.code, '--duration', String(args.duration), '--wrap-recording', String(durationSec)]
 
   const [desktop, web] = await Promise.all([
     runChild('npx', ['tsx', 'tools/capture-desktop.ts', ...desktopArgs]),
