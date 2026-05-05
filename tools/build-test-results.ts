@@ -108,7 +108,6 @@ interface InspectorEntry extends BaselineEntry {
   webStats: AudioStats;
   perBeat: PerBeatRow[];
   mostDivergentBeats: number[];
-  meanPerBeatMfcc: number;
   artifacts: {
     desktopWav: string | null;
     webWav: string | null;
@@ -118,9 +117,10 @@ interface InspectorEntry extends BaselineEntry {
     metrics: string | null;
     report: string | null;
   };
-  hasReport: boolean;
 }
 
+// Mirror of the sustained-flavor list in tools/fx-sweep.ts (search SnippetFlavor).
+// Kept in sync manually — small set, low churn.
 const SUSTAINED_FX = new Set([
   'panslicer',
   'slicer',
@@ -143,6 +143,18 @@ function copyIfExists(src: string | null | undefined, dst: string): boolean {
 
 function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
+}
+
+function pruneStaleDirs(parent: string, keep: Set<string>): number {
+  if (!fs.existsSync(parent)) return 0;
+  let n = 0;
+  for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (keep.has(entry.name)) continue;
+    fs.rmSync(path.join(parent, entry.name), { recursive: true, force: true });
+    n++;
+  }
+  return n;
 }
 
 function readJson<T>(p: string): T {
@@ -171,6 +183,9 @@ function build(): void {
   console.log(`[inspector] ${fxNames.length} FX in baseline`);
 
   ensureDir(OUT_FX_DIR);
+  const expected = new Set(fxNames);
+  const pruned = pruneStaleDirs(OUT_FX_DIR, expected);
+  if (pruned > 0) console.log(`[inspector] pruned ${pruned} stale FX dir(s)`);
 
   const entries: InspectorEntry[] = [];
   let copied = 0;
@@ -226,7 +241,6 @@ function build(): void {
       webStats: stats?.web ?? emptyStats(),
       perBeat: pb?.rows ?? [],
       mostDivergentBeats: pb?.most_divergent_beats ?? [],
-      meanPerBeatMfcc: pb?.mean_per_beat_mfcc_distance ?? 0,
       artifacts: {
         desktopWav: okDesktop ? `fx/${fx}/desktop.wav` : null,
         webWav: okWeb ? `fx/${fx}/web.wav` : null,
@@ -236,7 +250,6 @@ function build(): void {
         metrics: okMetrics ? `fx/${fx}/metrics.json` : null,
         report: okReport ? `fx/${fx}/report.md` : null,
       },
-      hasReport: okReport,
     });
   }
 

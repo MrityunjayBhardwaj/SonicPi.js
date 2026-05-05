@@ -497,8 +497,10 @@
           const res = await fetch("fx-baseline.json", { cache: "no-store" });
           data = await res.json();
         } catch (e) {
-          $("detail").innerHTML =
-            '<div class="detail-empty">Could not load fx-baseline.json — run <code>npx tsx tools/build-test-results.ts</code> first.</div>';
+          const isFile = location.protocol === "file:";
+          $("detail").innerHTML = isFile
+            ? '<div class="detail-empty">Browsers block <code>fetch()</code> on <code>file://</code>. Serve with <code>npm run inspect</code> (or <code>python3 -m http.server -d test_results 8080</code>) and open <code>http://localhost:8080</code>.</div>'
+            : '<div class="detail-empty">Could not load fx-baseline.json — run <code>npm run inspect:build</code> first.</div>';
           return;
         }
         state.entries = data.entries;
