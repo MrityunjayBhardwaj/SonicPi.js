@@ -58,6 +58,7 @@ The same composition will sound recognizably similar but not bit-identical to de
   - **Filter-family gain gap**: notch filters (`n*pf`) are 0.35-0.40× quieter on web; `bpf`/`rbpf` are 2.5× louder. Tracked in [#272](https://github.com/MrityunjayBhardwaj/SonicPi.js/issues/272).
   - **INCONCLUSIVE (2)**: `delay`, `chorus` produce silence on Desktop SP 4.6 — comparator can't evaluate parity until that's understood. Web side is fine. Tracked in [#274](https://github.com/MrityunjayBhardwaj/SonicPi.js/issues/274).
 - Run `npx tsx tools/fx-sweep.ts` against any branch to regenerate `.captures/fx-baseline.json` and diff.
+- Audition the sweep results side-by-side: `npm run inspect` builds `test_results/fx/<fx>/` from the cached `.captures/` artifacts and serves the inspector at `http://localhost:8080`. Each FX shows desktop ↔ web `<audio>` players, sync-play, spectrogram, per-beat divergence, snippet, and metrics.
 
 ### Specific synths/samples with known issues
 
