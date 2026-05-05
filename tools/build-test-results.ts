@@ -40,8 +40,10 @@ const OUT_DIR = path.join(REPO_ROOT, 'test_results');
 const OUT_FX_DIR = path.join(OUT_DIR, 'fx');
 const OUT_BASELINE_PATH = path.join(OUT_DIR, 'fx-baseline.json');
 
+type Verdict = 'HIGH' | 'MID' | 'LOW' | 'INCONCLUSIVE';
+
 interface BaselineEntry {
-  verdict: 'PASS' | 'FLAG' | 'FAIL' | 'INCONCLUSIVE';
+  verdict: Verdict;
   score: number;
   rmsRatio: number | null;
   peakRatio: number | null;
@@ -270,8 +272,8 @@ function emptyStats(): AudioStats {
   return { duration: 0, peak: 0, rms: 0, clipping: 0, sampleRate: 0, channels: 0 };
 }
 
-function tally(entries: InspectorEntry[]): Record<string, number> {
-  const t: Record<string, number> = { PASS: 0, FLAG: 0, FAIL: 0, INCONCLUSIVE: 0 };
+function tally(entries: InspectorEntry[]): Record<Verdict, number> {
+  const t: Record<Verdict, number> = { HIGH: 0, MID: 0, LOW: 0, INCONCLUSIVE: 0 };
   for (const e of entries) t[e.verdict] = (t[e.verdict] ?? 0) + 1;
   return t;
 }

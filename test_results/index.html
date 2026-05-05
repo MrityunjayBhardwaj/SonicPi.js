@@ -130,17 +130,17 @@
       .chip[data-on="1"] {
         color: var(--text);
       }
-      .chip[data-verdict="PASS"][data-on="1"] {
+      .chip[data-verdict="HIGH"][data-on="1"] {
         background: rgba(158, 206, 106, 0.15);
         border-color: var(--pass);
         color: var(--pass);
       }
-      .chip[data-verdict="FLAG"][data-on="1"] {
+      .chip[data-verdict="MID"][data-on="1"] {
         background: rgba(224, 175, 104, 0.15);
         border-color: var(--flag);
         color: var(--flag);
       }
-      .chip[data-verdict="FAIL"][data-on="1"] {
+      .chip[data-verdict="LOW"][data-on="1"] {
         background: rgba(247, 118, 142, 0.15);
         border-color: var(--fail);
         color: var(--fail);
@@ -200,15 +200,15 @@
         line-height: 1;
         display: inline-block;
       }
-      .badge.PASS {
+      .badge.HIGH {
         background: rgba(158, 206, 106, 0.15);
         color: var(--pass);
       }
-      .badge.FLAG {
+      .badge.MID {
         background: rgba(224, 175, 104, 0.15);
         color: var(--flag);
       }
-      .badge.FAIL {
+      .badge.LOW {
         background: rgba(247, 118, 142, 0.15);
         color: var(--fail);
       }
@@ -457,10 +457,10 @@
               spellcheck="false"
             />
             <div class="filters" id="filters">
-              <button class="chip" data-verdict="PASS" data-on="1">PASS</button>
-              <button class="chip" data-verdict="FLAG" data-on="1">FLAG</button>
-              <button class="chip" data-verdict="FAIL" data-on="1">FAIL</button>
-              <button class="chip" data-verdict="INCONCLUSIVE" data-on="1">
+              <button class="chip" data-verdict="HIGH" data-on="1" title="score ≥ 70 AND MFCC ≤ 180">HIGH</button>
+              <button class="chip" data-verdict="MID" data-on="1" title="50 ≤ score &lt; 70, or HIGH-by-score-only-but-MFCC-too-high">MID</button>
+              <button class="chip" data-verdict="LOW" data-on="1" title="score &lt; 50">LOW</button>
+              <button class="chip" data-verdict="INCONCLUSIVE" data-on="1" title="desktop side silent or missing">
                 INCONCLUSIVE
               </button>
             </div>
@@ -484,7 +484,7 @@
         entries: [],
         filtered: [],
         selectedFx: null,
-        verdicts: { PASS: true, FLAG: true, FAIL: true, INCONCLUSIVE: true },
+        verdicts: { HIGH: true, MID: true, LOW: true, INCONCLUSIVE: true },
         search: "",
         sort: "score-desc",
       };
@@ -535,10 +535,10 @@
         const dt = new Date(data.generatedAt);
         const ago = humanAgo(dt);
         return `
-          <span><b class="ratio-good">${c.PASS}</b> PASS</span>
-          <span><b class="ratio-mid">${c.FLAG}</b> FLAG</span>
-          <span><b class="ratio-bad">${c.FAIL}</b> FAIL</span>
-          <span><b>${c.INCONCLUSIVE}</b> incon</span>
+          <span><b class="ratio-good">${c.HIGH ?? 0}</b> HIGH</span>
+          <span><b class="ratio-mid">${c.MID ?? 0}</b> MID</span>
+          <span><b class="ratio-bad">${c.LOW ?? 0}</b> LOW</span>
+          <span><b>${c.INCONCLUSIVE ?? 0}</b> incon</span>
           <span title="${dt.toISOString()}">· ${ago}</span>
         `;
       }
@@ -566,7 +566,7 @@
       }
 
       function comparator(mode) {
-        const verdictOrder = { PASS: 0, FLAG: 1, FAIL: 2, INCONCLUSIVE: 3 };
+        const verdictOrder = { HIGH: 0, MID: 1, LOW: 2, INCONCLUSIVE: 3 };
         const inconLast = (a, b) => {
           const ai = a.verdict === "INCONCLUSIVE" ? 1 : 0;
           const bi = b.verdict === "INCONCLUSIVE" ? 1 : 0;
@@ -597,9 +597,17 @@
         const html = state.filtered
           .map((e) => {
             const score = e.verdict === "INCONCLUSIVE" ? "—" : e.score.toFixed(1);
+            const mfccCls =
+              e.mfccDist == null
+                ? "ratio-bad"
+                : e.mfccDist <= 180
+                ? "ratio-good"
+                : e.mfccDist <= 250
+                ? "ratio-mid"
+                : "ratio-bad";
             const sub = e.verdict === "INCONCLUSIVE"
               ? "no shared signal"
-              : `RMS ${fmtRatio(e.rmsRatio)}× · Peak ${fmtRatio(e.peakRatio)}× · L2 ${e.l2MelDb.toFixed(1)} · MFCC ${Math.round(e.mfccDist)}`;
+              : `RMS ${fmtRatio(e.rmsRatio)}× · L2 ${e.l2MelDb.toFixed(1)}dB · <span class="${mfccCls}">MFCC ${Math.round(e.mfccDist)}</span>`;
             return `
               <div class="row" data-fx="${e.fx}" ${state.selectedFx === e.fx ? 'data-active="1"' : ""}>
                 <div class="row-name">${e.fx}</div>
@@ -680,11 +688,19 @@
         if (desktopUrl) links.push(`<a href="${desktopUrl}" target="_blank">desktop.wav ↗</a>`);
         if (webUrl) links.push(`<a href="${webUrl}" target="_blank">web.wav ↗</a>`);
 
+        const mfccBadgeCls =
+          e.mfccDist == null
+            ? "ratio-bad"
+            : e.mfccDist <= 180
+            ? "ratio-good"
+            : e.mfccDist <= 250
+            ? "ratio-mid"
+            : "ratio-bad";
         $("detail").innerHTML = `
           <div class="detail-head">
             <h1>:${e.fx}</h1>
             <span class="badge ${e.verdict}">${e.verdict}</span>
-            <span class="meta" style="margin:0">${e.flavor} · bpm ${e.bpm} · ${e.beats || "—"} beats</span>
+            <span class="meta" style="margin:0">${e.flavor} · bpm ${e.bpm} · ${e.beats || "—"} beats · <span class="${mfccBadgeCls}">MFCC ${e.mfccDist == null ? "—" : Math.round(e.mfccDist)}</span></span>
             <div class="score">${score} <small>/ 100</small></div>
           </div>
 
@@ -719,8 +735,14 @@
           <div class="links">${links.join("")}</div>
 
           <div class="footer-meta">
-            Score formula: 0.30·ratio(rms) + 0.15·ratio(peak) + 0.30·l2 + 0.25·mfcc.
-            Source artifacts: <code>.captures/</code> · this folder is a copy.
+            <strong>Tiers:</strong>
+            <span class="ratio-good">HIGH</span> = score ≥ 70 AND MFCC ≤ 180 ·
+            <span class="ratio-mid">MID</span> = 50 ≤ score &lt; 70 (or HIGH-by-score-only-but-MFCC > 180) ·
+            <span class="ratio-bad">LOW</span> = score &lt; 50 ·
+            INCONCLUSIVE = desktop silent.
+            <br />
+            Score: 0.30·ratio(rms) + 0.15·ratio(peak) + 0.30·l2 + 0.25·mfcc.
+            Source: <code>.captures/</code>.
           </div>
         `;
 
