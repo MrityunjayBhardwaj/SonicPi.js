@@ -315,21 +315,31 @@ async function runFx(fx: FxSpec): Promise<FxMetrics> {
 // PASS / FLAG / FAIL classification
 // ---------------------------------------------------------------------------
 
-type Verdict = 'PASS' | 'FLAG' | 'FAIL'
+type Verdict = 'PASS' | 'FLAG' | 'FAIL' | 'INCONCLUSIVE'
 
 function classify(m: FxMetrics): { verdict: Verdict; reasons: string[] } {
   const reasons: string[] = []
-  // FAIL: empty WAV on either side, OR silent-beat asymmetry, OR egregious metrics
-  if (!m.desktop) reasons.push('desktop produced no WAV')
-  if (!m.web)     reasons.push('web produced no WAV')
+  // INCONCLUSIVE: desktop side is broken (silent or empty), so we can't
+  // compare. Likely a Desktop SP bug for that FX, not a web issue.
+  if (!m.desktop) {
+    reasons.push('desktop produced no WAV — Desktop SP issue, web cannot be evaluated')
+    return { verdict: 'INCONCLUSIVE', reasons }
+  }
+  if (m.desktop.rms < 0.001 && m.desktop.peak < 0.01) {
+    reasons.push(`desktop produced silence (peak=${m.desktop.peak}, rms=${m.desktop.rms}) — Desktop SP issue, web cannot be evaluated`)
+    return { verdict: 'INCONCLUSIVE', reasons }
+  }
+  // FAIL: empty WAV on web side, OR silent-beat asymmetry past warm-up
+  if (!m.web) {
+    reasons.push('web produced no WAV')
+    return { verdict: 'FAIL', reasons }
+  }
   if (m.silentBeatAsymmetry) {
     const dPost = m.silentDesktopBeats.filter((b) => b >= WARMUP_BEATS)
     const wPost = m.silentWebBeats.filter((b) => b >= WARMUP_BEATS)
     reasons.push(
       `silent-beat asymmetry past warm-up: desktop silent on [${dPost.join(',') || '–'}] · web silent on [${wPost.join(',') || '–'}]`,
     )
-  }
-  if (!m.desktop || !m.web || m.silentBeatAsymmetry) {
     return { verdict: 'FAIL', reasons }
   }
   if (m.mfccDist !== null && m.mfccDist > 200 && m.rmsRatio !== null && (m.rmsRatio < 0.3 || m.rmsRatio > 3.0)) {
@@ -366,7 +376,7 @@ interface SweepRow {
 }
 
 function writeSummary(rows: SweepRow[], summaryPath: string): void {
-  const counts = { PASS: 0, FLAG: 0, FAIL: 0 }
+  const counts = { PASS: 0, FLAG: 0, FAIL: 0, INCONCLUSIVE: 0 }
   for (const r of rows) counts[r.verdict]++
 
   const lines: string[] = []
@@ -374,7 +384,7 @@ function writeSummary(rows: SweepRow[], summaryPath: string): void {
   lines.push('')
   lines.push(`- **Timestamp:** ${new Date().toISOString()}`)
   lines.push(`- **Total FX:** ${rows.length}`)
-  lines.push(`- **PASS:** ${counts.PASS} · **FLAG:** ${counts.FLAG} · **FAIL:** ${counts.FAIL}`)
+  lines.push(`- **PASS:** ${counts.PASS} · **FLAG:** ${counts.FLAG} · **FAIL:** ${counts.FAIL} · **INCONCLUSIVE:** ${counts.INCONCLUSIVE}`)
   lines.push(`- **Sweep config:** duration=${SWEEP_DURATION_MS}ms · bpm=${SWEEP_BPM} · beats=${SWEEP_BEATS}`)
   lines.push('')
   lines.push('## Verdicts')
@@ -397,9 +407,10 @@ function writeSummary(rows: SweepRow[], summaryPath: string): void {
   lines.push('Sustained snippet: `:prophet` pad with sustained notes (slicer / tremolo / vowel / wobble / panslicer / ring_mod need this to have signal to modulate).')
   lines.push('')
   lines.push('Categorization rules (see issue #271):')
-  lines.push('- **PASS:** RMS ratio ∈ [0.5, 2.0] · spectral L2 ≤ 25 dB · no silent-beat asymmetry')
+  lines.push('- **PASS:** RMS ratio ∈ [0.5, 2.0] · spectral L2 ≤ 25 dB · no silent-beat asymmetry past warm-up')
   lines.push('- **FLAG:** any single threshold breached (eyeball needed)')
-  lines.push('- **FAIL:** empty WAV on either side, silent-beat asymmetry, OR MFCC > 200 + RMS ratio outside [0.3, 3.0]')
+  lines.push('- **FAIL:** web produced no WAV, web-side silent-beat asymmetry past warm-up, OR MFCC > 200 + RMS ratio outside [0.3, 3.0]')
+  lines.push('- **INCONCLUSIVE:** desktop produced silence or no WAV — Desktop SP issue, web cannot be evaluated against it')
   lines.push('')
   lines.push('## Per-FX reports')
   lines.push('')
@@ -492,12 +503,12 @@ async function main(): Promise<void> {
   }
   writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2))
 
-  const counts = { PASS: 0, FLAG: 0, FAIL: 0 }
+  const counts = { PASS: 0, FLAG: 0, FAIL: 0, INCONCLUSIVE: 0 }
   for (const r of rows) counts[r.verdict]++
 
   console.log(`\n✓ Summary: ${summaryPath}`)
   console.log(`✓ Baseline: ${BASELINE_PATH}`)
-  console.log(`  PASS ${counts.PASS} · FLAG ${counts.FLAG} · FAIL ${counts.FAIL} (of ${rows.length})`)
+  console.log(`  PASS ${counts.PASS} · FLAG ${counts.FLAG} · FAIL ${counts.FAIL} · INCONCLUSIVE ${counts.INCONCLUSIVE} (of ${rows.length})`)
 
   // Diff against prior baseline if requested
   if (args.baseline && existsSync(args.baseline)) {
