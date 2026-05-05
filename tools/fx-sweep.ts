@@ -469,6 +469,16 @@ async function main(): Promise<void> {
   let fxToRun = FX_LIST
   if (args.only) fxToRun = fxToRun.filter(f => args.only!.includes(f.name))
   if (args.skip.length) fxToRun = fxToRun.filter(f => !args.skip.includes(f.name))
+  const isFullRun = fxToRun.length === FX_LIST.length
+
+  // Read --baseline INTO MEMORY before any writes — otherwise a partial run
+  // (--only / --skip) that points --baseline at the same path would diff
+  // against the file the run is about to overwrite, producing a meaningless
+  // self-diff.
+  let priorBaseline: Record<string, BaselineEntry> | null = null
+  if (args.baseline && existsSync(args.baseline)) {
+    priorBaseline = JSON.parse(readFileSync(args.baseline, 'utf8')) as Record<string, BaselineEntry>
+  }
 
   console.log(`\n▶ Sweeping ${fxToRun.length} FX (of ${FX_LIST.length} total)`)
   console.log(`  duration=${SWEEP_DURATION_MS}ms · bpm=${SWEEP_BPM} · beats=${SWEEP_BEATS}\n`)
@@ -491,7 +501,7 @@ async function main(): Promise<void> {
   writeSummary(rows, summaryPath)
 
   // Baseline JSON: small, programmatic shape
-  const baseline: Record<string, { verdict: Verdict; rmsRatio: number | null; peakRatio: number | null; l2MelDb: number | null; mfccDist: number | null }> = {}
+  const baseline: Record<string, BaselineEntry> = {}
   for (const r of rows) {
     baseline[r.fx] = {
       verdict: r.verdict,
@@ -501,23 +511,32 @@ async function main(): Promise<void> {
       mfccDist: r.m.mfccDist,
     }
   }
-  writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2))
 
+  // Only persist .captures/fx-baseline.json on a full sweep — partial runs
+  // would either overwrite the canonical baseline with an incomplete snapshot
+  // (silently breaking future regression diffs) or shrink it to just the
+  // subset. Either way is a footgun.
   const counts = { PASS: 0, FLAG: 0, FAIL: 0, INCONCLUSIVE: 0 }
   for (const r of rows) counts[r.verdict]++
 
   console.log(`\n✓ Summary: ${summaryPath}`)
-  console.log(`✓ Baseline: ${BASELINE_PATH}`)
+  if (isFullRun) {
+    writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2))
+    console.log(`✓ Baseline: ${BASELINE_PATH}`)
+  } else {
+    console.log(`  (partial run — baseline.json unchanged)`)
+  }
   console.log(`  PASS ${counts.PASS} · FLAG ${counts.FLAG} · FAIL ${counts.FAIL} · INCONCLUSIVE ${counts.INCONCLUSIVE} (of ${rows.length})`)
 
-  // Diff against prior baseline if requested
-  if (args.baseline && existsSync(args.baseline)) {
+  // Diff against prior baseline if requested. priorBaseline was read into
+  // memory BEFORE the new baseline was written, so even when --baseline points
+  // at .captures/fx-baseline.json the diff is meaningful.
+  if (priorBaseline) {
     console.log(`\n▶ Diffing against ${args.baseline}`)
-    const prior = JSON.parse(readFileSync(args.baseline, 'utf8')) as typeof baseline
     let regressed = 0
     let improved = 0
     for (const r of rows) {
-      const p = prior[r.fx]
+      const p = priorBaseline[r.fx]
       if (!p) continue
       if (p.verdict === 'PASS' && r.verdict !== 'PASS') {
         console.log(`  ✗ regression: ${r.fx} ${p.verdict} → ${r.verdict}`)
@@ -532,6 +551,14 @@ async function main(): Promise<void> {
   }
 
   if (counts.FAIL > 0) process.exitCode = process.exitCode ?? 1
+}
+
+interface BaselineEntry {
+  verdict: Verdict
+  rmsRatio: number | null
+  peakRatio: number | null
+  l2MelDb: number | null
+  mfccDist: number | null
 }
 
 main().catch((err) => {
