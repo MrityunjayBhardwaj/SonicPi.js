@@ -317,6 +317,36 @@ async function runFx(fx: FxSpec): Promise<FxMetrics> {
 
 type Verdict = 'PASS' | 'FLAG' | 'FAIL' | 'INCONCLUSIVE'
 
+// Composite consistency score 0-100 against Desktop SP. 100 = identical, 0 =
+// unrelated. Weighted average of four parity components:
+//   30% RMS-ratio    : log-distance, penalizes 2× and 0.5× equally
+//   15% Peak-ratio   : same shape, less weight (peak is noisier than RMS)
+//   30% L2 (mel-dB)  : linear, 0dB → 100, 50dB → 0 (cap)
+//   25% MFCC distance: linear, 0 → 100, 500 → 0 (cap)
+// Returns null when any component is unavailable (INCONCLUSIVE / no WAV).
+function ratioComponent(r: number | null): number {
+  if (r === null || r <= 0) return 0
+  return Math.max(0, 100 - 50 * Math.abs(Math.log2(r)))
+}
+function l2Component(v: number | null): number {
+  if (v === null) return 0
+  return Math.max(0, 100 - 2 * v)
+}
+function mfccComponent(v: number | null): number {
+  if (v === null) return 0
+  return Math.max(0, 100 - 0.2 * v)
+}
+function consistencyScore(m: FxMetrics): number | null {
+  if (!m.desktop || !m.web) return null
+  if (m.rmsRatio === null && m.peakRatio === null && m.l2MelDb === null && m.mfccDist === null) return null
+  return (
+    0.30 * ratioComponent(m.rmsRatio) +
+    0.15 * ratioComponent(m.peakRatio) +
+    0.30 * l2Component(m.l2MelDb) +
+    0.25 * mfccComponent(m.mfccDist)
+  )
+}
+
 function classify(m: FxMetrics): { verdict: Verdict; reasons: string[] } {
   const reasons: string[] = []
   // INCONCLUSIVE: desktop side is broken (silent or empty), so we can't
@@ -372,6 +402,7 @@ interface SweepRow {
   flavor: SnippetFlavor
   verdict: Verdict
   reasons: string[]
+  score: number | null
   m: FxMetrics
 }
 
@@ -385,18 +416,33 @@ function writeSummary(rows: SweepRow[], summaryPath: string): void {
   lines.push(`- **Timestamp:** ${new Date().toISOString()}`)
   lines.push(`- **Total FX:** ${rows.length}`)
   lines.push(`- **PASS:** ${counts.PASS} · **FLAG:** ${counts.FLAG} · **FAIL:** ${counts.FAIL} · **INCONCLUSIVE:** ${counts.INCONCLUSIVE}`)
+  const evaluated = rows.filter((r) => r.score !== null)
+  if (evaluated.length > 0) {
+    const mean = evaluated.reduce((s, r) => s + (r.score ?? 0), 0) / evaluated.length
+    const sorted = evaluated.map((r) => r.score!).sort((a, b) => a - b)
+    const median = sorted[Math.floor(sorted.length / 2)]
+    lines.push(`- **Mean consistency score:** ${mean.toFixed(1)} / 100 · **Median:** ${median.toFixed(1)} (${evaluated.length} evaluated, INCONCLUSIVE excluded)`)
+  }
   lines.push(`- **Sweep config:** duration=${SWEEP_DURATION_MS}ms · bpm=${SWEEP_BPM} · beats=${SWEEP_BEATS}`)
   lines.push('')
   lines.push('## Verdicts')
   lines.push('')
-  lines.push('| FX | Flavor | Verdict | RMS ratio | Peak ratio | L2 (mel-dB) | MFCC dist | Reasons |')
-  lines.push('|---|---|---|---|---|---|---|---|')
-  for (const r of rows) {
+  lines.push('Sorted by **consistency score** (100 = identical to desktop, 0 = unrelated; INCONCLUSIVE last).')
+  lines.push('')
+  lines.push('| FX | Flavor | Verdict | Score | RMS ratio | Peak ratio | L2 (mel-dB) | MFCC dist | Reasons |')
+  lines.push('|---|---|---|---|---|---|---|---|---|')
+  const sorted = [...rows].sort((a, b) => {
+    if (a.score === null) return 1
+    if (b.score === null) return -1
+    return b.score - a.score
+  })
+  for (const r of sorted) {
     const m = r.m
     const fmtRatio = (v: number | null) => v === null ? '—' : v.toFixed(2) + '×'
     const fmt = (v: number | null) => v === null ? '—' : v.toFixed(1)
+    const fmtScore = (v: number | null) => v === null ? '—' : v.toFixed(1)
     lines.push(
-      `| \`${r.fx}\` | ${r.flavor} | ${r.verdict} | ${fmtRatio(m.rmsRatio)} | ${fmtRatio(m.peakRatio)} | ${fmt(m.l2MelDb)} | ${fmt(m.mfccDist)} | ${r.reasons.join('; ')} |`,
+      `| \`${r.fx}\` | ${r.flavor} | ${r.verdict} | ${fmtScore(r.score)} | ${fmtRatio(m.rmsRatio)} | ${fmtRatio(m.peakRatio)} | ${fmt(m.l2MelDb)} | ${fmt(m.mfccDist)} | ${r.reasons.join('; ')} |`,
     )
   }
   lines.push('')
@@ -411,6 +457,11 @@ function writeSummary(rows: SweepRow[], summaryPath: string): void {
   lines.push('- **FLAG:** any single threshold breached (eyeball needed)')
   lines.push('- **FAIL:** web produced no WAV, web-side silent-beat asymmetry past warm-up, OR MFCC > 200 + RMS ratio outside [0.3, 3.0]')
   lines.push('- **INCONCLUSIVE:** desktop produced silence or no WAV — Desktop SP issue, web cannot be evaluated against it')
+  lines.push('')
+  lines.push('Consistency score (0-100):')
+  lines.push('  `score = 0.30·ratio(rms) + 0.15·ratio(peak) + 0.30·l2(L2_dB) + 0.25·mfcc(MFCC_dist)`')
+  lines.push('  where `ratio(r) = max(0, 100 − 50·|log2(r)|)`, `l2(v) = max(0, 100 − 2·v)`, `mfcc(v) = max(0, 100 − 0.2·v)`.')
+  lines.push('  100 = identical to desktop, 0 = unrelated. Log-distance for ratios so 2× and 0.5× penalize equally.')
   lines.push('')
   lines.push('## Per-FX reports')
   lines.push('')
@@ -489,9 +540,11 @@ async function main(): Promise<void> {
     process.stdout.write(`[${i + 1}/${fxToRun.length}] :${fx.name} (${fx.flavor})... `)
     const m = await runFx(fx)
     const cls = classify(m)
-    rows.push({ fx: fx.name, flavor: fx.flavor, verdict: cls.verdict, reasons: cls.reasons, m })
+    const score = consistencyScore(m)
+    rows.push({ fx: fx.name, flavor: fx.flavor, verdict: cls.verdict, reasons: cls.reasons, score, m })
     const tag = cls.verdict === 'PASS' ? '✓' : cls.verdict === 'FLAG' ? '⚠' : '✗'
-    console.log(`${tag} ${cls.verdict}`)
+    const scoreStr = score === null ? '' : ` (score ${score.toFixed(1)})`
+    console.log(`${tag} ${cls.verdict}${scoreStr}`)
     if (cls.verdict !== 'PASS') {
       for (const reason of cls.reasons) console.log(`     ${reason}`)
     }
@@ -505,6 +558,7 @@ async function main(): Promise<void> {
   for (const r of rows) {
     baseline[r.fx] = {
       verdict: r.verdict,
+      score: r.score,
       rmsRatio: r.m.rmsRatio,
       peakRatio: r.m.peakRatio,
       l2MelDb: r.m.l2MelDb,
@@ -535,6 +589,8 @@ async function main(): Promise<void> {
     console.log(`\n▶ Diffing against ${args.baseline}`)
     let regressed = 0
     let improved = 0
+    let scoreDelta = 0
+    let scoreCompared = 0
     for (const r of rows) {
       const p = priorBaseline[r.fx]
       if (!p) continue
@@ -545,6 +601,18 @@ async function main(): Promise<void> {
         console.log(`  ✓ improvement: ${r.fx} ${p.verdict} → ${r.verdict}`)
         improved++
       }
+      if (p.score !== null && p.score !== undefined && r.score !== null) {
+        const d = r.score - p.score
+        if (Math.abs(d) >= 5) {
+          const tag = d < 0 ? '✗ score drop' : '✓ score rise'
+          console.log(`  ${tag}: ${r.fx} ${p.score.toFixed(1)} → ${r.score.toFixed(1)} (Δ ${d >= 0 ? '+' : ''}${d.toFixed(1)})`)
+        }
+        scoreDelta += d
+        scoreCompared++
+      }
+    }
+    if (scoreCompared > 0) {
+      console.log(`  Mean score Δ: ${scoreDelta >= 0 ? '+' : ''}${(scoreDelta / scoreCompared).toFixed(2)} across ${scoreCompared} FX`)
     }
     console.log(`  ${regressed} regressed · ${improved} improved`)
     if (regressed > 0) process.exitCode = 1
@@ -555,6 +623,7 @@ async function main(): Promise<void> {
 
 interface BaselineEntry {
   verdict: Verdict
+  score: number | null
   rmsRatio: number | null
   peakRatio: number | null
   l2MelDb: number | null
