@@ -30,6 +30,35 @@ Current known limitations and browser-specific behaviors for Sonic Pi Web.
 - **Variable name `b`**: Avoid assigning to a variable named `b` at top level — the transpiler uses `__b` for the internal ProgramBuilder reference, but any variable shadowing in bare code scopes can conflict with DSL infrastructure. Use longer names like `bass`, `beat`, etc.
 - **Ruby Array methods not supported**: `.zip(other)` and `.each_with_index` are not implemented. Use manual iteration with `.length.times do |i|` and index access `arr[i]` as a workaround. See #154.
 
+## Audio Fidelity vs Desktop Sonic Pi
+
+The same composition will sound recognizably similar but not bit-identical to desktop Sonic Pi. Most differences come from running scsynth in WebAssembly (no native audio drivers, fixed AudioWorklet block size, 32-bit FP) and choices made to keep the browser engine stable.
+
+### Envelope shape — linear instead of exponential
+
+- Sonic Pi defaults envelope-driven synths to `env_curve: 2` (exponential). We use `env_curve: 1` (linear) because exponential triggers a WASM scsynth bug at small attack values (silence on isolated synths, 1-sample δ-spike on overlapping ones).
+- **Audible difference:** sustained notes hold their level longer through the release phase. Most noticeable on pads, drones, ambient music, and long-release leads. Drum/percussion and short staccato lines are essentially unaffected.
+- **Workaround for users:** if you want a softer release on a specific synth, pass `attack: 0.01` or higher and re-enable the curve via `env_curve: 2` explicitly per-note (this works once attack ≥ 10ms).
+
+### Per-synth loudness divergence
+
+- Synth output levels diverge from desktop Sonic Pi by anywhere from 0.30× to 4.20× depending on the synth. Examples (measured 2026-05-04 against Sonic Pi.app on the same composition):
+  - `:prophet` runs ~1.78× louder
+  - `:pluck` runs ~0.51× quieter
+  - Drum samples (`:bd_haus`, `:drum_cymbal_closed`) within ~2% of desktop
+- Mixer levels (`pre_amp`, `amp`) are calibrated for browser playback (no native driver attenuation), following the Sonic Tau reference rather than raw desktop Sonic Pi values.
+- **Workaround for users:** adjust master volume when porting compositions from desktop, and use `amp:` per-synth to fine-tune.
+- Tracking: a per-synth amp calibration phase is planned but deferred. Issue: [#268](https://github.com/MrityunjayBhardwaj/SonicPi.js/issues/268).
+
+### FX coverage
+
+- 42 FX are wired end-to-end. Only 2/42 are WAV-verified against desktop output (`:decimator`/bitcrusher and one other). The rest instantiate cleanly and route signal correctly, but their output level/shape vs desktop is not yet measured.
+- **Layer-isolation testing has confirmed `:reverb` and `:echo` route signal cleanly** (web/desktop ratio matches the dry-signal ratio for the same synth, indicating no FX-specific divergence).
+
+### Specific synths/samples with known issues
+
+- A small number of upstream synthdef binaries are missing from `supersonic-scsynth-synthdefs` and not loadable on web (`dark_sea_horn`, `singer`, `winwood_lead`). Tracking upstream at [samaaron/supersonic#7](https://github.com/samaaron/supersonic/issues/7).
+
 ## Performance
 
 - **Infinite loop detection**: Loops without `sleep` are stopped after 100,000 iterations to prevent browser tab freeze

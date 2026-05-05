@@ -66,13 +66,37 @@ interface CaptureResult {
 async function captureRun(
   browser: Browser,
   code: string,
-  opts: { duration?: number; name?: string } = {}
+  opts: { duration?: number; name?: string; wrapRecordingSec?: number } = {}
 ): Promise<CaptureResult> {
   const duration = opts.duration ?? DEFAULT_DURATION
   const name = opts.name ?? 'capture'
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60)
   const ts = new Date().toISOString().replace(/[:.]/g, '-')
   const prefix = `${ts}_${safeName}`
+
+  if (opts.wrapRecordingSec !== undefined && opts.wrapRecordingSec > 0) {
+    // Wrap user code so recording is DSL-driven on this side too — matches
+    // tools/capture-desktop.ts:202-211 so both sides record from the same
+    // virtual t=0 to t=duration. PR #228 pattern: recording_start, user code,
+    // sleep, recording_stop, recording_save — all bare top-level so the
+    // transpiler wraps them into a single __run_once whose main thread
+    // controls the recording window. The user's own live_loops keep firing
+    // in parallel and get captured. (Earlier attempt with in_thread broke:
+    // recording_stop/save inside an in_thread doesn't see the recorder
+    // state set by a bare top-level recording_start — issue #266.)
+    const dur = opts.wrapRecordingSec
+    // with_bpm 60 around the sleep so a user's `use_bpm 120` (or any other
+    // tempo set inside <code>) doesn't shrink/expand the recording window.
+    // At 60 BPM, sleep N == N real seconds.
+    code =
+      `recording_start\n` +
+      `${code}\n` +
+      `with_bpm 60 do\n` +
+      `  sleep ${dur}\n` +
+      `end\n` +
+      `recording_stop\n` +
+      `recording_save "spw_capture_${ts}.wav"\n`
+  }
 
   const context = await browser.newContext({
     acceptDownloads: true,
@@ -207,7 +231,7 @@ async function captureRun(
     const codeDrivesRecording = /\brecording_(start|save)\b/.test(code)
     if (hasRec > 0 && !codeDrivesRecording) {
       await recBtn.click()
-      await page.waitForTimeout(duration - 1000)
+      await page.waitForTimeout(duration)
       // Stop recording — button now says "Save"
       const saveBtn = page.locator('button').filter({ hasText: 'Save' }).first()
       const hasSave = await saveBtn.count()
@@ -216,12 +240,12 @@ async function captureRun(
       } else {
         await recBtn.click()
       }
-      await page.waitForTimeout(2000) // wait for blob to be captured
+      await page.waitForTimeout(1500) // blob flush margin (matches desktop capture-desktop.ts +2500 minus blob-extract overhead)
     } else {
-      await page.waitForTimeout(duration - 1000)
-      // Give DSL-driven recording a beat to flush the MediaRecorder + WAV
-      // encode before we extract.
-      if (codeDrivesRecording) await page.waitForTimeout(2000)
+      // DSL-driven recording: the user code's recording_stop fires at user-code
+      // t=duration. Wait that long plus a blob flush margin for MediaRecorder
+      // + WAV encode to land in __capturedWavBlob before extraction.
+      await page.waitForTimeout(duration + 1500)
     }
 
     // Extract the captured WAV blob — populated by the click interceptor
@@ -528,6 +552,7 @@ async function main() {
   let duration = DEFAULT_DURATION
   let runAllExamples = false
   let batchPath: string | null = null
+  let wrapRecordingSec: number | undefined
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--file') {
@@ -543,6 +568,8 @@ async function main() {
     } else if (args[i] === '--example') {
       name = args[++i]
       // Will be loaded from the app's example selector
+    } else if (args[i] === '--wrap-recording') {
+      wrapRecordingSec = parseFloat(args[++i])
     } else if (!args[i].startsWith('--')) {
       code = args[i]
       name = 'inline'
@@ -604,7 +631,7 @@ end`
       const tag = `[${i + 1}/${fixtures.length}]`
       process.stdout.write(`  ${tag} ${fx.relPath}... `)
       try {
-        const result = await captureRun(browser, fx.code, { duration, name: fx.name })
+        const result = await captureRun(browser, fx.code, { duration, name: fx.name, wrapRecordingSec })
         const reportPath = resolve(CAPTURES_DIR, `batch_${fx.name}.md`)
         writeCaptureReport(result, reportPath)
         const errs = result.errorSummary.length
@@ -648,7 +675,7 @@ end`
 
     for (const ex of examples) {
       console.log(`  Running: ${ex.name}...`)
-      const result = await captureRun(browser, ex.code, { duration, name: ex.name })
+      const result = await captureRun(browser, ex.code, { duration, name: ex.name, wrapRecordingSec })
       const reportPath = resolve(CAPTURES_DIR, `${ex.name.replace(/\s+/g, '_')}.md`)
       writeCaptureReport(result, reportPath)
 
@@ -666,7 +693,7 @@ end`
     console.log(`\nSummary: ${summaryPath}`)
   } else {
     console.log(`  Running: ${name} (${duration}ms)...`)
-    const result = await captureRun(browser, code, { duration, name })
+    const result = await captureRun(browser, code, { duration, name, wrapRecordingSec })
     const reportPath = resolve(CAPTURES_DIR, `${name}.md`)
     writeCaptureReport(result, reportPath)
 

@@ -193,22 +193,24 @@ async function runDesktopCapture(
   const ports = discoverPorts()
   const notes: string[] = []
 
-  // Wrap the user's code with a recording-controller in_thread so it survives
-  // alongside whatever live_loops the user declared. The thread sleeps the
-  // capture window in REAL time (not bpm-scaled) via `rt(N)`-equivalent: we
-  // just send a literal sleep at default 60 BPM, where 1 beat == 1 second.
-  // After recording_stop we save to the absolute path. The user's loops keep
-  // running; /stop-all-jobs below tears them down.
+  // Wrap the user's code with bare top-level recording control. Sequence:
+  // user code (which may declare live_loops that fire async), then sleep
+  // duration_sec at default 60 BPM (1 beat = 1 second), then stop+save.
+  // The user's live_loops keep firing during the sleep and get captured;
+  // /stop-all-jobs below tears them down after recording is saved.
+  // Symmetric with tools/capture.ts wrap-recording mode (issue #266) so
+  // both sides use the same DSL pattern.
+  // with_bpm 60 around the sleep so the user's `use_bpm N` doesn't change
+  // the recording window length. At 60 BPM, sleep N == N real seconds.
   const durationSec = duration / 1000.0
   const wrapped =
     `recording_start\n` +
-    `in_thread do\n` +
+    `${code}\n` +
+    `with_bpm 60 do\n` +
     `  sleep ${durationSec}\n` +
-    `  recording_stop\n` +
-    `  recording_save "${audioPath}"\n` +
     `end\n` +
-    `\n` +
-    code
+    `recording_stop\n` +
+    `recording_save "${audioPath}"\n`
 
   // /run-code wire format: [token as int, code as string].
   const runPacket = oscMessage('/run-code', 'is', [ports.token, wrapped])
