@@ -202,10 +202,28 @@ async function runDesktopCapture(
   // both sides use the same DSL pattern.
   // with_bpm 60 around the sleep so the user's `use_bpm N` doesn't change
   // the recording window length. At 60 BPM, sleep N == N real seconds.
+  //
+  // Lead with `recording_stop` to clear any leaked recording state from a
+  // prior run. Sonic Pi's `recording_start` no-ops when `recording?` is true
+  // (sound.rb:925), so a prior run that failed to reach its own recording_save
+  // (e.g. user code blocked past the harness's /stop-all-jobs deadline) would
+  // leave the tmp WAV growing across the next run, producing a WAV much
+  // longer than `duration` containing audio from earlier captures.
+  //
+  // User code goes inside `in_thread` so its wallclock duration doesn't push
+  // back the main thread's wrap-sleep timeline. Without this, user code that
+  // takes longer than `duration` blocks the main thread, and the
+  // recording_save line never runs before the harness's /stop-all-jobs
+  // teardown (line ~233 below) — yielding no WAV. Recording calls themselves
+  // must stay BARE at top level — recording state isn't visible across
+  // thread boundaries (issue #266).
   const durationSec = duration / 1000.0
   const wrapped =
+    `recording_stop\n` +
     `recording_start\n` +
+    `in_thread do\n` +
     `${code}\n` +
+    `end\n` +
     `with_bpm 60 do\n` +
     `  sleep ${durationSec}\n` +
     `end\n` +

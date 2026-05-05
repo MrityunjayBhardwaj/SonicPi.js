@@ -52,8 +52,12 @@ The same composition will sound recognizably similar but not bit-identical to de
 
 ### FX coverage
 
-- 42 FX are wired end-to-end. Only 2/42 are WAV-verified against desktop output (`:decimator`/bitcrusher and one other). The rest instantiate cleanly and route signal correctly, but their output level/shape vs desktop is not yet measured.
-- **Layer-isolation testing has confirmed `:reverb` and `:echo` route signal cleanly** (web/desktop ratio matches the dry-signal ratio for the same synth, indicating no FX-specific divergence).
+- 40 FX are wired end-to-end. The full A/B WAV-verify sweep (`tools/fx-sweep.ts`) categorizes them as: **9 PASS · 29 FLAG · 0 FAIL · 2 INCONCLUSIVE**. No FX produces silence or wrong audio on web — every wired FX routes signal. Differences against Desktop SP are level / spectral-shape divergences, not engine bugs.
+  - **PASS (9)**: `reverb`, `ping_pong`, `slicer`, `panslicer`, `tremolo`, `wobble`, `flanger`, `rlpf`, `lpf` — within RMS ratio [0.5, 2.0] AND spectral L2 ≤ 25 dB.
+  - **FLAG (29)**: spectral shape diverges (most often L2 ~26-34 dB) or RMS / peak outside the tolerance band. Audible signal, but not bit-for-bit parity. See [#273](https://github.com/MrityunjayBhardwaj/SonicPi.js/issues/273) for the audit roadmap.
+  - **Filter-family gain gap**: notch filters (`n*pf`) are 0.35-0.40× quieter on web; `bpf`/`rbpf` are 2.5× louder. Tracked in [#272](https://github.com/MrityunjayBhardwaj/SonicPi.js/issues/272).
+  - **INCONCLUSIVE (2)**: `delay`, `chorus` produce silence on Desktop SP 4.6 — comparator can't evaluate parity until that's understood. Web side is fine. Tracked in [#274](https://github.com/MrityunjayBhardwaj/SonicPi.js/issues/274).
+- Run `npx tsx tools/fx-sweep.ts` against any branch to regenerate `.captures/fx-baseline.json` and diff.
 
 ### Specific synths/samples with known issues
 

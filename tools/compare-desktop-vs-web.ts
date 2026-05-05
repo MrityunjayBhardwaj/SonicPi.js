@@ -319,6 +319,7 @@ interface CliArgs {
   name: string
   bpm: number | null   // null → no per-beat analysis
   beats: number | null
+  jsonOut: string | null // --json-out: write a sidecar JSON for programmatic consumers
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -327,12 +328,14 @@ function parseArgs(argv: string[]): CliArgs {
   let code = `play 60\nsleep 1\nplay 67\nsleep 1\nplay 72\nsleep 1`
   let bpm: number | null = null
   let beats: number | null = null
+  let jsonOut: string | null = null
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--duration') duration = parseInt(argv[++i], 10)
     else if (a === '--name') name = argv[++i]
     else if (a === '--bpm') bpm = parseFloat(argv[++i])
     else if (a === '--beats') beats = parseInt(argv[++i], 10)
+    else if (a === '--json-out') jsonOut = argv[++i]
     else if (a === '--file') {
       const path = argv[++i]
       code = readFileSync(path, 'utf8')
@@ -344,7 +347,7 @@ function parseArgs(argv: string[]): CliArgs {
   // Per-beat fires only when --beats is given. If --bpm omitted, default to 60
   // (Sonic Pi default; matches the Python script's default).
   if (beats !== null && bpm === null) bpm = 60
-  return { code, duration, name, bpm, beats }
+  return { code, duration, name, bpm, beats, jsonOut }
 }
 
 async function main(): Promise<void> {
@@ -424,7 +427,7 @@ async function main(): Promise<void> {
     }
   }
 
-  writeComparisonReport({
+  const result: ComparisonResult = {
     timestamp: new Date().toISOString(),
     code: args.code,
     duration: args.duration,
@@ -434,7 +437,19 @@ async function main(): Promise<void> {
     spectrogram,
     spectrogramError,
     reportPath,
-  })
+  }
+  writeComparisonReport(result)
+
+  if (args.jsonOut) {
+    // Strip rawStdout to keep the JSON small for programmatic consumers
+    // (the markdown report already preserves the full stdout for debugging).
+    const jsonResult = {
+      ...result,
+      desktop: { ...result.desktop, rawStdout: undefined },
+      web:     { ...result.web,     rawStdout: undefined },
+    }
+    writeFileSync(args.jsonOut, JSON.stringify(jsonResult, null, 2))
+  }
 
   console.log(`\n✓ Comparison report: ${reportPath}`)
   if (desktopStats && webStats) {

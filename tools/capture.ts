@@ -76,21 +76,28 @@ async function captureRun(
 
   if (opts.wrapRecordingSec !== undefined && opts.wrapRecordingSec > 0) {
     // Wrap user code so recording is DSL-driven on this side too — matches
-    // tools/capture-desktop.ts:202-211 so both sides record from the same
-    // virtual t=0 to t=duration. PR #228 pattern: recording_start, user code,
-    // sleep, recording_stop, recording_save — all bare top-level so the
-    // transpiler wraps them into a single __run_once whose main thread
-    // controls the recording window. The user's own live_loops keep firing
-    // in parallel and get captured. (Earlier attempt with in_thread broke:
-    // recording_stop/save inside an in_thread doesn't see the recorder
-    // state set by a bare top-level recording_start — issue #266.)
+    // tools/capture-desktop.ts so both sides record from the same virtual
+    // t=0 to t=duration. Recording calls (start/stop/save) must stay BARE at
+    // top level — the transpiler wraps them into a single __run_once whose
+    // main thread controls the recording window. (Earlier attempt with
+    // recording_stop/save INSIDE in_thread broke: recording state isn't
+    // visible across thread boundaries — issue #266.)
+    //
+    // User code goes inside `in_thread` so its wallclock duration doesn't
+    // push back the main thread's wrap-sleep timeline. Without this, user
+    // code that takes >duration seconds blocks the main thread and the
+    // recording_save line never runs before the harness's /stop-all-jobs
+    // teardown — yielding no WAV.
     const dur = opts.wrapRecordingSec
     // with_bpm 60 around the sleep so a user's `use_bpm 120` (or any other
     // tempo set inside <code>) doesn't shrink/expand the recording window.
     // At 60 BPM, sleep N == N real seconds.
     code =
+      `recording_stop\n` +
       `recording_start\n` +
+      `in_thread do\n` +
       `${code}\n` +
+      `end\n` +
       `with_bpm 60 do\n` +
       `  sleep ${dur}\n` +
       `end\n` +
