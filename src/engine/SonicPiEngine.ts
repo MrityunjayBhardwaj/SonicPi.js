@@ -834,16 +834,21 @@ export class SonicPiEngine {
           // at current_time() and `b.get` reads at the reader's current_time().
           builder.setTimeStateContext(this.globalStore)
           // #447: live_loop `delay:` — sleep `delayBeats` beats before the FIRST
-          // iteration only, then never again (desktop runtime.rb:1196 `sleep delay
-          // if delay`, in beats, inside the forked thread before the body). Gated
-          // by loopDelayed so it fires once and survives hot-swap (like loopSynced).
-          // Prepending to the first program shifts that iteration's events — and the
-          // loop's subsequent cadence — by `delay` beats. (delay+sync combo: desktop
-          // delays then syncs; our sync wait above runs first — a minor ordering
-          // nuance only when BOTH are set, irrelevant to the common delay-only case.)
-          if (delayBeats > 0 && !this.loopDelayed.has(name)) {
+          // iteration only (desktop runtime.rb:1196 `sleep delay if delay`, in
+          // beats, inside the forked thread before the body). Mark the loop's
+          // first-iteration as done UNCONDITIONALLY (not only when a delay fires),
+          // so `delay` is a CREATION-only opt: hot-swapping `delay:` onto an
+          // already-running loop must NOT inject a mid-stream sleep (desktop
+          // applies delay at fork, never on re-eval). The flag persists across
+          // hot-swaps (like loopSynced) and is cleared on Run / loop removal.
+          // Prepending to the first program shifts that iteration's events — and
+          // the loop's subsequent cadence — by `delay` beats. (delay+sync combo:
+          // desktop delays then syncs; our sync wait above runs first — a minor
+          // ordering nuance only when BOTH are set; the common delay-only case is
+          // exact.)
+          if (!this.loopDelayed.has(name)) {
             this.loopDelayed.add(name)
-            builder.sleep(delayBeats)
+            if (delayBeats > 0) builder.sleep(delayBeats)
           }
           try {
             // SP95(d) #393: await so an S3 body can suspend on a scheduler-resolved
