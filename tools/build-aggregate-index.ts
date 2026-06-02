@@ -29,6 +29,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { navBlock, navJs } from './lib/dashboard-nav.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -289,18 +290,7 @@ const html = `<!doctype html>
 </style>
 </head>
 <body>
-<nav class="tab-bar">
-  <a href="index.html" data-active>overview</a>
-  <a href="examples-sweep.html">official <span class="count">34</span></a>
-  <a href="book-examples-sweep.html">book <span class="count">18</span></a>
-  <a href="e2e.html">e2e <span class="count">10</span></a>
-  <a href="community.html">community + forum <span class="count">48</span></a>
-  <a href="launch-gate.html">🚦 launch gate</a>
-  <a href="fx-inspector.html">fx a/b <span class="count">40</span></a>
-  <a href="event-diff.html">event diff${eventDiff ? ` <span class="count">${eventDiff.counts.total}</span>` : ''}</a>
-  <span class="spacer"></span>
-  <span class="meta">desktop ↔ web parity · #446 event diff</span>
-</nav>
+${navBlock('desktop ↔ web parity · #446 event diff')}
 <div class="wrap">
   <h1>SonicPi.js — Parity Dashboard</h1>
   <p class="sub">Desktop Sonic Pi ↔ browser engine, every example pool. Built <b>${esc(now)}</b> from the freshly-captured manifests. <b>Tier-1 pitch is the verdict</b> (SV46); consistency scores are timbre/level support only.</p>
@@ -347,5 +337,7 @@ const html = `<!doctype html>
 `
 
 writeFileSync(join(TR, 'index.html'), html)
-console.log(`✓ wrote test_results/index.html (aggregate dashboard)`)
+// Single source of truth for the shared tab bar — every viewer loads this.
+writeFileSync(join(TR, 'nav.js'), navJs())
+console.log(`✓ wrote test_results/index.html (aggregate dashboard) + nav.js (shared tab bar)`)
 console.log(`  official=${official ? 'ok' : 'MISSING'} · book=${book ? 'ok' : 'MISSING'} · e2e=${e2e ? 'ok' : 'MISSING'} · community=${community ? 'ok' : 'MISSING'} · gate=${gate ? 'ok' : 'MISSING'}`)

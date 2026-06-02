@@ -20,6 +20,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { navBlock } from './lib/dashboard-nav.ts'
 
 const ROOT = join(import.meta.dirname, '..')
 const SWEEP = join(ROOT, 'test_results/examples-sweep.json')
@@ -134,15 +135,7 @@ const html = `<!doctype html>
   .excl li { color: #9aa4b2; margin: 4px 0; }
 </style></head>
 <body>
-  <nav class="tab-bar">
-    <a href="index.html">overview</a>
-    <a href="examples-sweep.html">official</a>
-    <a href="book-examples-sweep.html">book</a>
-    <a href="e2e.html">e2e</a>
-    <a href="community.html">community + forum</a>
-    <a href="launch-gate.html" data-active="1">🚦 launch gate</a>
-    <a href="fx-inspector.html">fx a/b</a>
-  </nav>
+  ${navBlock('🚦 Tier-1 launch gate · SV46')}
   <div class="wrap">
     <h1>Launch Gate — PRNG-free non-heavy official roster</h1>
     <div class="verdict ${passed ? 'pass' : 'fail'}">${passCount}/${total} = ${pct.toFixed(1)}% · threshold ≥${manifest.gateThresholdPct}% · ${passed ? '✅ PASS' : '❌ NOT MET'}</div>

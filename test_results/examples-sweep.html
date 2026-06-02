@@ -249,17 +249,9 @@
     </style>
   </head>
   <body>
-    <nav class="tab-bar">
-      <a href="index.html">overview</a>
-      <a href="examples-sweep.html" data-active="1">official <span class="count">34</span></a>
-      <a href="book-examples-sweep.html">book <span class="count">18</span></a>
-      <a href="e2e.html">e2e <span class="count">10</span></a>
-      <a href="community.html">community + forum <span class="count">48</span></a>
-      <a href="launch-gate.html">🚦 launch gate</a>
-      <a href="fx-inspector.html">fx a/b <span class="count">40</span></a>
-      <span class="spacer"></span>
-      <span class="meta"><a href="raw-lpf.html">raw-lpf investigation</a></span>
-    </nav>
+    <!-- shared tab bar: tools/lib/dashboard-nav.ts → nav.js (single source) -->
+    <nav class="tab-bar" id="topnav" data-meta="official 34 · Tier-1 pitch parity"></nav>
+    <script src="nav.js"></script>
     <div class="app">
       <aside class="sidebar">
         <div class="sidebar-head">

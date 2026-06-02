@@ -19,6 +19,7 @@
 import { readdirSync, readFileSync, writeFileSync, statSync, existsSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { navBlock } from './lib/dashboard-nav.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -297,18 +298,7 @@ const html = `<!doctype html>
 </style>
 </head>
 <body>
-<nav class="tab-bar">
-  <a href="index.html">overview</a>
-  <a href="examples-sweep.html">official <span class="count">34</span></a>
-  <a href="book-examples-sweep.html">book <span class="count">18</span></a>
-  <a href="e2e.html">e2e <span class="count">10</span></a>
-  <a href="community.html">community + forum <span class="count">48</span></a>
-  <a href="launch-gate.html">🚦 launch gate</a>
-  <a href="fx-inspector.html">fx a/b <span class="count">40</span></a>
-  <a href="event-diff.html" data-active>event diff <span class="count">${counts.total}</span></a>
-  <span class="spacer"></span>
-  <span class="meta">event-level /s_new parity · #446</span>
-</nav>
+${navBlock('event-level /s_new parity · #446')}
 <div class="wrap">
   <h1>Event Diff — /s_new structure: count · order · onset</h1>
   <p class="sub">Desktop Sonic Pi ↔ browser engine, the literal <b>/s_new</b> event streams (not audio). Built <b>${esc(now)}</b>. Desktop via scsynth <code>/dumpOSC</code>; web via the engine's OSC trace.</p>

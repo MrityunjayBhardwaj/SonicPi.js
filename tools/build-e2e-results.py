@@ -404,17 +404,9 @@ HTML_TEMPLATE = """<!doctype html>
 </style>
 </head>
 <body>
-<nav class="tab-bar">
-  <a href="index.html">overview</a>
-  <a href="examples-sweep.html">official <span class="count">34</span></a>
-  <a href="book-examples-sweep.html">book <span class="count">18</span></a>
-  <a href="e2e.html" data-active="1">e2e <span class="count">10</span></a>
-  <a href="community.html">community + forum <span class="count">48</span></a>
-  <a href="launch-gate.html">🚦 launch gate</a>
-  <a href="fx-inspector.html">fx a/b <span class="count">40</span></a>
-  <span class="spacer"></span>
-  <span class="meta"><a href="raw-lpf.html">raw-lpf investigation</a></span>
-</nav>
+<!-- shared tab bar: tools/lib/dashboard-nav.ts → nav.js (single source) -->
+<nav class="tab-bar" id="topnav" data-meta="e2e consistency · Tier-2/3"></nav>
+<script src="nav.js"></script>
 <div class="page">
 <h1>E2E Composition Suite — A/B Inspector</h1>
 <div class="summary">
