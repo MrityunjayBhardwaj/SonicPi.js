@@ -425,10 +425,16 @@ export class ProgramBuilder {
     if (typeof buildFn !== 'function') {
       throw new Error('in_thread requires a block')
     }
+    // #447: `in_thread delay: N` — sleep N beats before the body (desktop
+    // runtime.rb:1196 `sleep delay if delay`, in beats). Mirrors `at`'s offset
+    // sleep. The opts hash was previously parsed only to find the block.
+    const opts = typeof optsOrFn === 'object' ? optsOrFn : null
+    const delayBeats = opts && typeof opts.delay === 'number' ? opts.delay : 0
     // in_thread forks a thread → fresh tick scope + re-seeded rng, but
     // inherits a snapshot of thread-locals (synth/bpm/transpose/density/
     // defaults/iteration introspection). #343 Defect: _currentBpm now threads.
     const inner = this.forkBuilder('forked')
+    if (delayBeats > 0) inner.sleep(delayBeats)
     buildFn(inner)
     this.steps.push({ tag: 'thread', body: inner.build() })
     return this

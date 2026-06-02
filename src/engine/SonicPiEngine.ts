@@ -142,6 +142,8 @@ export class SonicPiEngine {
   private loopBeats = new Map<string, number>()
   /** Tracks which loops have completed their initial sync — persists across hot-swaps. */
   private loopSynced = new Set<string>()
+  /** Tracks which loops have applied their initial `delay:` — once only, persists across hot-swaps (#447). */
+  private loopDelayed = new Set<string>()
   /**
    * Build-phase nesting depth (issue #198). Incremented around each
    * synchronous builderFn invocation. > 0 means we are currently
@@ -652,13 +654,18 @@ export class SonicPiEngine {
       let scopeHandle: ScopeHandle | null = null
 
       const wrappedLiveLoop = (name: string, builderFnOrOpts: ((b: ProgramBuilder) => void | Promise<void>) | Record<string, unknown>, maybeFn?: (b: ProgramBuilder) => void | Promise<void>) => {
-        // Support both: live_loop("name", fn) and live_loop("name", {sync: "x"}, fn)
+        // Support both: live_loop("name", fn) and live_loop("name", {sync:, delay:}, fn)
         let builderFn: (b: ProgramBuilder) => void | Promise<void>
         let syncTarget: string | null = null
+        // #447: live_loop's `delay:` opt — initial delay in BEATS before the first
+        // iteration (desktop core.rb:2299 passes it to in_thread; runtime.rb:1196
+        // `sleep delay if delay`). Default 0. Was previously dropped.
+        let delayBeats = 0
         if (typeof builderFnOrOpts === 'function') {
           builderFn = builderFnOrOpts
         } else {
           syncTarget = (builderFnOrOpts.sync as string) ?? null
+          delayBeats = typeof builderFnOrOpts.delay === 'number' ? builderFnOrOpts.delay : 0
           builderFn = maybeFn!
         }
 
@@ -826,6 +833,18 @@ export class SonicPiEngine {
           // SP95(d) #350 slice 2: wire the Time State so `b.set` writes eagerly
           // at current_time() and `b.get` reads at the reader's current_time().
           builder.setTimeStateContext(this.globalStore)
+          // #447: live_loop `delay:` — sleep `delayBeats` beats before the FIRST
+          // iteration only, then never again (desktop runtime.rb:1196 `sleep delay
+          // if delay`, in beats, inside the forked thread before the body). Gated
+          // by loopDelayed so it fires once and survives hot-swap (like loopSynced).
+          // Prepending to the first program shifts that iteration's events — and the
+          // loop's subsequent cadence — by `delay` beats. (delay+sync combo: desktop
+          // delays then syncs; our sync wait above runs first — a minor ordering
+          // nuance only when BOTH are set, irrelevant to the common delay-only case.)
+          if (delayBeats > 0 && !this.loopDelayed.has(name)) {
+            this.loopDelayed.add(name)
+            builder.sleep(delayBeats)
+          }
           try {
             // SP95(d) #393: await so an S3 body can suspend on a scheduler-resolved
             // sync mid-build. For today's synchronous S1/S2 bodies this `await` is
@@ -1025,8 +1044,14 @@ export class SonicPiEngine {
       ) => {
         const fn = typeof optsOrFn === 'function' ? optsOrFn : maybeFn
         if (typeof fn !== 'function') return
+        // #447: top-level `in_thread delay: N` — sleep N beats before the body
+        // (desktop runtime.rb:1196). The wrapper is a one-shot loop (b.stop()),
+        // so the delay is naturally once-only; no loopDelayed gate needed here.
+        const opts = typeof optsOrFn === 'object' ? optsOrFn : null
+        const delayBeats = opts && typeof opts.delay === 'number' ? opts.delay : 0
         const name = `__thread_${Date.now()}_${randomSuffix()}`
         fxAwareWrappedLiveLoop(name, (b: ProgramBuilder) => {
+          if (delayBeats > 0) b.sleep(delayBeats)
           fn(b)
           b.stop()
         })
@@ -1609,6 +1634,7 @@ export class SonicPiEngine {
           this.loopTicks.delete(name)
           this.loopBeats.delete(name)
           this.loopSynced.delete(name)
+          this.loopDelayed.delete(name)
         }
 
         // Pause ticking so no old events fire during transition
@@ -1846,6 +1872,7 @@ export class SonicPiEngine {
     this.loopTicks.clear()
     this.loopBeats.clear()
     this.loopSynced.clear()
+    this.loopDelayed.clear()
     // Time State (set/get) intentionally NOT cleared on Stop. Desktop Sonic
     // Pi creates @event_history once per session (runtime.rb:1450) and never
     // clears it on Stop — `get` is documented "deterministic across Runs".

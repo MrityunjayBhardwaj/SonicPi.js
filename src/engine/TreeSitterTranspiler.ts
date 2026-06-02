@@ -1812,9 +1812,13 @@ function transpileLiveLoop(
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true, asyncBody: true }
   const bodyStr = transpileBlockBody(blockNode, bodyCtx)
 
-  // sync: option — pass as registration option (one-time sync before first iteration),
-  // NOT as b.sync() inside the body (which would re-sync every iteration).
-  const optsArg = syncName ? `{sync: "${syncName}"}, ` : ''
+  // sync:/delay: options — pass as a registration opts hash (applied once before
+  // the first iteration), NOT as body calls. #447: `delay` was parsed into
+  // extraOpts above but the opts hash only emitted `sync`, silently dropping it.
+  const optsParts: string[] = []
+  if (syncName) optsParts.push(`sync: "${syncName}"`)
+  optsParts.push(...extraOpts)
+  const optsArg = optsParts.length > 0 ? `{${optsParts.join(', ')}}, ` : ''
 
   return `live_loop("${name}", ${optsArg}async (__b) => {\n${bodyStr}\n${ctx.indent}})`
 }
@@ -2079,15 +2083,25 @@ function transpileInThread(
   // Resolve `name:` option (used both for the in_thread wrapper and as a base
   // for hoisted-loop names so hot-swap is stable across re-evaluation).
   let nameExpr: string | null = null
+  // #447: `in_thread delay: N` — initial delay in beats before the body
+  // (desktop runtime.rb:1196). Was parsed for `name:` only; `delay:` dropped.
+  let delayExpr: string | null = null
   const args = argsNode?.namedChildren ?? []
   for (const arg of args) {
     if (arg.type === 'pair') {
       const key = arg.namedChildren[0]?.text?.replace(/:$/, '')
       if (key === 'name') {
         nameExpr = transpileNode(arg.namedChildren[1], ctx)
+      } else if (key === 'delay') {
+        delayExpr = transpileNode(arg.namedChildren[1], ctx)
       }
     }
   }
+  // The registration opts hash, built once (name + delay) for every emit site.
+  const itOptsParts: string[] = []
+  if (nameExpr !== null) itOptsParts.push(`name: ${nameExpr}`)
+  if (delayExpr !== null) itOptsParts.push(`delay: ${delayExpr}`)
+  const itOpts = itOptsParts.length > 0 ? `{ ${itOptsParts.join(', ')} }, ` : ''
 
   // SV16 / issue #205: `loop do` inside an in_thread body must be hoisted to
   // a sibling auto-named live_loop. Building it inline emits `while(true) {
@@ -2125,10 +2139,7 @@ function transpileInThread(
     // No nested loop → original codepath.
     const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
     const bodyStr = transpileBlockBody(blockNode, bodyCtx)
-    if (nameExpr !== null) {
-      return `${prefix}in_thread({ name: ${nameExpr} }, (__b) => {\n${bodyStr}\n${ctx.indent}})`
-    }
-    return `${prefix}in_thread((__b) => {\n${bodyStr}\n${ctx.indent}})`
+    return `${prefix}in_thread(${itOpts}(__b) => {\n${bodyStr}\n${ctx.indent}})`
   }
 
   if (droppedAfterLoop) {
@@ -2151,11 +2162,7 @@ function transpileInThread(
       .map(c => '  ' + transpileNode(c, setupCtx))
       .filter(s => s.trim())
       .join('\n')
-    if (nameExpr !== null) {
-      parts.push(`${prefix}in_thread({ name: ${nameExpr} }, (__b) => {\n${setupStr}\n${ctx.indent}})`)
-    } else {
-      parts.push(`${prefix}in_thread((__b) => {\n${setupStr}\n${ctx.indent}})`)
-    }
+    parts.push(`${prefix}in_thread(${itOpts}(__b) => {\n${setupStr}\n${ctx.indent}})`)
   }
 
   for (const loopNode of loopChildren) {
