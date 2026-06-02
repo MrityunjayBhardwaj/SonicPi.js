@@ -60,12 +60,17 @@ interface GateManifest {
   rows: { example: string; gateVerdict: string; pass: boolean; gradedVia: string; detail: string }[]
   exclusions?: { example: string; reason: string }[]
 }
+interface EventDiffManifest {
+  generatedAt?: string
+  counts: { match: number; diverge: number; empty: number; total: number }
+}
 
 const official = readJson<PitchManifest>('examples-sweep.json')
 const book = readJson<PitchManifest>('book-examples-sweep.json')
 const e2e = readJson<ConsistencyManifest>('e2e.json')
 const community = readJson<ConsistencyManifest>('community.json')
 const gate = readJson<GateManifest>('launch-gate.json')
+const eventDiff = readJson<EventDiffManifest>('event-diff.json')
 
 // ── chip rendering ─────────────────────────────────────────────────────────
 function chip(label: string, n: number, cls: string): string {
@@ -128,6 +133,31 @@ function consistencyCard(title: string, count: number, viewer: string, m: Consis
     <div class="chips">${chips}</div>
     <div class="pool-foot">
       <span>${esc([cap, sub].filter(Boolean).join(' · '))}</span>
+      <span class="stamp">${esc(stamp)}</span>
+    </div>
+  </a>`
+}
+
+function eventDiffCard(m: EventDiffManifest | null): string {
+  if (!m) {
+    return `<a class="pool-card missing" href="event-diff.html">
+      <div class="pool-head"><span class="pool-title">Event Diff (/s_new)</span><span class="pool-n">0</span></div>
+      <div class="pool-note">manifest not built — capture with <code>tools/event-parity.ts</code> then run <code>tools/build-event-diff.ts</code></div>
+    </a>`
+  }
+  const c = m.counts
+  const chips = [
+    chip('STRUCTURE-MATCH', c.match, 'pass'),
+    chip('STRUCTURE-DIVERGE', c.diverge, 'fail'),
+    chip('EMPTY', c.empty, 'incon'),
+  ].filter(Boolean).join('')
+  const stamp = m.generatedAt ? new Date(m.generatedAt).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : ''
+  return `<a class="pool-card" href="event-diff.html">
+    <div class="pool-head"><span class="pool-title">Event Diff (desktop ↔ web /s_new)</span><span class="pool-n">${c.total}</span></div>
+    <div class="scheme tierE">event-level structure · /s_new count · order · onset (no audio) · #446</div>
+    <div class="chips">${chips}</div>
+    <div class="pool-foot">
+      <span>desktop via scsynth <code>/dumpOSC</code> · web via OSC trace · PRNG values not diffed (SV49)</span>
       <span class="stamp">${esc(stamp)}</span>
     </div>
   </a>`
@@ -229,6 +259,7 @@ const html = `<!doctype html>
   .scheme{font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;padding:2px 0}
   .scheme.tier1{color:var(--pass)}
   .scheme.tier23{color:var(--flag)}
+  .scheme.tierE{color:var(--accent)}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .chip{font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:20px;
     background:var(--bg-elev);color:var(--text-dim)}
@@ -266,8 +297,9 @@ const html = `<!doctype html>
   <a href="community.html">community + forum <span class="count">48</span></a>
   <a href="launch-gate.html">🚦 launch gate</a>
   <a href="fx-inspector.html">fx a/b <span class="count">40</span></a>
+  <a href="event-diff.html">event diff${eventDiff ? ` <span class="count">${eventDiff.counts.total}</span>` : ''}</a>
   <span class="spacer"></span>
-  <span class="meta">desktop ↔ web parity · #424 ordered-fx-bundle</span>
+  <span class="meta">desktop ↔ web parity · #446 event diff</span>
 </nav>
 <div class="wrap">
   <h1>SonicPi.js — Parity Dashboard</h1>
@@ -287,6 +319,11 @@ const html = `<!doctype html>
     ${consistencyCard('Community + in-thread-forum', 48, 'community.html', community, 'tools/build-community-results.py')}
   </div>
 
+  <div class="section-h">Event-level structure — /s_new parity (no audio, complements the audio comparator)</div>
+  <div class="grid">
+    ${eventDiffCard(eventDiff)}
+  </div>
+
   <div class="caveat">
     <b>Why two schemes?</b> Official + book are graded on <b>Tier-1 pitch</b> (note progression, the verdict — a MATCH means the right notes at the right time). E2E + community are graded on a <b>consistency score</b> (RMS/peak ratio + mel-L2 + MFCC = timbre &amp; level), which per the project's 6-Tier standard is <b>blind to wrong melody</b> and can never stand as a musical-correctness verdict. A HIGH there means "sounds tonally/loudness-similar to desktop", not "plays the right notes". MFCC is further confounded by the known ~0.5× web gain (#268) + reverb tail. PRNG-driven divergence is a declared v1 non-goal (SV49) and is classified, not counted as a defect.
   </div>
@@ -298,6 +335,7 @@ const html = `<!doctype html>
     <a href="community.html">community + forum →</a>
     <a href="launch-gate.html">🚦 launch gate →</a>
     <a href="fx-inspector.html">fx a/b inspector →</a>
+    <a href="event-diff.html">event diff (/s_new) →</a>
     <a href="mono-sample-sp107.html">SP107 mono-sample investigation →</a>
     <a href="raw-lpf.html">raw-lpf investigation →</a>
   </div>

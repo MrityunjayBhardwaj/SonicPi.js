@@ -65,6 +65,7 @@
   .scheme{font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;padding:2px 0}
   .scheme.tier1{color:var(--pass)}
   .scheme.tier23{color:var(--flag)}
+  .scheme.tierE{color:var(--accent)}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .chip{font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:20px;
     background:var(--bg-elev);color:var(--text-dim)}
@@ -102,12 +103,13 @@
   <a href="community.html">community + forum <span class="count">48</span></a>
   <a href="launch-gate.html">🚦 launch gate</a>
   <a href="fx-inspector.html">fx a/b <span class="count">40</span></a>
+  <a href="event-diff.html">event diff <span class="count">3</span></a>
   <span class="spacer"></span>
-  <span class="meta">desktop ↔ web parity · #424 ordered-fx-bundle</span>
+  <span class="meta">desktop ↔ web parity · #446 event diff</span>
 </nav>
 <div class="wrap">
   <h1>SonicPi.js — Parity Dashboard</h1>
-  <p class="sub">Desktop Sonic Pi ↔ browser engine, every example pool. Built <b>2026-06-01 07:51 UTC</b> from the freshly-captured manifests. <b>Tier-1 pitch is the verdict</b> (SV46); consistency scores are timbre/level support only.</p>
+  <p class="sub">Desktop Sonic Pi ↔ browser engine, every example pool. Built <b>2026-06-02 20:03 UTC</b> from the freshly-captured manifests. <b>Tier-1 pitch is the verdict</b> (SV46); consistency scores are timbre/level support only.</p>
 
   <a class="gate-hero pass" href="launch-gate.html">
     <div class="gate-left">
@@ -124,10 +126,10 @@
     <a class="pool-card" href="examples-sweep.html">
     <div class="pool-head"><span class="pool-title">Official examples</span><span class="pool-n">34</span></div>
     <div class="scheme tier1">Tier-1 pitch parity · the verdict (SV46)</div>
-    <div class="chips"><span class="chip pass" title="MATCH">MATCH <b>1</b></span><span class="chip accent" title="PRNG-variant">PRNG-variant <b>2</b></span><span class="chip fail" title="DIVERGE">DIVERGE <b>14</b></span><span class="chip incon" title="INCONCL">INCONCL <b>14</b></span><span class="chip faildark" title="ERROR">ERROR <b>1</b></span><span class="chip incon" title="INVALID">INVALID <b>2</b></span></div>
+    <div class="chips"><span class="chip pass" title="MATCH">MATCH <b>1</b></span><span class="chip accent" title="PRNG-variant">PRNG-variant <b>2</b></span><span class="chip fail" title="DIVERGE">DIVERGE <b>16</b></span><span class="chip incon" title="INCONCL">INCONCL <b>15</b></span></div>
     <div class="pool-foot">
-      <span><b>0</b> PRNG-free real divergences · 27 PRNG-driven · 3 heavy-tool-fail</span>
-      <span class="stamp">2026-06-01 07:26 UTC</span>
+      <span><b>0</b> PRNG-free real divergences · 27 PRNG-driven · 0 heavy-tool-fail</span>
+      <span class="stamp">2026-06-02 10:04 UTC</span>
     </div>
   </a>
     <a class="pool-card" href="book-examples-sweep.html">
@@ -163,6 +165,19 @@
   </a>
   </div>
 
+  <div class="section-h">Event-level structure — /s_new parity (no audio, complements the audio comparator)</div>
+  <div class="grid">
+    <a class="pool-card" href="event-diff.html">
+    <div class="pool-head"><span class="pool-title">Event Diff (desktop ↔ web /s_new)</span><span class="pool-n">3</span></div>
+    <div class="scheme tierE">event-level structure · /s_new count · order · onset (no audio) · #446</div>
+    <div class="chips"><span class="chip pass" title="STRUCTURE-MATCH">STRUCTURE-MATCH <b>3</b></span></div>
+    <div class="pool-foot">
+      <span>desktop via scsynth <code>/dumpOSC</code> · web via OSC trace · PRNG values not diffed (SV49)</span>
+      <span class="stamp">2026-06-02 20:03 UTC</span>
+    </div>
+  </a>
+  </div>
+
   <div class="caveat">
     <b>Why two schemes?</b> Official + book are graded on <b>Tier-1 pitch</b> (note progression, the verdict — a MATCH means the right notes at the right time). E2E + community are graded on a <b>consistency score</b> (RMS/peak ratio + mel-L2 + MFCC = timbre &amp; level), which per the project's 6-Tier standard is <b>blind to wrong melody</b> and can never stand as a musical-correctness verdict. A HIGH there means "sounds tonally/loudness-similar to desktop", not "plays the right notes". MFCC is further confounded by the known ~0.5× web gain (#268) + reverb tail. PRNG-driven divergence is a declared v1 non-goal (SV49) and is classified, not counted as a defect.
   </div>
@@ -174,6 +189,7 @@
     <a href="community.html">community + forum →</a>
     <a href="launch-gate.html">🚦 launch gate →</a>
     <a href="fx-inspector.html">fx a/b inspector →</a>
+    <a href="event-diff.html">event diff (/s_new) →</a>
     <a href="mono-sample-sp107.html">SP107 mono-sample investigation →</a>
     <a href="raw-lpf.html">raw-lpf investigation →</a>
   </div>

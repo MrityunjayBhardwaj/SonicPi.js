@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SonicPi.js — Event Diff (/s_new)</title>
+<style>
+  :root{
+    --bg:#1a1b26;--bg-elev:#1f2335;--bg-card:#16161e;--border:#2a2e46;
+    --text:#c0caf5;--text-dim:#7a85b3;--text-mute:#565f89;
+    --accent:#7aa2f7;--accent2:#ff1493;
+    --pass:#9ece6a;--flag:#e0af68;--fail:#f7768e;--incon:#565f89;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-size:13px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+  a{color:inherit;text-decoration:none}
+  .tab-bar{height:38px;display:flex;align-items:stretch;background:var(--bg-elev);
+    border-bottom:1px solid var(--border);padding:0 16px;gap:2px}
+  .tab-bar a{display:inline-flex;align-items:center;gap:6px;padding:0 14px;font-size:12px;
+    color:var(--text-dim);border-bottom:2px solid transparent;font-family:var(--mono);
+    text-transform:lowercase;letter-spacing:.04em}
+  .tab-bar a:hover{color:var(--text)}
+  .tab-bar a[data-active]{color:var(--accent2);border-bottom-color:var(--accent2)}
+  .tab-bar .count{font-size:10px;background:var(--bg-card);color:var(--text-mute);padding:1px 6px;border-radius:8px}
+  .tab-bar .spacer{flex:1}
+  .tab-bar .meta{align-self:center;font-size:11px;color:var(--text-mute);font-family:var(--mono)}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 60px}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+  .sub{color:var(--text-dim);font-size:12.5px;margin:0 0 18px;font-family:var(--mono)}
+  .sub b{color:var(--text)}
+  .hero{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .stat{font-family:var(--mono);font-size:12px;padding:4px 12px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border)}
+  .stat b{font-size:16px}
+  .stat.pass b{color:var(--pass)} .stat.fail b{color:var(--fail)} .stat.incon b{color:var(--text-mute)}
+  .caveat{background:#1d1a13;border:1px solid #3a3017;border-radius:10px;padding:13px 16px;margin:14px 0 24px;font-size:12px;color:var(--text-dim);line-height:1.55}
+  .caveat b{color:var(--flag)}
+  .fx-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  .fx-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .fx-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:10px}
+  .fx-meta{display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:11px;color:var(--text-mute)}
+  .verdict{font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:20px}
+  .verdict.pass{background:#1f2a16;color:var(--pass)}
+  .verdict.fail{background:#2a151b;color:var(--fail)}
+  .verdict.incon{background:#1a1c26;color:var(--text-mute)}
+  .tag{font-family:var(--mono);font-size:10.5px;padding:1px 8px;border-radius:20px;background:var(--bg-elev);color:var(--text-dim)}
+  .tag.prng{background:#16213a;color:var(--accent)} .tag.det{background:#1f2a16;color:var(--pass)}
+  .reasons{margin:10px 0;padding-left:18px;color:var(--text-dim);font-size:12px;line-height:1.5}
+  .reasons li{margin:2px 0}
+  .totals{font-family:var(--mono);font-size:12px;color:var(--text-dim);margin:6px 0 10px}
+  .totals b{color:var(--text)}
+  table.diff{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;margin-bottom:6px}
+  table.diff th{text-align:left;color:var(--text-mute);font-weight:400;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-bottom:1px solid var(--border)}
+  table.diff td{padding:3px 8px;border-bottom:1px solid #20232f}
+  table.diff td.syn{color:var(--text)}
+  table.diff td.num{text-align:right;color:var(--text-dim)}
+  table.diff td.num.gap{color:var(--flag);font-weight:700}
+  .st.pass{color:var(--pass)} .st.fail{color:var(--fail)} .st.flag{color:var(--flag)} .st.accent{color:var(--accent)} .st.mute{color:var(--text-mute)}
+  .tbl-h{font-family:var(--mono);font-size:10.5px;color:var(--text-mute);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 2px}
+  details.raw{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
+  details.raw summary{cursor:pointer;font-family:var(--mono);font-size:11.5px;color:var(--text-dim)}
+  details.raw summary:hover{color:var(--text)}
+  .streams{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  .stream-h{font-family:var(--mono);font-size:10.5px;color:var(--text-mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+  .ev{display:flex;gap:8px;font-family:var(--mono);font-size:11px;padding:1px 0;border-bottom:1px solid #1c1f2b}
+  .ev .evt{color:var(--text-mute);min-width:48px;text-align:right}
+  .ev .evn{color:var(--accent);min-width:120px}
+  .ev .evp{color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ev.mute{color:var(--text-mute)}
+  .src-h{font-family:var(--mono);font-size:10.5px;color:var(--text-mute);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 4px}
+  pre.src{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;overflow:auto;font-family:var(--mono);font-size:11px;color:var(--text-dim);max-height:280px;margin:0}
+  .empty{font-family:var(--mono);font-size:12.5px;color:var(--text-mute);background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px}
+  .empty code{color:var(--text-dim)}
+  footer{margin-top:30px;color:var(--text-mute);font-family:var(--mono);font-size:11px;border-top:1px solid var(--border);padding-top:14px}
+</style>
+</head>
+<body>
+<nav class="tab-bar">
+  <a href="index.html">overview</a>
+  <a href="examples-sweep.html">official <span class="count">34</span></a>
+  <a href="book-examples-sweep.html">book <span class="count">18</span></a>
+  <a href="e2e.html">e2e <span class="count">10</span></a>
+  <a href="community.html">community + forum <span class="count">48</span></a>
+  <a href="launch-gate.html">🚦 launch gate</a>
+  <a href="fx-inspector.html">fx a/b <span class="count">40</span></a>
+  <a href="event-diff.html" data-active>event diff <span class="count">3</span></a>
+  <span class="spacer"></span>
+  <span class="meta">event-level /s_new parity · #446</span>
+</nav>
+<div class="wrap">
+  <h1>Event Diff — /s_new structure: count · order · onset</h1>
+  <p class="sub">Desktop Sonic Pi ↔ browser engine, the literal <b>/s_new</b> event streams (not audio). Built <b>2026-06-02 20:03 UTC</b>. Desktop via scsynth <code>/dumpOSC</code>; web via the engine's OSC trace.</p>
+  <div class="hero">
+    <span class="stat pass">STRUCTURE-MATCH <b>3</b></span>
+    <span class="stat fail">STRUCTURE-DIVERGE <b>0</b></span>
+    <span class="stat incon">EMPTY <b>0</b></span>
+    <span class="stat">fixtures <b>3</b></span>
+  </div>
+  <div class="caveat">
+    <b>How to read this.</b> This diffs the literal /s_new streams desktop and web send to scsynth — it is the event-level companion to the audio comparator (which is opaque past desktop's audio). <b>PRNG param VALUES are not diffed</b> (SV49 — desktop reads a frozen rand-stream, we use MT19937). The robust divergence signal is a <b>DROPPED significant layer</b> (a synthdef desktop produces that web never does). A fixed wall-clock window counts more events on the faster-progressing engine, so raw counts mislead for PRNG/multi-thread pieces — the verdict keys on dropped layers + <b>first-onset gaps</b> (highlighted), which catch gating/timing divergence (e.g. <code>live_loop delay:</code>).
+  </div>
+  <section class="fx-card" id="det_tb303">
+  <div class="fx-head">
+    <div class="fx-title">det_tb303 <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
+    <div class="fx-meta"><span class="tag det">deterministic</span>
+      <span class="tag">window 6s</span>
+      <span class="stamp">2026-06-02 20:03 UTC</span></div>
+  </div>
+  <ul class="reasons"><li>Significant synthdef multiset matches.</li></ul>
+  <div class="totals">Voice /s_new — desktop <b>8</b>, web <b>8</b> · web <b>1×</b> desktop</div>
+  <table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">tb303</td>
+    <td class="num">8</td>
+    <td class="num">8</td>
+    <td class="num">1.00</td>
+    <td class="num">0s</td>
+    <td class="num">0s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  
+  <details class="raw"><summary>raw /s_new streams + source (9 desktop · 8 web)</summary>
+    <div class="streams">
+      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 42, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">tb303</span><span class="evp">note: 60, release: 0.2, cutoff_attack: 0, cutoff_decay: 0, cutoff_sustain: 0, cutoff_release: 0.2, out_bus: 42</span></div><div class="ev"><span class="evt">0.3s</span><span class="evn">tb303</span><span class="evp">note: 67, release: 0.2, cutoff_attack: 0, cutoff_decay: 0, cutoff_sustain: 0, cutoff_release: 0.2, out_bus: 42</span></div><div class="ev"><span class="evt">0.599s</span><span class="evn">tb303</span><span class="evp">note: 60, release: 0.2, cutoff_attack: 0, cutoff_decay: 0, cutoff_sustain: 0, cutoff_release: 0.2, out_bus: 42</span></div><div class="ev"><span class="evt">0.9s</span><span class="evn">tb303</span><span class="evp">note: 67, release: 0.2, cutoff_attack: 0, cutoff_decay: 0, cutoff_sustain: 0, cutoff_release: 0.2, out_bus: 42</span></div><div class="ev"><span class="evt">1.2s</span><span class="evn">tb303</span><span class="evp">note: 60, release: 0.2, cutoff_attack: 0, cutoff_decay: 0, cutoff_sustain: 0, cutoff_release: 0.2, out_bus: 42</span></div><div class="ev"><span class="evt">1.5s</span><span class="evn">tb303</span><span class="evp">note: 67, release: 0.2, cutoff_attack: 0, cutoff_decay: 0, cutoff_sustain: 0, cutoff_release: 0.2, out_bus: 42</span></div><div class="ev"><span class="evt">1.8s</span><span class="evn">tb303</span><span class="evp">note: 60, release: 0.2, cutoff_attack: 0, cutoff_decay: 0, cutoff_sustain: 0, cutoff_release: 0.2, out_bus: 42</span></div><div class="ev"><span class="evt">2.099s</span><span class="evn">tb303</span><span class="evp">note: 67, release: 0.2, cutoff_attack: 0, cutoff_decay: 0, cutoff_sustain: 0, cutoff_release: 0.2, out_bus: 42</span></div></div>
+      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">0s</span><span class="evn">tb303</span><span class="evp">release: 0.2, note: 60, cutoff_release: 0.2, cutoff_min: 30, out_bus: 16</span></div><div class="ev"><span class="evt">0.3s</span><span class="evn">tb303</span><span class="evp">release: 0.2, note: 67, cutoff_release: 0.2, cutoff_min: 30, out_bus: 16</span></div><div class="ev"><span class="evt">0.6s</span><span class="evn">tb303</span><span class="evp">release: 0.2, note: 60, cutoff_release: 0.2, cutoff_min: 30, out_bus: 16</span></div><div class="ev"><span class="evt">0.9s</span><span class="evn">tb303</span><span class="evp">release: 0.2, note: 67, cutoff_release: 0.2, cutoff_min: 30, out_bus: 16</span></div><div class="ev"><span class="evt">1.2s</span><span class="evn">tb303</span><span class="evp">release: 0.2, note: 60, cutoff_release: 0.2, cutoff_min: 30, out_bus: 16</span></div><div class="ev"><span class="evt">1.5s</span><span class="evn">tb303</span><span class="evp">release: 0.2, note: 67, cutoff_release: 0.2, cutoff_min: 30, out_bus: 16</span></div><div class="ev"><span class="evt">1.8s</span><span class="evn">tb303</span><span class="evp">release: 0.2, note: 60, cutoff_release: 0.2, cutoff_min: 30, out_bus: 16</span></div><div class="ev"><span class="evt">2.1s</span><span class="evn">tb303</span><span class="evp">release: 0.2, note: 67, cutoff_release: 0.2, cutoff_min: 30, out_bus: 16</span></div></div>
+    </div>
+    <div class="src-h">source</div><pre class="src">use_synth :tb303
+4.times do
+  play 60, release: 0.2
+  sleep 0.3
+  play 67, release: 0.2
+  sleep 0.3
+end</pre>
+  </details>
+</section>
+<section class="fx-card" id="monday_blues">
+  <div class="fx-head">
+    <div class="fx-title">monday_blues <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
+    <div class="fx-meta"><span class="tag det">deterministic</span>
+      <span class="tag">window 16s</span>
+      <span class="stamp">2026-06-02 19:48 UTC</span></div>
+  </div>
+  <ul class="reasons"><li>Significant synthdef multiset matches.</li><li>Gating/timing: shared layer first-onset differs ≥3s — mod_saw desktop@6s vs web@0s</li><li>Significant-layer first-appearance order differs (desktop: basic_mono_player→mod_saw | web: mod_saw→basic_mono_player) — thread-start timing.</li></ul>
+  <div class="totals">Voice /s_new — desktop <b>88</b>, web <b>108</b> · web <b>1.23×</b> desktop</div>
+  <table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">basic_mono_player</td>
+    <td class="num">64</td>
+    <td class="num">74</td>
+    <td class="num">1.16</td>
+    <td class="num">0s</td>
+    <td class="num">0s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr><tr>
+    <td class="syn">mod_saw</td>
+    <td class="num">24</td>
+    <td class="num">34</td>
+    <td class="num">1.42</td>
+    <td class="num gap">6s</td>
+    <td class="num gap">0s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  
+  <details class="raw"><summary>raw /s_new streams + source (89 desktop · 108 web)</summary>
+    <div class="streams">
+      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 34, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">0.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">1s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">1.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">2s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">2.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">3s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">3.125s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">3.25s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">3.375s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">3.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">3.625s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">3.75s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">3.875s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">4s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">4.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">5.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">6s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">6s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 29, cutoff: 90, out_bus: 34</span></div><div class="ev"><span class="evt">6s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 41, cutoff: 90, out_bus: 34</span></div><div class="ev"><span class="evt">6.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">7s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">7s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 24, cutoff: 92.5, out_bus: 34</span></div><div class="ev"><span class="evt">7s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 36, cutoff: 91.25, out_bus: 34</span></div><div class="ev"><span class="evt">7.125s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">7.25s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">7.375s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">7.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">7.625s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">7.75s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">7.875s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">8s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">8s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 26, cutoff: 95, out_bus: 34</span></div><div class="ev"><span class="evt">8s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 38, cutoff: 92.5, out_bus: 34</span></div><div class="ev"><span class="evt">8.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">9s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 26, cutoff: 97.5, out_bus: 34</span></div><div class="ev"><span class="evt">9s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">9s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 38, cutoff: 93.75, out_bus: 34</span></div><div class="ev"><span class="evt">9.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">10s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">10s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 31, cutoff: 100, out_bus: 34</span></div><div class="ev"><span class="evt">10s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 43, cutoff: 95, out_bus: 34</span></div><div class="ev"><span class="evt">10.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">11s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 24, cutoff: 102.5, out_bus: 34</span></div><div class="ev"><span class="evt">11s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 36, cutoff: 96.25, out_bus: 34</span></div><div class="ev"><span class="evt">11s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">11.125s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">11.25s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">11.375s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">11.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">11.625s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">11.75s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">11.875s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">12s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 26, cutoff: 105, out_bus: 34</span></div><div class="ev"><span class="evt">12s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">12s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 38, cutoff: 97.5, out_bus: 34</span></div><div class="ev"><span class="evt">12.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">12.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 3, out_bus: 34</span></div><div class="ev"><span class="evt">13s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 26, cutoff: 107.5, out_bus: 34</span></div><div class="ev"><span class="evt">13s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">13s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 38, cutoff: 98.75, out_bus: 34</span></div><div class="ev"><span class="evt">13.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">13.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 3, out_bus: 34</span></div><div class="ev"><span class="evt">14s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">14s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 29, cutoff: 110, out_bus: 34</span></div><div class="ev"><span class="evt">14s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 41, cutoff: 100, out_bus: 34</span></div><div class="ev"><span class="evt">14.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 3, out_bus: 34</span></div><div class="ev"><span class="evt">14.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">15s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">15s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 24, cutoff: 112.5, out_bus: 34</span></div><div class="ev"><span class="evt">15s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 36, cutoff: 101.25, out_bus: 34</span></div><div class="ev"><span class="evt">15.125s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">15.25s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">15.375s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">15.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">15.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 3, out_bus: 34</span></div><div class="ev"><span class="evt">15.625s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">15.75s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">15.875s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">16s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 26, cutoff: 115, out_bus: 34</span></div><div class="ev"><span class="evt">16s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">16s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 38, cutoff: 102.5, out_bus: 34</span></div><div class="ev"><span class="evt">16.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 3, out_bus: 34</span></div><div class="ev"><span class="evt">16.5s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">17s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 26, cutoff: 117.5, out_bus: 34</span></div><div class="ev"><span class="evt">17s</span><span class="evn">basic_mono_player</span><span class="evp">rate: 0.8, buf: 2, out_bus: 34</span></div><div class="ev"><span class="evt">17s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, note: 38, cutoff: 103.75, out_bus: 34</span></div></div>
+      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">0s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 90, note: 29, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 90, note: 41, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">0.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">1s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 92.6667, note: 24, out_bus: 18</span></div><div class="ev"><span class="evt">1s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 91.2903, note: 36, out_bus: 18</span></div><div class="ev"><span class="evt">1s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">1s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">1.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">2s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 95.3333, note: 26, out_bus: 18</span></div><div class="ev"><span class="evt">2s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 92.5806, note: 38, out_bus: 18</span></div><div class="ev"><span class="evt">2s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">2s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">2.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">3s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 98, note: 26, out_bus: 18</span></div><div class="ev"><span class="evt">3s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 93.871, note: 38, out_bus: 18</span></div><div class="ev"><span class="evt">3s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">3s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">3.125s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">3.25s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">3.375s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">3.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">3.625s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">3.75s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">3.875s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">4s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 100.6667, note: 31, out_bus: 18</span></div><div class="ev"><span class="evt">4s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 95.1613, note: 43, out_bus: 18</span></div><div class="ev"><span class="evt">4s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">4s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">4.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">5s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 103.3333, note: 24, out_bus: 18</span></div><div class="ev"><span class="evt">5s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 96.4516, note: 36, out_bus: 18</span></div><div class="ev"><span class="evt">5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">5.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">6s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 106, note: 26, out_bus: 18</span></div><div class="ev"><span class="evt">6s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 97.7419, note: 38, out_bus: 18</span></div><div class="ev"><span class="evt">6s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">6s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">6.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">7s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 108.6667, note: 26, out_bus: 18</span></div><div class="ev"><span class="evt">7s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 99.0323, note: 38, out_bus: 18</span></div><div class="ev"><span class="evt">7s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">7s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">7.125s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">7.25s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">7.375s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">7.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">7.625s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">7.75s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">7.875s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">8s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 111.3333, note: 29, out_bus: 18</span></div><div class="ev"><span class="evt">8s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 100.3226, note: 41, out_bus: 18</span></div><div class="ev"><span class="evt">8s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">8s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">8.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">9s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 114, note: 24, out_bus: 18</span></div><div class="ev"><span class="evt">9s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 101.6129, note: 36, out_bus: 18</span></div><div class="ev"><span class="evt">9s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">9s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">9.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">10s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 116.6667, note: 26, out_bus: 18</span></div><div class="ev"><span class="evt">10s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 102.9032, note: 38, out_bus: 18</span></div><div class="ev"><span class="evt">10s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">10s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">10.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">11s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 119.3333, note: 26, out_bus: 18</span></div><div class="ev"><span class="evt">11s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 104.1935, note: 38, out_bus: 18</span></div><div class="ev"><span class="evt">11s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">11s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">11.125s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">11.25s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">11.375s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">11.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">11.625s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">11.75s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">11.875s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">12s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 122, note: 31, out_bus: 18</span></div><div class="ev"><span class="evt">12s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 105.4839, note: 43, out_bus: 18</span></div><div class="ev"><span class="evt">12s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">12s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">12.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">13s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 124.6667, note: 24, out_bus: 18</span></div><div class="ev"><span class="evt">13s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 106.7742, note: 36, out_bus: 18</span></div><div class="ev"><span class="evt">13s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">13s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">13.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">14s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 127.3333, note: 26, out_bus: 18</span></div><div class="ev"><span class="evt">14s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 108.0645, note: 38, out_bus: 18</span></div><div class="ev"><span class="evt">14s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">14s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">14.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">15s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 130, note: 26, out_bus: 18</span></div><div class="ev"><span class="evt">15s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 109.3548, note: 38, out_bus: 18</span></div><div class="ev"><span class="evt">15s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">15s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">15.125s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">15.25s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">15.375s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">15.5s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">15.625s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">15.75s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">15.875s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div><div class="ev"><span class="evt">16s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 90, note: 29, out_bus: 18</span></div><div class="ev"><span class="evt">16s</span><span class="evn">mod_saw</span><span class="evp">amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1, cutoff: 110.6452, note: 41, out_bus: 18</span></div><div class="ev"><span class="evt">16s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 1, out_bus: 20</span></div><div class="ev"><span class="evt">16s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 0, rate: 0.8, out_bus: 16</span></div></div>
+    </div>
+    <div class="src-h">source</div><pre class="src"># Coded by Sam Aaron
+
+use_debug false
+load_samples [:drum_heavy_kick, :drum_snare_soft]
+
+
+live_loop :drums do
+  puts "slow drums"
+  6.times do
+    sample :drum_heavy_kick, rate: 0.8
+    sleep 0.5
+  end
+
+  puts "fast drums"
+  8.times do
+    sample :drum_heavy_kick, rate: 0.8
+    sleep 0.125
+  end
+end
+
+live_loop :synths, delay: 6 do
+  puts "how does it feel?"
+  use_synth :mod_saw
+  use_synth_defaults amp: 0.5, attack: 0, sustain: 1, release: 0.25, mod_range: 12, mod_phase: 0.5, mod_invert_wave: 1
+  notes = (ring :F, :C, :D, :D, :G, :C, :D, :D)
+  notes.each do |n|
+    tick
+    play note(n, octave: 1), cutoff: (line 90, 130, steps: 16).look
+    play note(n, octave: 2), cutoff: (line 90, 130, steps: 32).look
+    sleep 1
+  end
+end
+
+live_loop :snare, delay: 12.5 do
+  sample :drum_snare_soft
+  sleep 1
+end
+</pre>
+  </details>
+</section>
+<section class="fx-card" id="sonic_dreams">
+  <div class="fx-head">
+    <div class="fx-title">sonic_dreams <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
+    <div class="fx-meta"><span class="tag prng">PRNG · SV49</span>
+      <span class="tag">window 20s</span>
+      <span class="stamp">2026-06-02 19:59 UTC</span></div>
+  </div>
+  <ul class="reasons"><li>Significant layers present on both sides (PRNG piece — counts/choices vary by SV49).</li><li>Web reached EXTRA significant layer(s) absent from desktop in this window: basic_stereo_player×47, fm×39, mod_saw×27, noise×21, basic_mono_player×13 — web is denser/ahead here; check first-onsets for gating divergence.</li><li>Gating/timing: shared layer first-onset differs ≥3s — beep desktop@13.333s vs web@17.617s, cnoise desktop@0s vs web@3.985s</li><li>Rare one-sided synthdef(s) (PRNG choose-variance, SV49): zawa web×6, gnoise desktop×2</li><li>Significant-layer first-appearance order differs (desktop: cnoise→beep | web: basic_stereo_player→fm→noise→basic_mono_player→mod_saw) — common for PRNG layer selection.</li></ul>
+  <div class="totals">Voice /s_new — desktop <b>16</b>, web <b>168</b> · web <b>10.5×</b> desktop</div>
+  <table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">basic_stereo_player</td>
+    <td class="num">0</td>
+    <td class="num">47</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+    <td class="num">2.311s</td>
+    <td><span class="st accent">+ extra on web</span></td>
+  </tr><tr>
+    <td class="syn">fm</td>
+    <td class="num">0</td>
+    <td class="num">39</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+    <td class="num">2.311s</td>
+    <td><span class="st accent">+ extra on web</span></td>
+  </tr><tr>
+    <td class="syn">mod_saw</td>
+    <td class="num">0</td>
+    <td class="num">27</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+    <td class="num">14.284s</td>
+    <td><span class="st accent">+ extra on web</span></td>
+  </tr><tr>
+    <td class="syn">noise</td>
+    <td class="num">0</td>
+    <td class="num">21</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+    <td class="num">2.311s</td>
+    <td><span class="st accent">+ extra on web</span></td>
+  </tr><tr>
+    <td class="syn">beep</td>
+    <td class="num">9</td>
+    <td class="num">8</td>
+    <td class="num">0.89</td>
+    <td class="num gap">13.333s</td>
+    <td class="num gap">17.617s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr><tr>
+    <td class="syn">basic_mono_player</td>
+    <td class="num">0</td>
+    <td class="num">13</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+    <td class="num">10.311s</td>
+    <td><span class="st accent">+ extra on web</span></td>
+  </tr><tr>
+    <td class="syn">cnoise</td>
+    <td class="num">3</td>
+    <td class="num">6</td>
+    <td class="num">2.00</td>
+    <td class="num gap">0s</td>
+    <td class="num gap">3.985s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr><tr>
+    <td class="syn">zawa</td>
+    <td class="num">0</td>
+    <td class="num">6</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+    <td class="num">14.284s</td>
+    <td><span class="st mute">· rare (desktop 0)</span></td>
+  </tr><tr>
+    <td class="syn">bnoise</td>
+    <td class="num">2</td>
+    <td class="num">1</td>
+    <td class="num">0.50</td>
+    <td class="num gap">5.042s</td>
+    <td class="num gap">17.001s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr><tr>
+    <td class="syn">gnoise</td>
+    <td class="num">2</td>
+    <td class="num">0</td>
+    <td class="num">0.00</td>
+    <td class="num">8.77s</td>
+    <td class="num">—</td>
+    <td><span class="st mute">· rare (web 0)</span></td>
+  </tr></tbody></table>
+  <div class="tbl-h">FX</div><table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">fx_echo</td>
+    <td class="num">1</td>
+    <td class="num">3</td>
+    <td class="num">3.00</td>
+    <td class="num">0s</td>
+    <td class="num">0s</td>
+    <td><span class="st flag">~ count differs</span></td>
+  </tr><tr>
+    <td class="syn">fx_reverb</td>
+    <td class="num">1</td>
+    <td class="num">2</td>
+    <td class="num">2.00</td>
+    <td class="num">—</td>
+    <td class="num">0s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  <details class="raw"><summary>raw /s_new streams + source (19 desktop · 173 web)</summary>
+    <div class="streams">
+      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 38, out_bus: 18</span></div><div class="ev"><span class="evt">—</span><span class="evn">fx_reverb</span><span class="evp">reps: 1, in_bus: 36, out_bus: 38</span></div><div class="ev"><span class="evt">0s</span><span class="evn">fx_echo</span><span class="evp">delay: 0.5, decay: 5.3333, reps: 1, in_bus: 40, max_phase: 2.6667, phase: 0.3333, out_bus: 36</span></div><div class="ev"><span class="evt">0s</span><span class="evn">cnoise</span><span class="evp">amp: 0.7425, attack: 0.1443, sustain: 1.4403, release: 6.1474, cutoff_slide: 3.6546, cutoff: 61.2488, pan: 0.6623, pan_slide: 1.3333, note: 52, out_bus: 40</span></div><div class="ev"><span class="evt">3.55s</span><span class="evn">cnoise</span><span class="evp">amp: 1.0188, attack: 0.0534, sustain: 1.7627, release: 4.0566, cutoff_slide: 4.5884, cutoff: 93.7158, pan: 0.4207, pan_slide: 1.3333, note: 52, out_bus: 40</span></div><div class="ev"><span class="evt">5.042s</span><span class="evn">bnoise</span><span class="evp">amp: 0.9225, attack: 0.7987, sustain: 2.2366, release: 4.2944, cutoff_slide: 5.2161, cutoff: 96.3049, pan: 0.9294, pan_slide: 1.3333, note: 52, out_bus: 40</span></div><div class="ev"><span class="evt">7.387s</span><span class="evn">bnoise</span><span class="evp">amp: 1.189, attack: 1.1632, sustain: 2.2901, release: 3.3673, cutoff_slide: 1.5635, cutoff: 74.8132, pan: 0.8604, pan_slide: 1.3333, note: 52, out_bus: 40</span></div><div class="ev"><span class="evt">8.77s</span><span class="evn">gnoise</span><span class="evp">amp: 0.707, attack: 0.1396, sustain: 0.572, release: 4.0368, cutoff_slide: 5.92, cutoff: 66.427, pan: 0.3076, pan_slide: 1.3333, note: 52, out_bus: 40</span></div><div class="ev"><span class="evt">9.621s</span><span class="evn">cnoise</span><span class="evp">amp: 0.6445, attack: 0.5188, sustain: 2.5506, release: 1.4654, cutoff_slide: 0.7933, cutoff: 66.427, pan: -0.351, pan_slide: 1.3333, note: 52, out_bus: 40</span></div><div class="ev"><span class="evt">11.413s</span><span class="evn">gnoise</span><span class="evp">amp: 0.2069, attack: 1.1614, sustain: 2.0538, release: 2.835, cutoff_slide: 5.6297, cutoff: 78.9233, pan: -0.5157, pan_slide: 1.3333, note: 52, out_bus: 40</span></div><div class="ev"><span class="evt">13.333s</span><span class="evn">beep</span><span class="evp">note: 38, res: 0.9, cutoff: 90.0464, amp: 0.5, attack: 0, release: 1.449, pan: -0.1248, out_bus: 40</span></div><div class="ev"><span class="evt">14s</span><span class="evn">beep</span><span class="evp">note: 47, res: 0.9, cutoff: 81.9714, amp: 0.5, attack: 0, release: 1.7869, pan: -0.5959, out_bus: 40</span></div><div class="ev"><span class="evt">14.667s</span><span class="evn">beep</span><span class="evp">note: 62, res: 0.9, cutoff: 85.0562, amp: 0.5, attack: 0, release: 1.3681, pan: 0.3521, out_bus: 40</span></div><div class="ev"><span class="evt">15s</span><span class="evn">beep</span><span class="evp">note: 42, res: 0.9, cutoff: 115.605, amp: 0.5, attack: 0, release: 1.6442, pan: 0.2484, out_bus: 40</span></div><div class="ev"><span class="evt">15.667s</span><span class="evn">beep</span><span class="evp">note: 52, res: 0.9, cutoff: 101.669, amp: 0.5, attack: 0, release: 1.6223, pan: -0.3004, out_bus: 40</span></div><div class="ev"><span class="evt">16s</span><span class="evn">beep</span><span class="evp">note: 43, res: 0.9, cutoff: 107.543, amp: 0.5, attack: 0, release: 1.5001, pan: -0.3656, out_bus: 40</span></div><div class="ev"><span class="evt">16.667s</span><span class="evn">beep</span><span class="evp">note: 59, res: 0.9, cutoff: 109.315, amp: 0.5, attack: 0, release: 1.2856, pan: 0.485, out_bus: 40</span></div><div class="ev"><span class="evt">17.333s</span><span class="evn">beep</span><span class="evp">note: 47, res: 0.9, cutoff: 86.1011, amp: 0.5, attack: 0, release: 1.6726, pan: -0.6694, out_bus: 40</span></div><div class="ev"><span class="evt">18.667s</span><span class="evn">beep</span><span class="evp">note: 40, res: 0.9, cutoff: 106.084, amp: 0.5, attack: 0, release: 1.4314, pan: 0.5985, out_bus: 40</span></div></div>
+      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">0s</span><span class="evn">fx_echo</span><span class="evp">in_bus: 30, out_bus: 20, phase: 0.25, decay: 2, max_phase: 2</span></div><div class="ev"><span class="evt">2.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">2.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">2.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">2.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">3.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">3.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">3.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">3.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">0s</span><span class="evn">fx_reverb</span><span class="evp">in_bus: 32, out_bus: 16</span></div><div class="ev"><span class="evt">4.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 0.3, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">0s</span><span class="evn">fx_echo</span><span class="evp">in_bus: 34, out_bus: 32, delay: 0.6667, decay: 5.3333, phase: 0.3333, max_phase: 2.6667</span></div><div class="ev"><span class="evt">4.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">4.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">4.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">3.985s</span><span class="evn">cnoise</span><span class="evp">amp: 0.5259, attack: 0.7329, sustain: 1.1609, release: 3.4691, cutoff_slide: 2.2022, cutoff: 68.1859, pan: 0.2385, pan_slide: 1.3333, note: 52, out_bus: 34</span></div><div class="ev"><span class="evt">4.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">5.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 0.6, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">5.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">5.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">5.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">5.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">6.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 1.2, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">6.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">6.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">6.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">6.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">7.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 2.1, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">7.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">7.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">7.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">7.551s</span><span class="evn">cnoise</span><span class="evp">amp: 0.6346, attack: 0.6848, sustain: 0.4918, release: 5.9022, cutoff_slide: 5.6932, cutoff: 79.7695, pan: 0.6931, pan_slide: 1.3333, note: 52, out_bus: 34</span></div><div class="ev"><span class="evt">7.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">8.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 2.4, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">8.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">8.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">8.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">8.522s</span><span class="evn">cnoise</span><span class="evp">amp: 0.5965, attack: 0.1695, sustain: 1.5913, release: 2.1734, cutoff_slide: 0.713, cutoff: 68.8122, pan: -0.3003, pan_slide: 1.3333, note: 52, out_bus: 34</span></div><div class="ev"><span class="evt">8.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">9.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 2.4, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">9.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">9.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">9.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">9.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">10.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 2.4, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">10.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">10.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">10.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">10.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.7018, out_bus: 28</span></div><div class="ev"><span class="evt">10.561s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">10.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, out_bus: 26</span></div><div class="ev"><span class="evt">11.061s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">11.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 2.4, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">11.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">11.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">11.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.1452, out_bus: 28</span></div><div class="ev"><span class="evt">11.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">11.561s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, out_bus: 26</span></div><div class="ev"><span class="evt">11.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">12.177s</span><span class="evn">cnoise</span><span class="evp">amp: 1.0052, attack: 0.5159, sustain: 2.1164, release: 4.5334, cutoff_slide: 1.082, cutoff: 88.0301, pan: 0.9291, pan_slide: 1.3333, note: 52, out_bus: 34</span></div><div class="ev"><span class="evt">12.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 2.4, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">12.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">12.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">12.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: 0.4412, out_bus: 28</span></div><div class="ev"><span class="evt">12.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">12.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">13.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 2.4, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">13.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">13.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">13.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.7151, out_bus: 28</span></div><div class="ev"><span class="evt">13.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">13.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">0s</span><span class="evn">fx_reverb</span><span class="evp">in_bus: 36, out_bus: 22</span></div><div class="ev"><span class="evt">14.284s</span><span class="evn">zawa</span><span class="evp">phase: 0.25, res: 0.5, cutoff: 80, release: 3.3, wave: 1, note: 40, out_bus: 24</span></div><div class="ev"><span class="evt">14.284s</span><span class="evn">zawa</span><span class="evp">phase: 0.5, res: 0.5, cutoff: 80, release: 3.3, wave: 1, note: 33, out_bus: 24</span></div><div class="ev"><span class="evt">14.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 2.4, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">0s</span><span class="evn">fx_echo</span><span class="evp">in_bus: 38, out_bus: 36, phase: 0.25, decay: 2, max_phase: 2</span></div><div class="ev"><span class="evt">14.284s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.3808, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.1527, note: 28, out_bus: 38</span></div><div class="ev"><span class="evt">14.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">14.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">14.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.4378, out_bus: 28</span></div><div class="ev"><span class="evt">14.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">14.409s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.3808, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.1248, note: 52, out_bus: 38</span></div><div class="ev"><span class="evt">14.438s</span><span class="evn">cnoise</span><span class="evp">amp: 0.9275, attack: 0.5823, sustain: 2.0708, release: 4.2374, cutoff_slide: 6.3583, cutoff: 81.7683, pan: -0.8358, pan_slide: 1.3333, note: 52, out_bus: 34</span></div><div class="ev"><span class="evt">14.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">14.909s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.3808, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: 0.9273, note: 43, out_bus: 38</span></div><div class="ev"><span class="evt">15.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 2.4, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">15.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">15.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">15.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.1682, out_bus: 28</span></div><div class="ev"><span class="evt">15.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">15.409s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.3808, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: 0.5835, note: 43, out_bus: 38</span></div><div class="ev"><span class="evt">15.659s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.4777, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 7, pan: -0.8257, note: 28, out_bus: 38</span></div><div class="ev"><span class="evt">15.784s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.4777, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 7, pan: 0.6652, note: 52, out_bus: 38</span></div><div class="ev"><span class="evt">15.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">16.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">16.284s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.4777, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: 0.74, note: 43, out_bus: 38</span></div><div class="ev"><span class="evt">16.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">16.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">16.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: 0.1864, out_bus: 28</span></div><div class="ev"><span class="evt">16.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">16.784s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.4777, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: 0.5983, note: 47, out_bus: 38</span></div><div class="ev"><span class="evt">16.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">17.001s</span><span class="evn">bnoise</span><span class="evp">amp: 0.3736, attack: 0.0895, sustain: 2.6503, release: 7.1372, cutoff_slide: 5.3351, cutoff: 84.0727, pan: 0.5299, pan_slide: 1.3333, note: 52, out_bus: 34</span></div><div class="ev"><span class="evt">17.034s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.2355, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.7133, note: 28, out_bus: 38</span></div><div class="ev"><span class="evt">17.159s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.2355, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: 0.0437, note: 52, out_bus: 38</span></div><div class="ev"><span class="evt">17.284s</span><span class="evn">zawa</span><span class="evp">phase: 0.25, res: 0.5, cutoff: 90, release: 3.3, wave: 1, note: 40, out_bus: 24</span></div><div class="ev"><span class="evt">17.284s</span><span class="evn">zawa</span><span class="evp">phase: 0.5, res: 0.5, cutoff: 90, release: 3.3, wave: 1, note: 33, out_bus: 24</span></div><div class="ev"><span class="evt">17.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">17.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">17.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">17.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.2109, out_bus: 28</span></div><div class="ev"><span class="evt">17.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">17.409s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.2355, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.4709, note: 43, out_bus: 38</span></div><div class="ev"><span class="evt">17.617s</span><span class="evn">beep</span><span class="evp">res: 0.9, cutoff: 106.9465, amp: 0.5, attack: 0, release: 1.8074, pan: -0.5907, note: 47, out_bus: 34</span></div><div class="ev"><span class="evt">17.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">17.909s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.2355, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.0877, note: 47, out_bus: 38</span></div><div class="ev"><span class="evt">18.159s</span><span class="evn">mod_saw</span><span class="evp">detune: 12, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.3853, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: 0.2339, note: 28, out_bus: 38</span></div><div class="ev"><span class="evt">18.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">18.284s</span><span class="evn">beep</span><span class="evp">res: 0.9, cutoff: 99.5151, amp: 0.5, attack: 0, release: 1.9753, pan: -0.0034, note: 35, out_bus: 34</span></div><div class="ev"><span class="evt">18.284s</span><span class="evn">mod_saw</span><span class="evp">detune: 12, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.3853, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: 0.3636, note: 52, out_bus: 38</span></div><div class="ev"><span class="evt">18.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">18.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">18.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.5053, out_bus: 28</span></div><div class="ev"><span class="evt">18.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">18.534s</span><span class="evn">mod_saw</span><span class="evp">detune: 12, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.3853, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.1259, note: 43, out_bus: 38</span></div><div class="ev"><span class="evt">18.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">18.951s</span><span class="evn">beep</span><span class="evp">res: 0.9, cutoff: 113.4907, amp: 0.5, attack: 0, release: 1.3894, pan: 0.3902, note: 31, out_bus: 34</span></div><div class="ev"><span class="evt">19.034s</span><span class="evn">mod_saw</span><span class="evp">detune: 12, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.3853, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.8795, note: 47, out_bus: 38</span></div><div class="ev"><span class="evt">19.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">19.284s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.2631, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 7, pan: -0.3691, note: 28, out_bus: 38</span></div><div class="ev"><span class="evt">19.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">19.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">19.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.4221, out_bus: 28</span></div><div class="ev"><span class="evt">19.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">19.409s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.2631, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 7, pan: 0.1404, note: 52, out_bus: 38</span></div><div class="ev"><span class="evt">19.617s</span><span class="evn">beep</span><span class="evp">res: 0.9, cutoff: 94.768, amp: 0.5, attack: 0, release: 0.7628, pan: -0.0338, note: 66, out_bus: 34</span></div><div class="ev"><span class="evt">19.659s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.2631, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: 0.9767, note: 47, out_bus: 38</span></div><div class="ev"><span class="evt">19.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">20.061s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">20.113s</span><span class="evn">cnoise</span><span class="evp">amp: 0.1364, attack: 1.3109, sustain: 1.1769, release: 4.0267, cutoff_slide: 2.1569, cutoff: 70.3898, pan: -0.2262, pan_slide: 1.3333, note: 52, out_bus: 34</span></div><div class="ev"><span class="evt">20.159s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.2631, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.5822, note: 40, out_bus: 38</span></div><div class="ev"><span class="evt">20.284s</span><span class="evn">zawa</span><span class="evp">phase: 0.25, res: 0.5, cutoff: 100, release: 3.3, wave: 1, note: 40, out_bus: 24</span></div><div class="ev"><span class="evt">20.284s</span><span class="evn">zawa</span><span class="evp">phase: 0.5, res: 0.5, cutoff: 100, release: 3.3, wave: 1, note: 33, out_bus: 24</span></div><div class="ev"><span class="evt">20.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">20.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">20.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">20.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: 0.1294, out_bus: 28</span></div><div class="ev"><span class="evt">20.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, out_bus: 26</span></div><div class="ev"><span class="evt">20.409s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.276, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 7, pan: -0.5111, note: 28, out_bus: 38</span></div><div class="ev"><span class="evt">20.534s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.276, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 7, pan: -0.7792, note: 52, out_bus: 38</span></div><div class="ev"><span class="evt">20.561s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">20.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">20.951s</span><span class="evn">beep</span><span class="evp">res: 0.9, cutoff: 119.9454, amp: 0.5, attack: 0, release: 1.5575, pan: 0.6756, note: 40, out_bus: 34</span></div><div class="ev"><span class="evt">21.034s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.276, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.7236, note: 40, out_bus: 38</span></div><div class="ev"><span class="evt">21.061s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, out_bus: 26</span></div><div class="ev"><span class="evt">21.284s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 30</span></div><div class="ev"><span class="evt">21.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">21.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">21.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.7366, out_bus: 28</span></div><div class="ev"><span class="evt">21.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">21.534s</span><span class="evn">mod_saw</span><span class="evp">detune: 24, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.276, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: -0.2625, note: 40, out_bus: 38</span></div><div class="ev"><span class="evt">21.617s</span><span class="evn">beep</span><span class="evp">res: 0.9, cutoff: 93.3407, amp: 0.5, attack: 0, release: 1.2336, pan: -0.5143, note: 28, out_bus: 34</span></div><div class="ev"><span class="evt">21.784s</span><span class="evn">mod_saw</span><span class="evp">detune: 12, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.4514, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 7, pan: 0.9529, note: 28, out_bus: 38</span></div><div class="ev"><span class="evt">21.811s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">21.909s</span><span class="evn">mod_saw</span><span class="evp">detune: 12, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.4514, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 7, pan: 0.9535, note: 52, out_bus: 38</span></div><div class="ev"><span class="evt">21.951s</span><span class="evn">beep</span><span class="evp">res: 0.9, cutoff: 115.5505, amp: 0.5, attack: 0, release: 1.9103, pan: 0.1281, note: 38, out_bus: 34</span></div><div class="ev"><span class="evt">22.311s</span><span class="evn">fm</span><span class="evp">release: 0.1, amp: 3, cutoff: 130, note: 40, out_bus: 28</span></div><div class="ev"><span class="evt">22.311s</span><span class="evn">noise</span><span class="evp">release: 0.05, cutoff: 130, res: 0.95, amp: 0.6, note: 52, out_bus: 28</span></div><div class="ev"><span class="evt">22.311s</span><span class="evn">basic_mono_player</span><span class="evp">buf: 2, amp: 2, rate: 2, pan: -0.3168, out_bus: 28</span></div><div class="ev"><span class="evt">22.311s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 4, lpf: 100, out_bus: 26</span></div><div class="ev"><span class="evt">22.409s</span><span class="evn">mod_saw</span><span class="evp">detune: 12, amp: 1, cutoff: 78, pulse_width: 0.12, attack: 0.4514, release: 0.5, mod_phase: 0.25, mod_invert_wave: 1, mod_range: 12, pan: 0.4785, note: 47, out_bus: 38</span></div><div class="ev"><span class="evt">22.617s</span><span class="evn">beep</span><span class="evp">res: 0.9, cutoff: 90.2227, amp: 0.5, attack: 0, release: 1.1523, pan: 0.6871, note: 55, out_bus: 34</span></div></div>
+    </div>
+    <div class="src-h">source</div><pre class="src"># rand-seed-ver 33
+#
+# Coded by Sam Aaron
+#
+# Video: https://vimeo.com/110416910
+
+use_debug false
+load_samples [:bd_haus, :elec_blip, :ambi_lunar_land]
+
+define :ocean do |num, amp_mul=1|
+  num.times do
+    s = synth [:bnoise, :cnoise, :gnoise].choose, amp: rrand(0.5, 1.5) * amp_mul, attack: rrand(0, 1), sustain: rrand(0, 2), release: rrand(0, 5) + 0.5, cutoff_slide: rrand(0, 5), cutoff: rrand(60, 100), pan: rrand(-1, 1), pan_slide: 1
+    control s, pan: rrand(-1, 1), cutoff: rrand(60, 110)
+    sleep rrand(0.5, 4)
+  end
+end
+
+define :echoes do |num, tonics, co=100, res=0.9, amp=1|
+  num.times do
+    play chord(tonics.choose, :minor).choose, res: res, cutoff: rrand(co - 20, co + 20), amp: 0.5 * amp, attack: 0, release: rrand(0.5, 1.5), pan: rrand(-0.7, 0.7)
+    sleep [0.25, 0.5, 0.5, 0.5, 1, 1].choose
+  end
+end
+
+define :bd do
+  cue :in_relentless_cycles
+  16.times do
+    sample :bd_haus, amp: 4, cutoff: 100
+    sleep 0.5
+  end
+  cue :winding_everywhichway
+  2.times do
+    2.times do
+      sample :bd_haus, amp: 4, cutoff: 100
+      sleep 0.25
+    end
+    sample :ambi_lunar_land
+    sleep 0.25
+  end
+end
+
+define :drums do |level, b_level=1, rand_cf=false|
+  synth :fm, note: :e2, release: 0.1, amp: b_level * 3, cutoff: 130
+  co = rand_cf ? rrand(110, 130) : 130
+  a  = rand_cf ? rrand(0.3, 0.5) : 0.6
+  n  = rand_cf ? :bnoise         : :noise
+  synth :noise, release: 0.05, cutoff: co, res: 0.95, amp: a if level &gt; 0
+  sample :elec_blip, amp: 2, rate: 2, pan: rrand(-0.8, 0.8) if level &gt; 1
+  sleep 1
+end
+
+define :synths do |s_name, co, n=:e2|
+  use_synth s_name
+  use_transpose 0
+  use_synth_defaults detune: [12,24].choose, amp: 1, cutoff: co, pulse_width: 0.12, attack: rrand(0.2, 0.5), release: 0.5 ,  mod_phase: 0.25, mod_invert_wave: 1
+
+  play :e1, mod_range: [7, 12].choose, pan: rrand(-1, 1)
+  sleep 0.125
+
+  play :e3, mod_range: [7, 12].choose, pan: rrand(-1, 1)
+  sleep [0.25, 0.5].choose
+
+  play n, mod_range: 12, pan: rrand(-1, 1)
+  sleep 0.5
+
+  play chord(:e2, :minor).choose, mod_range: 12, pan: rrand(-1, 1)
+  sleep 0.25
+end
+
+define :play_synths do
+  with_fx :reverb do |r|
+    with_fx :echo, phase: 0.25 do |e|
+      synths = [:mod_pulse, :mod_saw, :mod_dsaw, :mod_dsaw, :mod_dsaw, :mod_dsaw]
+      cutoffs = [108, 78, 88, 98]
+      synth = synths.rotate!.first
+      4.times do |t|
+        puts shuffle("0" * (30 - t) + ("1" * t)) unless t == 0
+        co = cutoffs.rotate!.first + (t * 2)
+        7.times do
+          n = chord([:e2, :e3, :e4, :e5][t], :minor).choose
+          synths(synth, co, n)
+        end
+        sleep 2
+      end
+      sleep 1
+      cue :within
+    end
+  end
+end
+
+define :binary_celebration do |n=1, st=1|
+  in_thread do
+    n.times do
+      puts (0..30).map{|_| ["0", "1"].choose}.join
+      sleep st
+    end
+  end
+end
+
+puts 'Introduction'
+puts 'The Curved Ebb of Carpentry'
+sleep 2
+
+cue :oceans
+at [7, 12], [:crash, :within_oceans] do |m|
+  cue m
+end
+
+uncomment do
+  use_random_seed 1000
+  with_bpm 45 do
+    with_fx :reverb do
+      with_fx(:echo, delay: 0.5, decay: 4) do
+        in_thread do
+          use_random_seed 2
+          ocean 5
+          ocean 1, 0.5
+          ocean 1, 0.25
+        end
+        sleep 10
+        use_random_seed 1200
+        echoes(5, [:b1, :b2, :e1, :e2, :b3, :e3])
+        cue :a_distant_object
+        echoes(5, [:b1, :e1, :e2, :e3])
+        cue :breathes_time
+        in_thread do
+          echoes(5, [:e1, :e2, :e3])
+        end
+        use_synth :tb303
+        echoes(1, [:e1, :e2, :e3], 60, 0.9, 0.5)
+        echoes(1, [:e1, :e2, :e3], 62)
+        echoes(1, [:e1, :e2, :e3], 64, 0.97)
+        echoes(1, [:e1, :e2, :e3], 66)
+        echoes(1, [:e1, :e2, :e3], 68)
+        cue :liminality_holds_fast
+        echoes(4, [:b1, :e1, :e2, :b3, :e3], 80)
+        echoes(1, [:b1, :b2, :e1, :e2, :b3, :e3], 85,  0.98)
+        cue :within_reach
+        echoes(5, [:e1, :b2], 90)
+        cue :as_it_unfolds
+        in_thread do
+          echoes(5, [:e1], 90)
+        end
+      end
+    end
+  end
+end
+
+
+in_thread(name: :bassdrums) do
+  use_random_seed 0
+  sleep 22
+  3.times do
+    bd
+  end
+  sleep 28
+  live_loop :bd do
+    bd
+  end
+end
+
+in_thread(name: :drums) do
+  use_random_seed 0
+  level = -1
+  with_fx :echo do |e|
+    sleep 2
+    drums -1, 0.1
+    drums -1, 0.2
+    drums -1, 0.4
+    drums -1, 0.7
+    puts "Part 2"
+    puts "Inside the Machine"
+    3.times do
+      8.times do
+        drums level, 0.8
+      end
+      6.times do
+        drums(level)
+      end
+
+      sleep 1
+      level += 1
+    end
+    sleep 4
+    cue :dreams
+    8.times do
+      drums 1, 1, true
+    end
+
+    10.times do
+      m = choose [shuffle(:within_dreams), :within_dreams, :dreams_within]
+      cue m
+      drums 2, 1, true
+    end
+
+    6.times do
+      m = choose [shuffle("within") + "_dreams", :within_dreams.shuffle, "dreams_" + shuffle("within")]
+      cue m
+      drums 2
+    end
+
+    live_loop :drums do
+      8.times do |i|
+        drums 1
+      end
+
+      16.times do |i|
+        cue " " * rand_i(32)
+        at 1 do
+          cue "  " * i
+        end
+        drums 2
+      end
+    end
+  end
+end
+
+in_thread name: :synths do
+  use_random_seed 0
+  sleep 12
+  cue :the_flow_of_logic
+  play_synths
+end
+
+in_thread do
+  use_random_seed 0
+  sync :within
+  puts "Part 3"
+  puts "Reality A"
+  sleep 12
+  use_synth_defaults phase: 0.5, res: 0.5, cutoff: 80, release: 3.3, wave: 1
+
+  2.times do
+    [80, 90, 100, 110].each do |cf|
+      use_merged_synth_defaults cutoff: cf
+      puts "1" * 30
+      synth :zawa, note: :e2, phase: 0.25
+      synth :zawa, note: :a1
+      sleep 3
+    end
+    4.times do |t|
+      binary_celebration(6, 0.5)
+      synth :zawa, note: :e2, phase: 0.25, res: rrand(0.8, 0.9), cutoff: [100, 105, 110, 115][t]
+      sleep 3
+    end
+  end
+
+  puts 'Part n'
+  puts 'The Observer becomes the Observed'
+  # Your turn...
+end
+</pre>
+  </details>
+</section>
+  <footer>Generated by <code>tools/build-event-diff.ts</code> from <code>.captures/eventparity_*.json</code> (latest per fixture). Captures from <code>tools/event-parity.ts</code>. Re-run after new captures to refresh.</footer>
+</div>
+</body>
+</html>

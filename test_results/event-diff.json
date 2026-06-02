@@ -1,0 +1,35 @@
+{
+  "generatedAt": "2026-06-02T20:03:50.989Z",
+  "counts": {
+    "match": 3,
+    "diverge": 0,
+    "empty": 0,
+    "total": 3
+  },
+  "fixtures": [
+    {
+      "name": "det_tb303",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 8,
+      "webTotal": 8,
+      "totalRatio": 1
+    },
+    {
+      "name": "monday_blues",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 88,
+      "webTotal": 108,
+      "totalRatio": 1.23
+    },
+    {
+      "name": "sonic_dreams",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": true,
+      "desktopTotal": 16,
+      "webTotal": 168,
+      "totalRatio": 10.5
+    }
+  ]
+}
