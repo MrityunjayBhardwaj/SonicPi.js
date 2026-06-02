@@ -75,9 +75,12 @@ function parseParams(body: string): Record<string, number | string> {
 }
 
 function rebase(events: OscEvent[]): OscEvent[] {
-  const first = events.find((e) => e.tRel !== null && (e.tRel as number) > 0)
-  if (!first) return events
-  const t0 = first.tRel as number
+  // Anchor on the EARLIEST event (minimum tRel), not the first-in-order — the
+  // trace stream is emission-ordered, not strictly time-sorted, so a
+  // first-in-order anchor produces spurious negative onsets.
+  const ts = events.filter((e) => e.tRel !== null).map((e) => e.tRel as number)
+  if (ts.length === 0) return events
+  const t0 = Math.min(...ts)
   for (const e of events) {
     if (e.tRel !== null) e.tRel = Math.round((e.tRel - t0) * 1000) / 1000
   }

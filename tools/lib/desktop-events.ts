@@ -167,12 +167,11 @@ export function parseDumpOsc(text: string): OscEvent[] {
       const addr = arr[0]
       if (typeof addr !== 'string' || !TRACKED.has(addr)) continue
 
-      const ev: OscEvent = {
-        addr,
-        params: {},
-        tRel: bundleNtp ?? (bundleImmediate ? 0 : null),
-        raw: line,
-      }
+      // Scheduled events carry the bundle's NTP seconds; immediate bundles
+      // (timetag 1 = "now") and plain top-level messages have no meaningful
+      // absolute time → null, so the rebase below anchors only on real
+      // scheduled times (mixing an immediate-0 with absolute NTP would break it).
+      const ev: OscEvent = { addr, params: {}, tRel: bundleNtp, raw: line }
       if (addr === '/s_new') {
         // /s_new name nodeId addAction group [k v]...
         ev.synthdef = String(arr[1])
@@ -198,11 +197,13 @@ export function parseDumpOsc(text: string): OscEvent[] {
     }
   }
 
-  // Rebase tRel to the first scheduled (non-immediate) event so both engines
-  // share a 0-based timeline (the absolute NTP epoch is meaningless for diff).
-  const firstScheduled = events.find((e) => e.tRel !== null && e.tRel > 0)
-  if (firstScheduled) {
-    const t0 = firstScheduled.tRel as number
+  // Rebase tRel to the EARLIEST scheduled event so both engines share a 0-based
+  // timeline (the absolute NTP epoch is meaningless for diff). Anchor on the
+  // minimum, not the first-in-order — events are not strictly time-sorted, and a
+  // first-in-order anchor produces spurious negative onsets.
+  const scheduled = events.filter((e) => e.tRel !== null).map((e) => e.tRel as number)
+  if (scheduled.length > 0) {
+    const t0 = Math.min(...scheduled)
     for (const e of events) {
       if (e.tRel !== null) e.tRel = Math.round((e.tRel - t0) * 1000) / 1000
     }

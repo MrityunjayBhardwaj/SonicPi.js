@@ -44,6 +44,30 @@ describe('parseDumpOsc (desktop scsynth dumpOSC stream)', () => {
     const evs = parseDumpOsc('[ "/s_new", "sonic-pi-mixer", 5, 0, 1, "amp", 1 ]')
     expect(evs[0].tRel).toBeNull()
   })
+
+  it('rebases scheduled events on their own minimum, leaving immediate (timetag 1) null', () => {
+    // An immediate bundle (timetag 1) mixed with two scheduled bundles. The
+    // immediate event must NOT anchor the rebase to 0 and strand the scheduled
+    // events at raw NTP scale.
+    const sample = [
+      '[ "#bundle", 1, ',
+      '  [ "/s_new", "sonic-pi-fx_reverb", 20, 0, 1 ]',
+      ']',
+      '[ "#bundle", 17134385929134665728, ',
+      '  [ "/s_new", "sonic-pi-beep", 10, 1, 8, "note", 60 ]',
+      ']',
+      '[ "#bundle", 17134385931282149376, ',
+      '  [ "/s_new", "sonic-pi-beep", 11, 1, 8, "note", 67 ]',
+      ']',
+    ].join('\n')
+    const evs = parseDumpOsc(sample)
+    const reverb = evs.find((e) => e.synthdef === 'sonic-pi-fx_reverb')!
+    const beeps = evs.filter((e) => e.synthdef === 'sonic-pi-beep')
+    expect(reverb.tRel).toBeNull() // immediate — no absolute time
+    expect(beeps[0].tRel).toBe(0) // earliest scheduled → 0
+    expect(beeps[1].tRel).toBeCloseTo(0.5, 2) // not a raw NTP value
+    expect(beeps[1].tRel! < 1).toBe(true)
+  })
 })
 
 describe('parseTraceLine (web formatOscTrace stream)', () => {
