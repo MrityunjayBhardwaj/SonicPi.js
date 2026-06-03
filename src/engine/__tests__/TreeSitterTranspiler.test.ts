@@ -368,6 +368,114 @@ end`)
         const gateCount = (result.code.match(/__startGate/g) ?? []).length
         expect(gateCount).toBe(1)
       })
+
+      // #448 follow-up: extend the start-gate to top-level `live_loop`, the
+      // auto-named bare `loop do`, and a `with_fx`-wrapped loop — same vt-0 bug,
+      // same source-position cue-gate mechanism (SK21).
+      it('#448: top-level live_loop after sleep emits a start-gate (cue + __startGate)', () => {
+        const result = treeSitterTranspile(`play 50
+sleep 4
+live_loop :L do
+  play 84
+  sleep 1
+end
+play 72`)
+        expect(result.ok).toBe(true)
+        expect(result.code).toMatch(/live_loop\("L",\s*\{[^}]*__startGate:\s*"__sg_0"/)
+        // The gate cue fires at the source position — after the bare `sleep 4`,
+        // before the trailing `play 72`, inside __run_once.
+        const sleepIdx = result.code.indexOf('__b.sleep(4)')
+        const cueIdx = result.code.indexOf('__b.cue("__sg_0")')
+        const play72Idx = result.code.indexOf('__b.play(72')
+        expect(sleepIdx).toBeGreaterThanOrEqual(0)
+        expect(cueIdx).toBeGreaterThan(sleepIdx)
+        expect(play72Idx).toBeGreaterThan(cueIdx)
+      })
+
+      it('#448: top-level live_loop with NO preceding sleep is NOT gated', () => {
+        const result = treeSitterTranspile(`live_loop :L do
+  play 84
+  sleep 1
+end`)
+        expect(result.ok).toBe(true)
+        expect(result.code).not.toContain('__startGate')
+        expect(result.code).not.toContain('__sg_0')
+      })
+
+      it('#448: an auto-named bare `loop do` after sleep is gated', () => {
+        const result = treeSitterTranspile(`sleep 4
+loop do
+  play 84
+  sleep 1
+end`)
+        expect(result.ok).toBe(true)
+        expect(result.code).toMatch(/live_loop\("__loop_0",\s*\{__startGate:\s*"__sg_0"/)
+        expect(result.code).toContain('__b.cue("__sg_0")')
+      })
+
+      it('#448: a with_fx-wrapped live_loop after sleep gates the INNER loop', () => {
+        const result = treeSitterTranspile(`sleep 4
+with_fx :reverb do
+  live_loop :L do
+    play 84
+    sleep 1
+  end
+end`)
+        expect(result.ok).toBe(true)
+        // The gate reaches the inner live_loop, not the with_fx wrapper.
+        expect(result.code).toMatch(/live_loop\("L",\s*\{[^}]*__startGate:\s*"__sg_0"/)
+        expect(result.code).toContain('__b.cue("__sg_0")')
+      })
+
+      it('#448: a with_fx-wrapped bare loop after sleep gates the hoisted __fxloop', () => {
+        const result = treeSitterTranspile(`sleep 4
+with_fx :reverb do
+  loop do
+    play 84
+    sleep 1
+  end
+end`)
+        expect(result.ok).toBe(true)
+        expect(result.code).toMatch(/live_loop\("__fxloop_0",\s*\{__startGate:\s*"__sg_0"/)
+      })
+
+      it('#448: live_loop start-gate composes with user sync: (gate awaited first)', () => {
+        const result = treeSitterTranspile(`sleep 4
+live_loop :L, sync: :foo do
+  play 84
+  sleep 1
+end`)
+        expect(result.ok).toBe(true)
+        // Both opts present; sync: emitted before __startGate in the hash, but
+        // the engine awaits __startGate FIRST (desktop forks at T, then syncs).
+        expect(result.code).toMatch(/live_loop\("L",\s*\{sync:\s*"foo",\s*__startGate:\s*"__sg_0"/)
+      })
+
+      it('#448: a nested live_loop does NOT inherit the outer live_loop start-gate', () => {
+        const result = treeSitterTranspile(`sleep 2
+live_loop :A do
+  live_loop :B do
+    play 60
+    sleep 1
+  end
+  sleep 1
+end`)
+        expect(result.ok).toBe(true)
+        // Only the outer top-level live_loop A is gated; the nested B is not.
+        const gateCount = (result.code.match(/__startGate/g) ?? []).length
+        expect(gateCount).toBe(1)
+        expect(result.code).toMatch(/live_loop\("A",\s*\{__startGate/)
+      })
+
+      it('#448: a top-level `define` after sleep is NOT gated', () => {
+        const result = treeSitterTranspile(`sleep 4
+define :foo do
+  play 60
+end`)
+        expect(result.ok).toBe(true)
+        // define declares a function — it schedules nothing at vt 0, so no gate.
+        expect(result.code).not.toContain('__startGate')
+      })
     })
 
     // Regression for #163 — `synth :NAME, note: 60` used to transpile to

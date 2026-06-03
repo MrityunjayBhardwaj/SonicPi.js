@@ -1111,14 +1111,21 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
                           method === 'in_thread' || isBareLoopNode)) {
       blocks.push(child)
       blockSynth.set(child, currentTopSynth)
-      // #448/SP118: gate a top-level `in_thread` declared after vtime-advancing
-      // bare code so it forks at the source-position vtime. Assign a unique cue
-      // and drop a marker into bareCode at THIS source position; `__run_once`
-      // fires the cue there, and the in_thread (which stays on its normal
-      // scheduled path) waits for it before its first iteration. An in_thread
-      // at the top (no preceding sleep/sync) keeps the un-gated vt-0 start
-      // (correct there). live_loop / with_fx-wrapped loop: follow-up (#448).
-      if (method === 'in_thread' && seenVtimeAdvancingBareCode) {
+      // #448/SP118: gate a top-level loop/thread declared after vtime-advancing
+      // bare code so it forks at the source-position vtime (desktop fork-at-
+      // current-vtime), not vt 0. Assign a unique cue and drop a marker into
+      // bareCode at THIS source position; `__run_once` fires the cue there, and
+      // the construct (which stays on its normal launch-registered path) waits
+      // for it before its first iteration. A construct at the top (no preceding
+      // sleep/sync) keeps the un-gated vt-0 start (correct there).
+      // Gate-eligible = constructs that register a scheduled loop/thread at
+      // launch: `in_thread`, `live_loop`, an auto-named bare `loop do`, and a
+      // `with_fx` wrapping such a loop (the gate threads to the INNER loop).
+      // NOT `define`/`ndefine`/`defonce` — they declare functions, they do not
+      // schedule anything at vt 0.
+      const gateEligible = method === 'in_thread' || method === 'live_loop' ||
+        isBareLoopNode || (method === 'with_fx' && !isBareFxNode)
+      if (gateEligible && seenVtimeAdvancingBareCode) {
         const gate = `__sg_${startGateCounter++}`
         blockGate.set(child, gate)
         bareCode.push({ __sgMarker: gate })
@@ -1212,7 +1219,12 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
         const bodyCtx: TranspileContext = { ...ctx, insideLoop: true, asyncBody: true }
         const bodyStr = transpileBlockBody(body, bodyCtx)
         const name = `__loop_${topLoopCounter++}`
-        return `${eagerPrefix}live_loop("${name}", async (__b) => {\n${bodyStr}\n${ctx.indent}})`
+        // #448/SP118: gate this hoisted bare `loop do` if it follows vtime-
+        // advancing bare code (blockGate set in classification) so it forks at
+        // the source-position vtime, not vt 0 — same start-gate as live_loop.
+        const gate = blockGate.get(c)
+        const optsArg = gate ? `{__startGate: ${JSON.stringify(gate)}}, ` : ''
+        return `${eagerPrefix}live_loop("${name}", ${optsArg}async (__b) => {\n${bodyStr}\n${ctx.indent}})`
       }
     }
     // #448/SP118: thread this block's start-gate (if gated) into the per-block
@@ -1858,17 +1870,27 @@ function transpileLiveLoop(
     return `/* parse error: live_loop :${name} missing block */`
   }
 
+  // #448/SP118: source-position start-gate for this top-level live_loop (set by
+  // the blockJS per-block ctx when the live_loop follows vtime-advancing bare
+  // code, or threaded in by a wrapping with_fx). Consumed HERE only — stripped
+  // from the body ctx below so a nested live_loop / in_thread does not inherit
+  // it (it would wait on the same cue and start at the wrong vtime).
+  const startGateName = ctx.startGate ?? null
+
   // SP95(d) #393: live_loop body is emitted `async` so `await __b.sync()` can
   // resolve a cue payload mid-build. asyncBody scopes that await to this arrow.
-  const bodyCtx: TranspileContext = { ...ctx, insideLoop: true, asyncBody: true }
+  const bodyCtx: TranspileContext = { ...ctx, startGate: undefined, insideLoop: true, asyncBody: true }
   const bodyStr = transpileBlockBody(blockNode, bodyCtx)
 
-  // sync:/delay: options — pass as a registration opts hash (applied once before
-  // the first iteration), NOT as body calls. #447: `delay` was parsed into
-  // extraOpts above but the opts hash only emitted `sync`, silently dropping it.
+  // sync:/delay:/start-gate options — pass as a registration opts hash (applied
+  // once before the first iteration), NOT as body calls. #447: `delay` was
+  // parsed into extraOpts above but the opts hash only emitted `sync`, silently
+  // dropping it. #448: `__startGate` gates the first iteration on the cue
+  // `__run_once` fires at this source position (awaited before the user `sync:`).
   const optsParts: string[] = []
   if (syncName) optsParts.push(`sync: "${syncName}"`)
   optsParts.push(...extraOpts)
+  if (startGateName !== null) optsParts.push(`__startGate: ${JSON.stringify(startGateName)}`)
   const optsArg = optsParts.length > 0 ? `{${optsParts.join(', ')}}, ` : ''
 
   return `live_loop("${name}", ${optsArg}async (__b) => {\n${bodyStr}\n${ctx.indent}})`
@@ -2032,10 +2054,19 @@ function transpileWithFxLoopBody(
     if (isLoop) {
       const body = child.namedChildren.find((c: any) => c.type === 'do_block' || c.type === 'block')
       // live_loop bodies are emitted async (SP95(d) — `await __b.sync()`).
-      const innerCtx: TranspileContext = { ...bodyCtx, insideLoop: true, asyncBody: true }
+      // #448/SP118: strip the start-gate from the inner body ctx — it is
+      // consumed by the hoisted `__fxloop_N` live_loop opts below, not by a
+      // nested construct inside the loop body.
+      const innerCtx: TranspileContext = { ...bodyCtx, startGate: undefined, insideLoop: true, asyncBody: true }
       const innerStr = transpileBlockBody(body, innerCtx)
       const idx = counter.n++
-      parts.push(`${ctx.indent}  live_loop("__fxloop_${idx}", async (__b) => {\n${innerStr}\n${ctx.indent}  })`)
+      // #448/SP118: a `with_fx` wrapping a bare `loop do` after vtime-advancing
+      // bare code threads its start-gate (bodyCtx.startGate, set by the wrapping
+      // with_fx's block ctx) onto the hoisted live_loop so it forks at the
+      // source-position vtime, not vt 0.
+      const gate = bodyCtx.startGate
+      const optsArg = gate ? `{__startGate: ${JSON.stringify(gate)}}, ` : ''
+      parts.push(`${ctx.indent}  live_loop("__fxloop_${idx}", ${optsArg}async (__b) => {\n${innerStr}\n${ctx.indent}  })`)
       sawLoop = true
     } else if (sawLoop) {
       droppedAfterLoop = true
