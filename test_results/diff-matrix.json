@@ -1,0 +1,483 @@
+{
+  "generatedAt": "2026-06-03T23:24:54.813Z",
+  "window": 8000,
+  "counts": {
+    "match": 48,
+    "diverge": 2,
+    "timing": 1,
+    "webEmpty": 1,
+    "desktopEmpty": 0,
+    "error": 0,
+    "skipped": 8,
+    "pending": 0,
+    "active": 52,
+    "total": 60
+  },
+  "fatalityRead": {
+    "seamActive": 34,
+    "seamDiverge": 3,
+    "nonSeamDiverge": 1,
+    "note": "seamDiverge clustering with diverse failure modes = fatality (restructure); else converging family (patch)."
+  },
+  "diverged": [
+    {
+      "id": "live_loop__preceding_sleep__nested",
+      "seam": true,
+      "kind": "timing",
+      "reasons": [
+        "Significant synthdef multiset matches.",
+        "Gating/timing: shared layer first-onset differs ≥3s — saw desktop@4s vs web@0.027s"
+      ]
+    },
+    {
+      "id": "live_loop__var_read__nested",
+      "seam": true,
+      "kind": "diverge",
+      "reasons": [
+        "Web DROPPED 1 significant layer(s) desktop produces: beep×19",
+        "Significant-layer first-appearance order differs (desktop: beep | web: ) — thread-start timing."
+      ]
+    },
+    {
+      "id": "bare_loop__var_read__nested",
+      "seam": true,
+      "kind": "diverge",
+      "reasons": [
+        "Web DROPPED 1 significant layer(s) desktop produces: beep×19",
+        "Significant-layer first-appearance order differs (desktop: beep | web: ) — thread-start timing."
+      ]
+    },
+    {
+      "id": "with_fx__sync__top_level",
+      "seam": false,
+      "kind": "web_empty",
+      "reasons": [
+        "Web produced no voice /s_new — engine refused or silent.",
+        "Rare one-sided synthdef(s): pretty_bell desktop×1",
+        "Significant-layer first-appearance order differs (desktop: saw | web: ) — thread-start timing."
+      ]
+    }
+  ],
+  "cells": [
+    {
+      "id": "bare_loop__delay__top_level",
+      "status": "skipped",
+      "verdict": null,
+      "seam": true,
+      "skip": "delay: is not a valid opt for bare_loop (only live_loop / in_thread accept delay:)"
+    },
+    {
+      "id": "bare_loop__delay__nested",
+      "status": "skipped",
+      "verdict": null,
+      "seam": true,
+      "skip": "delay: is not a valid opt for bare_loop (only live_loop / in_thread accept delay:)"
+    },
+    {
+      "id": "with_fx__delay__top_level",
+      "status": "skipped",
+      "verdict": null,
+      "seam": false,
+      "skip": "delay: is not a valid opt for with_fx (only live_loop / in_thread accept delay:)"
+    },
+    {
+      "id": "with_fx__delay__nested",
+      "status": "skipped",
+      "verdict": null,
+      "seam": false,
+      "skip": "delay: is not a valid opt for with_fx (only live_loop / in_thread accept delay:)"
+    },
+    {
+      "id": "at__delay__top_level",
+      "status": "skipped",
+      "verdict": null,
+      "seam": false,
+      "skip": "delay: is not a valid opt for at (only live_loop / in_thread accept delay:)"
+    },
+    {
+      "id": "at__delay__nested",
+      "status": "skipped",
+      "verdict": null,
+      "seam": false,
+      "skip": "delay: is not a valid opt for at (only live_loop / in_thread accept delay:)"
+    },
+    {
+      "id": "at__sync__top_level",
+      "status": "skipped",
+      "verdict": null,
+      "seam": false,
+      "skip": "at is pre-scheduled at fixed offsets; gating on a cue (sync) is nonsensical"
+    },
+    {
+      "id": "at__sync__nested",
+      "status": "skipped",
+      "verdict": null,
+      "seam": false,
+      "skip": "at is pre-scheduled at fixed offsets; gating on a cue (sync) is nonsensical"
+    },
+    {
+      "id": "live_loop__nothing__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__nothing__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__preceding_sleep__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__preceding_sleep__nested",
+      "status": "timing",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__delay__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__delay__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__sync__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__sync__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__var_read__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__var_read__nested",
+      "status": "diverge",
+      "verdict": "STRUCTURE-DIVERGE",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__use_synth__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "live_loop__use_synth__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__nothing__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__nothing__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__preceding_sleep__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__preceding_sleep__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__delay__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__delay__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__sync__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__sync__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__var_read__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__var_read__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__use_synth__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "in_thread__use_synth__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__nothing__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__nothing__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__preceding_sleep__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__preceding_sleep__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__sync__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__sync__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__var_read__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__var_read__nested",
+      "status": "diverge",
+      "verdict": "STRUCTURE-DIVERGE",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__use_synth__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "bare_loop__use_synth__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": true,
+      "skip": null
+    },
+    {
+      "id": "with_fx__nothing__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "with_fx__nothing__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "with_fx__preceding_sleep__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "with_fx__preceding_sleep__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "with_fx__sync__top_level",
+      "status": "web_empty",
+      "verdict": "WEB-EMPTY",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "with_fx__sync__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "with_fx__var_read__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "with_fx__var_read__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "with_fx__use_synth__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "with_fx__use_synth__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "at__nothing__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "at__nothing__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "at__preceding_sleep__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "at__preceding_sleep__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "at__var_read__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "at__var_read__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "at__use_synth__top_level",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    },
+    {
+      "id": "at__use_synth__nested",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
+      "seam": false,
+      "skip": null
+    }
+  ]
+}
