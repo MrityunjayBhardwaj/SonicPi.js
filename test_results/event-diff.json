@@ -1,12 +1,28 @@
 {
-  "generatedAt": "2026-06-02T23:12:52.610Z",
+  "generatedAt": "2026-06-03T10:22:51.018Z",
   "counts": {
-    "match": 3,
-    "diverge": 0,
+    "match": 7,
+    "diverge": 1,
     "empty": 0,
-    "total": 3
+    "total": 8
   },
   "fixtures": [
+    {
+      "name": "syncer",
+      "verdict": "STRUCTURE-DIVERGE",
+      "isPrng": true,
+      "desktopTotal": 26,
+      "webTotal": 2048,
+      "totalRatio": 78.77
+    },
+    {
+      "name": "dark_neon",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 45,
+      "webTotal": 43,
+      "totalRatio": 0.96
+    },
     {
       "name": "det_tb303",
       "verdict": "STRUCTURE-MATCH",
@@ -14,6 +30,22 @@
       "desktopTotal": 8,
       "webTotal": 8,
       "totalRatio": 1
+    },
+    {
+      "name": "echo_drama",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": true,
+      "desktopTotal": 17,
+      "webTotal": 15,
+      "totalRatio": 0.88
+    },
+    {
+      "name": "fm_noise",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": true,
+      "desktopTotal": 10,
+      "webTotal": 13,
+      "totalRatio": 1.3
     },
     {
       "name": "monday_blues",
@@ -24,12 +56,20 @@
       "totalRatio": 0.97
     },
     {
+      "name": "reich_phase",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 89,
+      "webTotal": 87,
+      "totalRatio": 0.98
+    },
+    {
       "name": "sonic_dreams",
       "verdict": "STRUCTURE-MATCH",
       "isPrng": true,
       "desktopTotal": 16,
-      "webTotal": 168,
-      "totalRatio": 10.5
+      "webTotal": 15,
+      "totalRatio": 0.94
     }
   ]
 }
