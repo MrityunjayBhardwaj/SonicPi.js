@@ -2151,6 +2151,19 @@ function transpileWithBlock(
   return `${prefix}${methodName}(${argParts.join(', ')})`
 }
 
+/** #451: a pre-loop statement that is a flow-sensitive thread-local SETTING
+ *  (`use_synth`/`use_bpm`/`use_transpose`/`use_synth_defaults`/`use_random_seed`/…)
+ *  — idempotent and safe to fold into a hoisted loop body (re-applied each
+ *  iteration). Everything else (play/sample/sleep/cue/assignments) is a one-time
+ *  action that must NOT be folded. Matches the `use_*` flow-sensitive family the
+ *  SV55 / SP36 / SP72 fixes already special-case. */
+function isFlowSensitiveSetting(child: any): boolean {
+  const m = (child?.type === 'call' || child?.type === 'method_call')
+    ? (child.childForFieldName?.('method')?.text ?? child.namedChildren?.[0]?.text)
+    : null
+  return typeof m === 'string' && m.startsWith('use_')
+}
+
 function transpileInThread(
   argsNode: any, blockNode: any, ctx: TranspileContext
 ): string {
@@ -2247,18 +2260,44 @@ function transpileInThread(
   const baseName = nameExpr !== null ? nameExpr : null
   const parts: string[] = []
 
-  if (setupChildren.length > 0) {
+  // #451: partition the pre-loop setup. The loop is hoisted OUT to a sibling
+  // top-level live_loop, so it no longer sits inside the in_thread builder —
+  // SP72's parentBuilder path (which carries use_* into a NESTED live_loop)
+  // can't reach it. Two kinds of setup need different handling:
+  //   • flow-sensitive SETTINGS (`use_synth`/`use_bpm`/`use_transpose`/…) must
+  //     reach the hoisted loop → fold them into its body (idempotent, re-applied
+  //     each iteration — matches desktop "set once, then loop forever"). Without
+  //     this the hoisted loop registers the default synth (syncer mod_saw→beep).
+  //   • one-time ACTIONS (`play`/`sample`/`sleep`/`cue`/var assigns) must run
+  //     ONCE → keep them in a setup in_thread (folding a `play` into the loop
+  //     would re-fire it every iteration).
+  const settingChildren = setupChildren.filter(isFlowSensitiveSetting)
+  const actionChildren = setupChildren.filter((c) => !isFlowSensitiveSetting(c))
+
+  // Settings folded into each hoisted loop body. asyncBody so any `await` is legal.
+  const settingCtx: TranspileContext = { ...ctxNoGate, insideLoop: true, asyncBody: true }
+  const settingStr = settingChildren
+    .map((c) => '  ' + transpileNode(c, settingCtx))
+    .filter((s) => s.trim())
+    .join('\n')
+
+  if (actionChildren.length > 0) {
     const setupCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
-    const setupStr = setupChildren
-      .map(c => '  ' + transpileNode(c, setupCtx))
-      .filter(s => s.trim())
+    const setupStr = actionChildren
+      .map((c) => '  ' + transpileNode(c, setupCtx))
+      .filter((s) => s.trim())
       .join('\n')
     parts.push(`${prefix}in_thread(${itOpts}(__b) => {\n${setupStr}\n${ctx.indent}})`)
   }
 
   for (const loopNode of loopChildren) {
     const body = loopNode.namedChildren.find((c: any) => c.type === 'do_block' || c.type === 'block')
-    const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
+    // #451: emit the hoisted loop body `async` with asyncBody — exactly like a
+    // normal top-level live_loop (SP95(d) #393). Without asyncBody, `sync`/
+    // `sync_bpm` emit a bare `__b.sync()` whose cue Promise is dropped on the
+    // floor → the loop never blocks on the cue and a sync-gated loop free-runs
+    // (the syncer 1024-voice runaway). asyncBody makes them `await __b.sync()`.
+    const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true, asyncBody: true }
     const bodyStr = transpileBlockBody(body, bodyCtx)
     const idx = counter.n++
     const autoName = baseName !== null
@@ -2268,7 +2307,8 @@ function transpileInThread(
     // as a top-level scheduler-owned loop. Inside another deferred context,
     // route through __b.live_loop.
     const liveLoopPrefix = ctx.insideLoop ? '__b.' : ''
-    parts.push(`${liveLoopPrefix}live_loop(${autoName}, (__b) => {\n${bodyStr}\n${ctx.indent}})`)
+    const fullBody = settingStr ? `${settingStr}\n${bodyStr}` : bodyStr
+    parts.push(`${liveLoopPrefix}live_loop(${autoName}, async (__b) => {\n${fullBody}\n${ctx.indent}})`)
   }
 
   return parts.join('\n')

@@ -759,9 +759,49 @@ end`)
       expect(result.code).toContain('live_loop("__inthread_loop_0"')
     })
 
-    it('keeps setup statements before loop in in_thread; hoists the loop', () => {
+    // Issue #451: a flow-sensitive setting (`use_synth`) before the hoisted loop
+    // must FOLD INTO the loop body — the loop is hoisted OUT to a sibling
+    // top-level live_loop, so leaving use_synth in a separate in_thread strands
+    // it (the loop registers the default synth → syncer's mod_saw played :beep).
+    it('folds use_synth before loop into the hoisted in_thread live_loop body (#451)', () => {
       const result = treeSitterTranspile(`in_thread do
   use_synth :saw
+  loop do
+    play 60
+    sleep 1
+  end
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).not.toContain('while (true)')
+      expect(result.code).toContain('live_loop("__inthread_loop_0"')
+      // setting is folded into the loop, NOT stranded in a dead sibling in_thread
+      expect(result.code).toContain('use_synth("saw")')
+      expect(result.code).not.toContain('in_thread(')
+    })
+
+    // Issue #451: `sync` inside a hoisted in_thread loop must be `await`ed —
+    // the body is emitted `async` so `await __b.sync()` blocks on the cue. Without
+    // it the cue Promise is dropped and a sync-gated loop free-runs (syncer 1024
+    // runaway).
+    it('emits await __b.sync inside a hoisted in_thread loop (#451 sync gating)', () => {
+      const result = treeSitterTranspile(`in_thread do
+  loop do
+    sync :tick
+    sample :drum_heavy_kick
+  end
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).not.toContain('while (true)')
+      expect(result.code).toContain('live_loop("__inthread_loop_0", async (__b)')
+      expect(result.code).toContain('await __b.sync("tick")')
+    })
+
+    // Issue #451: a one-time ACTION (play) before the loop must stay in a setup
+    // in_thread (run once) — folding it into the loop would re-fire it every
+    // iteration. Only flow-sensitive use_* settings fold.
+    it('keeps a one-time action before loop in a setup in_thread, not folded (#451)', () => {
+      const result = treeSitterTranspile(`in_thread do
+  play 48
   loop do
     play 60
     sleep 1
