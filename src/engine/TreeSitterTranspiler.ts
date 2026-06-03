@@ -233,6 +233,15 @@ interface TranspileContext {
   srcLine?: number
   /** Hoisted-loop counter for `loop do` inside `in_thread` (issue #205). */
   inthreadLoopCounter?: { n: number }
+  /**
+   * #448/SP118: source-position START-GATE cue name for THIS top-level
+   * construct only. When set, the construct's registration emits
+   * `__startGate: "<name>"` so its first iteration waits for the cue that
+   * `__run_once` fires at the construct's source position → it forks at the
+   * source-position vtime, not vt 0. Set per-block in the blockJS map; MUST NOT
+   * propagate into a block's body (a nested in_thread must not inherit it).
+   */
+  startGate?: string
   /** Hoisted-loop counter for `loop do` inside `with_fx` (issue #426/SP111). */
   fxLoopCounter?: { n: number }
   /**
@@ -1049,6 +1058,19 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   let currentTopSynth: string | null = null
   const blockSynth = new Map<any, string | null>()
 
+  // #448/SP118: source-position START-GATE for top-level `in_thread`. When an
+  // in_thread is declared after vtime-advancing bare code (`sleep`/`sync`), it
+  // must fork at that source-position vtime (desktop fork-at-current-vtime), not
+  // vt 0. We keep it on its normal separately-scheduled path (NOT inlined into
+  // `__run_once` — that deadlocks on `sync`, see SP118 trap (c)); instead the
+  // construct waits for a `cue("__sg_N")` that `__run_once` fires at the
+  // construct's source position. `seenVtimeAdvancingBareCode` arms the gate;
+  // `blockGate` tags the gated block with its cue name; a synthetic marker in
+  // `bareCode` (rendered as `__b.cue(...)`) carries the fire site in source order.
+  let seenVtimeAdvancingBareCode = false
+  let startGateCounter = 0
+  const blockGate = new Map<any, string>()
+
   for (const child of children) {
     if (child.type === 'comment') {
       bareCode.push(child)
@@ -1089,8 +1111,26 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
                           method === 'in_thread' || isBareLoopNode)) {
       blocks.push(child)
       blockSynth.set(child, currentTopSynth)
+      // #448/SP118: gate a top-level `in_thread` declared after vtime-advancing
+      // bare code so it forks at the source-position vtime. Assign a unique cue
+      // and drop a marker into bareCode at THIS source position; `__run_once`
+      // fires the cue there, and the in_thread (which stays on its normal
+      // scheduled path) waits for it before its first iteration. An in_thread
+      // at the top (no preceding sleep/sync) keeps the un-gated vt-0 start
+      // (correct there). live_loop / with_fx-wrapped loop: follow-up (#448).
+      if (method === 'in_thread' && seenVtimeAdvancingBareCode) {
+        const gate = `__sg_${startGateCounter++}`
+        blockGate.set(child, gate)
+        bareCode.push({ __sgMarker: gate })
+      }
     } else {
       bareCode.push(child)
+      // #448/SP118: arm the gate once a vtime-ADVANCING bare statement appears.
+      // `sleep`/`sync` advance the __run_once cursor; pure settings/assignments/
+      // puts/play/cue do not. Word-boundary token scan — cheap, conservative
+      // (a sleep hidden inside a called define() is not detected → that rarer
+      // shape keeps the existing vt-0 start, no regression).
+      if (/\b(?:sleep|sync)\b/.test(child.text ?? '')) seenVtimeAdvancingBareCode = true
     }
   }
 
@@ -1122,7 +1162,13 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   // so `await __b.sync()` is legal there too.
   const bareCtx: TranspileContext = { ...ctx, insideLoop: true, asyncBody: true }
   const bareJS = bareCode
-    .map(c => '  ' + transpileNode(c, bareCtx))
+    // #448/SP118: a synthetic start-gate marker fires the gate cue at the gated
+    // in_thread's source position — `__run_once` reaches it at the accumulated
+    // cursor vtime, so the waiting in_thread forks there. (cue is non-blocking,
+    // unlike sync — no build deadlock; SP118 trap (c).)
+    .map(c => (c && (c as any).__sgMarker)
+      ? `  __b.cue(${JSON.stringify((c as any).__sgMarker)})`
+      : '  ' + transpileNode(c, bareCtx))
     .filter(s => s.trim())
 
   // Transpile block-level constructs. Top-level bare `loop do … end` blocks
@@ -1169,7 +1215,12 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
         return `${eagerPrefix}live_loop("${name}", async (__b) => {\n${bodyStr}\n${ctx.indent}})`
       }
     }
-    return eagerPrefix + transpileNode(c, ctx)
+    // #448/SP118: thread this block's start-gate (if gated) into the per-block
+    // ctx so transpileInThread emits `__startGate` in its registration opts. The
+    // gate is consumed by THIS construct only — transpileInThread must not leak
+    // it into the body (a nested in_thread must not inherit it).
+    const blockCtx: TranspileContext = blockGate.has(c) ? { ...ctx, startGate: blockGate.get(c) } : ctx
+    return eagerPrefix + transpileNode(c, blockCtx)
   }).filter(Boolean)
 
   const parts: string[] = []
@@ -2097,10 +2148,19 @@ function transpileInThread(
       }
     }
   }
-  // The registration opts hash, built once (name + delay) for every emit site.
+  // #448/SP118: this top-level in_thread's source-position start-gate (set by
+  // the blockJS per-block ctx). Emit it in the registration opts so the engine's
+  // topLevelInThread gates the thread's first iteration on the cue __run_once
+  // fires at this source position. Consumed HERE only — never propagated into
+  // the body (a nested in_thread must not inherit it): all body ctxs below are
+  // built from `ctxNoGate`.
+  const startGateName = ctx.startGate ?? null
+  const ctxNoGate: TranspileContext = startGateName ? { ...ctx, startGate: undefined } : ctx
+  // The registration opts hash, built once (name + delay + start-gate) for every emit site.
   const itOptsParts: string[] = []
   if (nameExpr !== null) itOptsParts.push(`name: ${nameExpr}`)
   if (delayExpr !== null) itOptsParts.push(`delay: ${delayExpr}`)
+  if (startGateName !== null) itOptsParts.push(`__startGate: ${JSON.stringify(startGateName)}`)
   const itOpts = itOptsParts.length > 0 ? `{ ${itOptsParts.join(', ')} }, ` : ''
 
   // SV16 / issue #205: `loop do` inside an in_thread body must be hoisted to
@@ -2137,7 +2197,7 @@ function transpileInThread(
 
   if (loopChildren.length === 0) {
     // No nested loop → original codepath.
-    const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+    const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
     const bodyStr = transpileBlockBody(blockNode, bodyCtx)
     return `${prefix}in_thread(${itOpts}(__b) => {\n${bodyStr}\n${ctx.indent}})`
   }
@@ -2157,7 +2217,7 @@ function transpileInThread(
   const parts: string[] = []
 
   if (setupChildren.length > 0) {
-    const setupCtx: TranspileContext = { ...ctx, insideLoop: true }
+    const setupCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
     const setupStr = setupChildren
       .map(c => '  ' + transpileNode(c, setupCtx))
       .filter(s => s.trim())
@@ -2167,7 +2227,7 @@ function transpileInThread(
 
   for (const loopNode of loopChildren) {
     const body = loopNode.namedChildren.find((c: any) => c.type === 'do_block' || c.type === 'block')
-    const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+    const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
     const bodyStr = transpileBlockBody(body, bodyCtx)
     const idx = counter.n++
     const autoName = baseName !== null

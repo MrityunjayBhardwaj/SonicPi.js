@@ -321,6 +321,53 @@ sleep 5`)
         expect(itIdx).toBeGreaterThanOrEqual(0)
         expect(synthIdx).toBeLessThan(itIdx)
       })
+
+      // #448/SP118: a top-level in_thread declared after vtime-advancing bare
+      // code must fork at the source-position vtime — gated via a start-gate cue
+      // __run_once fires at the in_thread's source position.
+      it('#448: top-level in_thread after sleep emits a start-gate (cue + __startGate)', () => {
+        const result = treeSitterTranspile(`play 40
+sleep 2
+in_thread do
+  play 60
+end`)
+        expect(result.ok).toBe(true)
+        // The in_thread registration carries the start-gate opt.
+        expect(result.code).toMatch(/in_thread\(\{[^}]*__startGate:\s*"__sg_0"/)
+        // __run_once fires the matching cue (inside the __run_once wrapper).
+        expect(result.code).toContain('__b.cue("__sg_0")')
+        // The gate cue fires at the source position — after the bare `sleep 2`.
+        const sleepIdx = result.code.indexOf('__b.sleep(2)')
+        const cueIdx = result.code.indexOf('__b.cue("__sg_0")')
+        expect(sleepIdx).toBeGreaterThanOrEqual(0)
+        expect(cueIdx).toBeGreaterThan(sleepIdx)
+      })
+
+      it('#448: top-level in_thread with NO preceding sleep is NOT gated', () => {
+        const result = treeSitterTranspile(`in_thread do
+  play 60
+end
+sleep 5`)
+        expect(result.ok).toBe(true)
+        // No vtime-advancing bare code precedes it → starts at vt 0 (correct),
+        // so no start-gate is injected.
+        expect(result.code).not.toContain('__startGate')
+        expect(result.code).not.toContain('__sg_0')
+      })
+
+      it('#448: a nested in_thread does NOT inherit the outer start-gate', () => {
+        const result = treeSitterTranspile(`sleep 2
+in_thread do
+  in_thread do
+    play 60
+  end
+end`)
+        expect(result.ok).toBe(true)
+        // Exactly one start-gate (the outer top-level in_thread); the nested one
+        // must not also be gated.
+        const gateCount = (result.code.match(/__startGate/g) ?? []).length
+        expect(gateCount).toBe(1)
+      })
     })
 
     // Regression for #163 — `synth :NAME, note: 60` used to transpile to
