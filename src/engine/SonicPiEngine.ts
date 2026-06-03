@@ -145,6 +145,16 @@ export class SonicPiEngine {
   /** Tracks which loops have applied their initial `delay:` — once only, persists across hot-swaps (#447). */
   private loopDelayed = new Set<string>()
   /**
+   * #448/SP118: tracks which top-level threads/loops have passed their initial
+   * source-position START-GATE — once only, persists across hot-swaps. A gated
+   * construct (top-level `in_thread`/`live_loop` declared after vtime-advancing
+   * bare code) waits on a `__b.cue("__sg_N")` that `__run_once` fires at the
+   * construct's source position, so it forks at the source-position vtime
+   * (desktop fork-at-current-vtime) instead of vt 0. Creation-only: hot-swapping
+   * must not re-gate a running loop. Mirrors loopSynced (same teardown safety).
+   */
+  private startGated = new Set<string>()
+  /**
    * Build-phase nesting depth (issue #198). Incremented around each
    * synchronous builderFn invocation. > 0 means we are currently
    * building one live_loop's iteration step array; any `live_loop`
@@ -661,11 +671,18 @@ export class SonicPiEngine {
         // iteration (desktop core.rb:2299 passes it to in_thread; runtime.rb:1196
         // `sleep delay if delay`). Default 0. Was previously dropped.
         let delayBeats = 0
+        // #448/SP118: source-position START-GATE cue. When set, the loop's first
+        // iteration waits for this cue (fired by __run_once at the construct's
+        // source position) before running, so it forks at the source-position
+        // vtime instead of vt 0. Engine-injected (transpiler), distinct from the
+        // user-facing `sync:`; awaited BEFORE `sync:` (desktop forks, then syncs).
+        let startGate: string | null = null
         if (typeof builderFnOrOpts === 'function') {
           builderFn = builderFnOrOpts
         } else {
           syncTarget = (builderFnOrOpts.sync as string) ?? null
           delayBeats = typeof builderFnOrOpts.delay === 'number' ? builderFnOrOpts.delay : 0
+          startGate = (builderFnOrOpts.__startGate as string) ?? null
           builderFn = maybeFn!
         }
 
@@ -721,6 +738,18 @@ export class SonicPiEngine {
         // Create the async function that builds a Program each iteration
         // and runs it via AudioInterpreter
         const asyncFn = async () => {
+          // #448/SP118: source-position START-GATE — wait for the cue that
+          // __run_once fires at this construct's source position, ONCE before the
+          // first iteration only. Forks the loop at the source-position vtime
+          // (desktop fork-at-current-vtime) instead of vt 0. Awaited BEFORE the
+          // user `sync:` (desktop forks the thread at T, THEN waits on the user
+          // cue). Creation-only via startGated (persists across hot-swaps, like
+          // loopSynced) so hot-swapping does not re-gate a running loop. The
+          // waiter is cancelled on teardown by the same path as loopSynced.
+          if (startGate && !this.startGated.has(name)) {
+            this.startGated.add(name)
+            await scheduler.waitForSync(startGate, name)
+          }
           // sync: option — wait for the cue ONCE before the first iteration only.
           // Uses engine-level loopSynced set so the flag persists across hot-swaps.
           // Sonic Pi: sync: is passed to in_thread, called ONCE before loop starts.
@@ -1054,12 +1083,20 @@ export class SonicPiEngine {
         // so the delay is naturally once-only; no loopDelayed gate needed here.
         const opts = typeof optsOrFn === 'object' ? optsOrFn : null
         const delayBeats = opts && typeof opts.delay === 'number' ? opts.delay : 0
+        // #448/SP118: source-position start-gate (injected by the transpiler when
+        // this in_thread follows vtime-advancing bare code). Forward it as a
+        // wrappedLiveLoop opt so the one-shot loop's first (only) iteration waits
+        // for the cue __run_once fires at the in_thread's source position → the
+        // thread forks at that vtime, not vt 0.
+        const startGate = opts && typeof opts.__startGate === 'string' ? opts.__startGate : null
         const name = `__thread_${Date.now()}_${randomSuffix()}`
-        fxAwareWrappedLiveLoop(name, (b: ProgramBuilder) => {
+        const wrapped = (b: ProgramBuilder) => {
           if (delayBeats > 0) b.sleep(delayBeats)
           fn(b)
           b.stop()
-        })
+        }
+        if (startGate) fxAwareWrappedLiveLoop(name, { __startGate: startGate }, wrapped)
+        else fxAwareWrappedLiveLoop(name, wrapped)
       }
 
       // Top-level at: create one-shot loops with time offsets
@@ -1640,6 +1677,7 @@ export class SonicPiEngine {
           this.loopBeats.delete(name)
           this.loopSynced.delete(name)
           this.loopDelayed.delete(name)
+          this.startGated.delete(name)
         }
 
         // Pause ticking so no old events fire during transition
@@ -1878,6 +1916,7 @@ export class SonicPiEngine {
     this.loopBeats.clear()
     this.loopSynced.clear()
     this.loopDelayed.clear()
+    this.startGated.clear()
     // Time State (set/get) intentionally NOT cleared on Stop. Desktop Sonic
     // Pi creates @event_history once per session (runtime.rb:1450) and never
     // clears it on Stop — `get` is documented "deterministic across Runs".
