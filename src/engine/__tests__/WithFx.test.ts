@@ -217,6 +217,79 @@ describe('with_fx', () => {
     expect(play).toBeDefined()
   })
 
+  // #452 DIAGNOSIS — per-iteration inner with_fx reuse is governed by the
+  // kill horizon (killAt = max(vt_exit, aliveUntil) + kill_delay), NOT by the
+  // FX type. dark_neon's `with_fx :wobble { synth :blade, release: 4 }` inside a
+  // `sleep 4` loop reuses ONE node (release 4 + kill_delay 1 = aliveUntil 5 >
+  // next-iter vt 4), so /s_new fx_wobble fires once — while sibling reverb/
+  // bitcrusher wrapping a SHORT sample recreate each pass. These two tests prove
+  // the divergence is duration-driven (the reuse horizon overrunning the loop
+  // period), which is the intended SV41/SV52 anti-stacking behaviour — NOT a
+  // wobble-specific or top-level-persistence bug as #452 originally hypothesised.
+  describe('#452 per-iteration FX reuse is duration-driven (diagnosis)', () => {
+    // Drive N loop iterations of `with_fx(:wobble){ play release: R }; sleep 4`
+    // through ONE shared reusableFx map and count how many times the FX node is
+    // created (`fx:wobble` calls). The reuse-vs-recreate decision is governed by
+    // the kill horizon — killAt = max(vt_exit, aliveUntil) + kill_delay — versus
+    // the next iteration's start vt, NOT by the FX type.
+    //
+    // Faithful timing matters: the SV41 cancel-before-kill (a resumed iteration
+    // cancels its kill within the same tick's microtasks) only holds under a
+    // realistic schedAhead + fine CONTINUOUS ticking (the engine's rAF loop).
+    // A coarse `tick(+4)` jump with a huge schedAhead does NOT reproduce it.
+    async function countWobbleCreates(release: number, until = 18): Promise<number> {
+      const schedAhead = 0.5
+      let audio = 0
+      const scheduler = new VirtualTimeScheduler({
+        getAudioTime: () => audio,
+        schedAheadTime: schedAhead,
+      })
+      const eventStream = new SoundEventStream()
+      const nodeRefMap = new Map<number, number>()
+      const bridge = createMockBridge()
+      // ONE shared ctx → ONE reusableFx map across iterations (mirrors
+      // SonicPiEngine passing this.reusableFx to every runProgram call).
+      const ctx = makeAudioCtx(scheduler, 'test', eventStream, nodeRefMap, bridge)
+
+      const body = new ProgramBuilder(0)
+        .with_fx('wobble', { phase: 1 }, (b) =>
+          b.play(60, { attack: 0, decay: 0, sustain: 0, release })
+        )
+        .sleep(4) // bpm 60 → 4 beats = 4 seconds
+        .build()
+
+      scheduler.registerLoop('test', async () => {
+        await runProgram(body, ctx)
+      })
+
+      // Advance virtual time 0 → `until` in fine steps, flushing microtasks each
+      // step so a resumed iteration drains its reuse-check before the kill fires.
+      for (let t = 0; t <= until; t += 0.1) {
+        audio = t
+        scheduler.tick(t + schedAhead)
+        await flushMicrotasks(2)
+      }
+      return bridge.calls.filter((c) => c.startsWith('fx:wobble')).length
+    }
+
+    it('long inner release (4) over a sleep-4 loop → FX node REUSED once (count 1)', async () => {
+      const n = await countWobbleCreates(4)
+      // aliveUntil = 0+0+0+4 = 4; killAt = max(vt_exit,4)+1 = 5 > next iter (4)
+      // → kill cancelled each pass → ONE create. This is the web behaviour #452
+      // flags as a divergence (desktop creates one fresh node per pass = 5).
+      expect(n).toBe(1)
+    })
+
+    it('short inner release (0.2) over a sleep-4 loop → FX node RECREATED each pass (≈5)', async () => {
+      const n = await countWobbleCreates(0.2)
+      // aliveUntil = 0.2; killAt = 1.2 < next iter (4) → kill fires → recreate.
+      // Same FX (wobble), same loop, ONLY the inner duration changed — proving
+      // the divergence is the reuse horizon, not the effect type. ~5 over 18s.
+      expect(n).toBeGreaterThan(1)
+      expect(n).toBe(5)
+    })
+  })
+
   it('transpiled Ruby with_fx produces correct program', () => {
     // In the new model, the transpiler outputs ProgramBuilder chains.
     // Verify the builder produces the expected step structure for an FX block.
