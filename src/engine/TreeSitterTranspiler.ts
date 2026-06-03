@@ -180,6 +180,7 @@ export function treeSitterTranspile(ruby: string): TreeSitterTranspileResult {
     definedFunctions: new Set(),
     indent: '',
     inthreadLoopCounter: { n: 0 },
+    inthreadGateCounter: { n: 0 },
     fxLoopCounter: { n: 0 },
   }
 
@@ -233,6 +234,12 @@ interface TranspileContext {
   srcLine?: number
   /** Hoisted-loop counter for `loop do` inside `in_thread` (issue #205). */
   inthreadLoopCounter?: { n: number }
+  /**
+   * Counter for the synthetic start-gate cue (`__itg_N`) that sequences a
+   * hoisted in_thread bare-`loop` AFTER its setup/delay (#451 follow-up). Shared
+   * across all in_threads so cue names never collide.
+   */
+  inthreadGateCounter?: { n: number }
   /**
    * #448/SP118: source-position START-GATE cue name for THIS top-level
    * construct only. When set, the construct's registration emits
@@ -2164,6 +2171,15 @@ function isFlowSensitiveSetting(child: any): boolean {
   return typeof m === 'string' && m.startsWith('use_')
 }
 
+/** #451 follow-up: a pre-loop setup statement that ADVANCES virtual time
+ *  (`sleep`/`sync`/`sync_bpm`). When such a statement precedes a hoisted bare
+ *  `loop`, the loop must start at the advanced vtime, not vt 0 — so the hoist
+ *  routes it through a start-gate cue. Text-level check mirrors the top-level
+ *  `seenVtimeAdvancingBareCode` arm (line ~1140). */
+function isVtimeAdvancing(child: any): boolean {
+  return /\b(?:sleep|sync|sync_bpm)\b/.test(child?.text ?? '')
+}
+
 function transpileInThread(
   argsNode: any, blockNode: any, ctx: TranspileContext
 ): string {
@@ -2281,14 +2297,49 @@ function transpileInThread(
     .filter((s) => s.trim())
     .join('\n')
 
-  if (actionChildren.length > 0) {
+  // #451 follow-up: a hoisted bare `loop` becomes a separate scheduler-owned
+  // live_loop that starts at vt 0 unless told otherwise. Three things must push
+  // its first iteration later — all observed DROPPED before this fix:
+  //   (A) `in_thread delay: N`                    — static
+  //   (B) a one-time `sleep`/`sync` in the setup  — RUNTIME duration
+  //   (C) the top-level source-position start-gate (#448) — static cue
+  // (A)+(C) are static and go straight onto the loop's registration opts (the
+  // engine's wrappedLiveLoop honours `delay:` per #447 and `__startGate` per
+  // #448). (B) can't be expressed statically — the loop must wait out the
+  // setup's runtime sleep — so we sequence it through a synthetic start-gate
+  // cue (`__itg_N`) that the setup in_thread fires AFTER its sleep, and the loop
+  // gates on. Root only: a nested in_thread keeps the un-gated path (the cue
+  // machinery is top-level, SP118).
+  const canGate = !ctx.insideLoop
+  const hasVtimeSetup = actionChildren.some(isVtimeAdvancing)
+  const loopGate = (canGate && hasVtimeSetup)
+    ? `__itg_${(ctx.inthreadGateCounter ??= { n: 0 }).n++}`
+    : null
+
+  // Setup in_thread — carries name/delay/top-level-gate (itOpts), runs the
+  // one-time actions in order, and (when sequencing via a cue) fires it once the
+  // setup completes. Emitted whenever there are actions OR a gate cue is needed.
+  if (actionChildren.length > 0 || loopGate !== null) {
     const setupCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
-    const setupStr = actionChildren
+    const setupLines = actionChildren
       .map((c) => '  ' + transpileNode(c, setupCtx))
       .filter((s) => s.trim())
-      .join('\n')
-    parts.push(`${prefix}in_thread(${itOpts}(__b) => {\n${setupStr}\n${ctx.indent}})`)
+    if (loopGate !== null) setupLines.push(`  __b.cue(${JSON.stringify(loopGate)})`)
+    parts.push(`${prefix}in_thread(${itOpts}(__b) => {\n${setupLines.join('\n')}\n${ctx.indent}})`)
   }
+
+  // Registration opts shared by every hoisted loop in this in_thread (they all
+  // start after the same setup). Cue-gated (B) → gate on `__itg`, with delay +
+  // top-level gate already applied upstream in the setup thread. Otherwise (A)+(C)
+  // → static `delay:`/`__startGate` directly on the loop.
+  const loopOptsParts: string[] = []
+  if (loopGate !== null) {
+    loopOptsParts.push(`__startGate: ${JSON.stringify(loopGate)}`)
+  } else if (canGate) {
+    if (delayExpr !== null) loopOptsParts.push(`delay: ${delayExpr}`)
+    if (startGateName !== null) loopOptsParts.push(`__startGate: ${JSON.stringify(startGateName)}`)
+  }
+  const loopOpts = loopOptsParts.length > 0 ? `{ ${loopOptsParts.join(', ')} }, ` : ''
 
   for (const loopNode of loopChildren) {
     const body = loopNode.namedChildren.find((c: any) => c.type === 'do_block' || c.type === 'block')
@@ -2308,7 +2359,7 @@ function transpileInThread(
     // route through __b.live_loop.
     const liveLoopPrefix = ctx.insideLoop ? '__b.' : ''
     const fullBody = settingStr ? `${settingStr}\n${bodyStr}` : bodyStr
-    parts.push(`${liveLoopPrefix}live_loop(${autoName}, async (__b) => {\n${fullBody}\n${ctx.indent}})`)
+    parts.push(`${liveLoopPrefix}live_loop(${autoName}, ${loopOpts}async (__b) => {\n${fullBody}\n${ctx.indent}})`)
   }
 
   return parts.join('\n')
