@@ -36,6 +36,7 @@ export const TABS: NavTab[] = [
   { href: 'launch-gate.html', label: '🚦 launch gate' },
   { href: 'fx-inspector.html', label: 'fx a/b', count: 40 },
   { href: 'event-diff.html', label: 'event diff' },
+  { href: 'diff-matrix.html', label: 'diff matrix' },
 ]
 
 const DEFAULT_META = 'desktop ↔ web parity'
