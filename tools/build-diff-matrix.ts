@@ -17,7 +17,12 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { navBlock } from './lib/dashboard-nav.ts'
-import { CONSTRUCTS, MODIFIERS, POSITIONS } from './lib/matrix-cells.ts'
+import { CONSTRUCTS, MODIFIERS, POSITIONS, enumerateCells } from './lib/matrix-cells.ts'
+
+// seam is a CLASSIFICATION (recomputed from the live enumeration), not measured
+// data — so the §36-corrected isSeam applies without re-capturing.
+const seamById = new Map(enumerateCells().map((c) => [c.id, c.seam]))
+const seamOf = (id: string) => seamById.get(id) ?? false
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -56,10 +61,49 @@ const cells = Object.values(rf.cells)
 const byId = new Map(cells.map((c) => [c.id, c]))
 
 // ── status helpers ───────────────────────────────────────────────────────────
+// A "timing" divergence is the §36-Finding-1 blind spot: the event-parity VERDICT
+// keys on a DROPPED layer (count) and only treats a first-onset gap as a
+// supplementary reason — it never flips MATCH→DIVERGE on timing alone. The matrix
+// exists to MEASURE that class, so we recompute a richer status from the stored
+// report: a count-MATCH with a significant shared layer whose first onsets differ
+// by ≥ ONSET_GAP is a TIMING divergence (a real bug the count-verdict hid).
+const ONSET_GAP = 3 // seconds — matches event-parity ONSET_GAP_SEC
+
+type Derived = 'match' | 'diverge' | 'timing' | 'web_empty' | 'desktop_empty' | 'error' | 'skipped' | 'pending'
+
+function deriveStatus(c: CellResult): Derived {
+  if (c.skip) return 'skipped'
+  if (c.status === 'error') return 'error'
+  if (!c.report) return 'pending'
+  if (c.report.verdict === 'STRUCTURE-DIVERGE') return 'diverge'
+  // WEB-EMPTY = web rendered nothing → an engine bug (a divergence). DESKTOP-EMPTY
+  // = desktop produced nothing → a harness/desktop-staleness issue, NOT an engine
+  // bug (flag for re-run, never counts against the engine).
+  if (c.report.verdict === 'WEB-EMPTY') return 'web_empty'
+  if (c.report.verdict === 'DESKTOP-EMPTY') return 'desktop_empty'
+  // STRUCTURE-MATCH → look for a hidden onset/timing gap.
+  const gapped = c.report.rows.some(
+    (r) =>
+      r.significant &&
+      r.status !== 'only-desktop' &&
+      r.status !== 'only-web' &&
+      Number.isFinite(r.desktopOnset as number) &&
+      Number.isFinite(r.webOnset as number) &&
+      Math.abs((r.desktopOnset as number) - (r.webOnset as number)) >= ONSET_GAP,
+  )
+  return gapped ? 'timing' : 'match'
+}
+
+const derivedById = new Map(cells.map((c) => [c.id, deriveStatus(c)]))
+
+// 'timing' and 'diverge' are both real bugs per the desktop oracle (the seam read
+// counts both); 'timing' gets its own colour so the grid shows the failure MODE.
 const STATUS_META: Record<string, { cls: string; icon: string }> = {
   match: { cls: 'pass', icon: '✓' },
   diverge: { cls: 'fail', icon: '✗' },
-  empty: { cls: 'warn', icon: '⚠' },
+  timing: { cls: 'time', icon: '◷' },
+  web_empty: { cls: 'fail', icon: '∅' },
+  desktop_empty: { cls: 'warn', icon: '⚠' },
   error: { cls: 'err', icon: '!' },
   skipped: { cls: 'skip', icon: '·' },
   pending: { cls: 'pend', icon: '–' },
@@ -73,12 +117,13 @@ function gridCell(construct: string, position: string, modifier: string): string
     const m = STATUS_META.pending
     return `<td class="g ${m.cls}" title="${esc(id)} — not captured yet">${m.icon}</td>`
   }
-  const m = STATUS_META[c.status] ?? STATUS_META.pending
-  const seam = c.seam ? ' seam' : ''
-  if (c.status === 'skipped') {
+  const d = derivedById.get(id) ?? 'pending'
+  const m = STATUS_META[d] ?? STATUS_META.pending
+  const seam = seamOf(c.id) ? ' seam' : ''
+  if (d === 'skipped') {
     return `<td class="g ${m.cls}${seam}" title="${esc(id)} — SKIPPED: ${esc(c.skip)}">${m.icon}</td>`
   }
-  const tip = `${id} — ${c.verdict ?? c.status}` +
+  const tip = `${id} — ${d === 'timing' ? 'TIMING-DIVERGE (onset gap, count matched)' : c.verdict ?? c.status}` +
     (c.report ? ` (d${c.report.desktopTotal}/w${c.report.webTotal})` : '') +
     (c.error ? ` — ${c.error}` : '')
   return `<td class="g ${m.cls}${seam}" title="${esc(tip)}"><a href="#${esc(id)}">${m.icon}</a></td>`
@@ -126,9 +171,11 @@ function streamRows(evs: OscEvent[]): string {
 }
 
 function detailCard(c: CellResult): string {
-  const m = STATUS_META[c.status] ?? STATUS_META.pending
-  const badge = `<span class="verdict ${m.cls}">${m.icon} ${esc(c.verdict ?? c.status.toUpperCase())}</span>`
-  const seamTag = c.seam ? '<span class="tag seam">hoist/fork seam</span>' : '<span class="tag">non-seam</span>'
+  const d = derivedById.get(c.id) ?? 'pending'
+  const m = STATUS_META[d] ?? STATUS_META.pending
+  const label = d === 'timing' ? 'TIMING-DIVERGE' : (c.verdict ?? d.toUpperCase())
+  const badge = `<span class="verdict ${m.cls}">${m.icon} ${esc(label)}</span>`
+  const seamTag = seamOf(c.id) ? '<span class="tag seam">hoist/fork seam</span>' : '<span class="tag">non-seam</span>'
   if (c.status === 'skipped') {
     return `<section class="card skipcard" id="${esc(c.id)}">
       <div class="head"><div class="title">${esc(c.id)} ${badge}</div><div class="meta">${seamTag}</div></div>
@@ -161,30 +208,35 @@ function detailCard(c: CellResult): string {
 
 // ── tallies + seam-cluster read (the §36 fatality instrument) ──────────────────
 const active = cells.filter((c) => !c.skip)
-const tally = (s: string) => active.filter((c) => c.status === s).length
+const der = (c: CellResult) => derivedById.get(c.id) ?? 'pending'
+const tally = (s: Derived) => active.filter((c) => der(c) === s).length
 const counts = {
-  match: tally('match'), diverge: tally('diverge'), empty: tally('empty'),
+  match: tally('match'), diverge: tally('diverge'), timing: tally('timing'),
+  webEmpty: tally('web_empty'), desktopEmpty: tally('desktop_empty'),
   error: tally('error'), skipped: cells.filter((c) => c.skip).length,
   pending: 60 - cells.filter((c) => c.capturedAt || c.skip).length, // 60 = full space
   active: active.length, total: cells.length,
 }
-const diverged = active.filter((c) => c.status === 'diverge')
-const seamDiverge = diverged.filter((c) => c.seam).length
-const nonSeamDiverge = diverged.filter((c) => !c.seam).length
-const seamActive = active.filter((c) => c.seam).length
+// Real engine bugs per the oracle: dropped-layer (diverge) + onset-gap (timing) +
+// web rendered nothing (web_empty). desktop_empty is a harness issue, NOT counted.
+const REAL_DIVERGE: Derived[] = ['diverge', 'timing', 'web_empty']
+const diverged = active.filter((c) => REAL_DIVERGE.includes(der(c)))
+const seamDiverge = diverged.filter((c) => seamOf(c.id)).length
+const nonSeamDiverge = diverged.filter((c) => !seamOf(c.id)).length
+const seamActive = active.filter((c) => seamOf(c.id)).length
 const now = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
 
 writeFileSync(join(TR, 'diff-matrix.json'), JSON.stringify({
   generatedAt: new Date().toISOString(), window: rf.duration, counts,
   fatalityRead: { seamActive, seamDiverge, nonSeamDiverge,
     note: 'seamDiverge clustering with diverse failure modes = fatality (restructure); else converging family (patch).' },
-  diverged: diverged.map((c) => ({ id: c.id, seam: c.seam, reasons: c.report?.reasons ?? [] })),
-  cells: cells.map((c) => ({ id: c.id, status: c.status, verdict: c.verdict, seam: c.seam, skip: c.skip })),
+  diverged: diverged.map((c) => ({ id: c.id, seam: seamOf(c.id), kind: der(c), reasons: c.report?.reasons ?? [] })),
+  cells: cells.map((c) => ({ id: c.id, status: der(c), verdict: c.verdict, seam: seamOf(c.id), skip: c.skip })),
 }, null, 2))
 
-// stable detail order: diverge → empty → error → match → skipped; alpha within.
-const rank = (c: CellResult) =>
-  c.status === 'diverge' ? 0 : c.status === 'empty' ? 1 : c.status === 'error' ? 2 : c.status === 'match' ? 3 : 4
+// stable detail order: web_empty → diverge → timing → desktop_empty → error → match → skipped.
+const RANK: Record<Derived, number> = { web_empty: 0, diverge: 1, timing: 2, desktop_empty: 3, error: 4, match: 5, skipped: 6, pending: 7 }
+const rank = (c: CellResult) => RANK[der(c)]
 const ordered = [...cells].sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id))
 const detailCards = ordered.map(detailCard).join('\n')
 
@@ -195,7 +247,7 @@ const html = `<!doctype html>
 <style>
   :root{--bg:#1a1b26;--bg-elev:#1f2335;--bg-card:#16161e;--border:#2a2e46;
     --text:#c0caf5;--text-dim:#7a85b3;--text-mute:#565f89;--accent:#7aa2f7;--accent2:#ff1493;
-    --pass:#9ece6a;--flag:#e0af68;--fail:#f7768e;--warn:#e0af68;--err:#ff9e64;--incon:#565f89;
+    --pass:#9ece6a;--flag:#e0af68;--fail:#f7768e;--warn:#e0af68;--err:#ff9e64;--incon:#565f89;--time:#7dcfff;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
@@ -208,7 +260,7 @@ const html = `<!doctype html>
   .stat{font-family:var(--mono);font-size:12px;padding:4px 12px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border)}
   .stat b{font-size:16px}
   .stat.pass b{color:var(--pass)} .stat.fail b{color:var(--fail)} .stat.warn b{color:var(--warn)}
-  .stat.err b{color:var(--err)} .stat.skip b{color:var(--text-mute)} .stat.pend b{color:var(--text-mute)}
+  .stat.err b{color:var(--err)} .stat.skip b{color:var(--text-mute)} .stat.pend b{color:var(--text-mute)} .stat.time b{color:var(--time)}
   .fatality{background:#16161e;border:1px solid var(--border);border-left:3px solid var(--accent2);border-radius:10px;padding:13px 16px;margin:16px 0 22px;font-size:12.5px;color:var(--text-dim);line-height:1.6}
   .fatality b{color:var(--text)} .fatality .v{font-family:var(--mono);color:var(--accent2)}
   .grid{border-collapse:collapse;font-family:var(--mono);font-size:12px;margin:6px 0 26px}
@@ -220,6 +272,7 @@ const html = `<!doctype html>
   .grid td.g{width:90px;height:30px;font-size:14px;font-weight:700}
   .grid td.g a{display:block;width:100%;height:100%;line-height:30px}
   .grid td.g.pass{background:#18241066;color:var(--pass)} .grid td.g.fail{background:#2a151b;color:var(--fail)}
+  .grid td.g.time{background:#0f2630;color:var(--time)}
   .grid td.g.warn{background:#241f12;color:var(--warn)} .grid td.g.err{background:#2a1f14;color:var(--err)}
   .grid td.g.skip{background:#121319;color:var(--text-mute)}
   .grid td.g.pend{background:#121319;color:#3a3f5a}
@@ -235,6 +288,7 @@ const html = `<!doctype html>
   .verdict{font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:20px}
   .verdict.pass{background:#1f2a16;color:var(--pass)} .verdict.fail{background:#2a151b;color:var(--fail)}
   .verdict.warn{background:#241f12;color:var(--warn)} .verdict.err{background:#2a1f14;color:var(--err)}
+  .verdict.time{background:#10222a;color:var(--time)}
   .verdict.skip{background:#1a1c26;color:var(--text-mute)}
   .tag{font-family:var(--mono);font-size:10.5px;padding:1px 8px;border-radius:20px;background:var(--bg-elev);color:var(--text-dim)}
   .tag.seam{background:#2a1020;color:var(--accent2)}
@@ -270,7 +324,9 @@ ${navBlock('construct×context matrix · #459 · dharana §36')}
   <div class="hero">
     <span class="stat pass">match <b>${counts.match}</b></span>
     <span class="stat fail">diverge <b>${counts.diverge}</b></span>
-    <span class="stat warn">empty <b>${counts.empty}</b></span>
+    <span class="stat time">timing <b>${counts.timing}</b></span>
+    <span class="stat fail">web-empty <b>${counts.webEmpty}</b></span>
+    <span class="stat warn">desktop-empty <b>${counts.desktopEmpty}</b></span>
     <span class="stat err">error <b>${counts.error}</b></span>
     <span class="stat skip">skipped <b>${counts.skipped}</b></span>
     <span class="stat pend">pending <b>${counts.pending}</b></span>
@@ -282,8 +338,10 @@ ${navBlock('construct×context matrix · #459 · dharana §36')}
   ${gridTable()}
   <div class="legend">
     <span><b style="color:var(--pass)">✓</b> match</span>
-    <span><b style="color:var(--fail)">✗</b> diverge</span>
-    <span><b style="color:var(--warn)">⚠</b> empty</span>
+    <span><b style="color:var(--fail)">✗</b> diverge (dropped layer)</span>
+    <span><b style="color:var(--time)">◷</b> timing (onset gap, count matched)</span>
+    <span><b style="color:var(--fail)">∅</b> web-empty (web renders nothing)</span>
+    <span><b style="color:var(--warn)">⚠</b> desktop-empty (harness)</span>
     <span><b style="color:var(--err)">!</b> error</span>
     <span><b style="color:var(--text-mute)">·</b> skipped (logged)</span>
     <span><b style="color:#3a3f5a">–</b> pending</span>
@@ -296,5 +354,8 @@ ${navBlock('construct×context matrix · #459 · dharana §36')}
 
 writeFileSync(join(TR, 'diff-matrix.html'), html)
 console.log(`✓ wrote test_results/diff-matrix.html + diff-matrix.json`)
-console.log(`  match ${counts.match} · diverge ${counts.diverge} · empty ${counts.empty} · error ${counts.error} · skipped ${counts.skipped} · pending ${counts.pending}`)
-console.log(`  seam-cluster read: ${seamDiverge}/${seamActive} seam cells diverge, ${nonSeamDiverge} non-seam diverge`)
+console.log(`  match ${counts.match} · diverge ${counts.diverge} · timing ${counts.timing} · web-empty ${counts.webEmpty} · desktop-empty ${counts.desktopEmpty} · error ${counts.error} · skipped ${counts.skipped} · pending ${counts.pending}`)
+console.log(`  seam-cluster read: ${seamDiverge}/${seamActive} seam cells diverge (incl. timing + web-empty), ${nonSeamDiverge} non-seam diverge`)
+if (diverged.length) {
+  console.log(`  DIVERGENT: ${diverged.map((c) => `${der(c) === 'timing' ? '◷' : '✗'}${c.id}`).join(', ')}`)
+}

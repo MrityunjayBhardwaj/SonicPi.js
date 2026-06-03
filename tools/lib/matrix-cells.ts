@@ -46,6 +46,22 @@ const PRECEDING_BEATS = 4 // sleep / delay magnitude — large enough to expose 
 const CADENCE = 0.5 // beats between sound onsets
 const REPS = 8 // one-shot constructs (in_thread/with_fx/at) fire this many times → significance (>=3)
 
+/**
+ * A shared vt-0 REFERENCE ANCHOR — a single distinct marker voice fired once at
+ * the very top of every reproducer. WHY (learned from run 1): each side rebases
+ * its /s_new onsets to its OWN earliest event, so a single-voice reproducer's
+ * onset is always zeroed → absolute-start timing divergence (the SP117/SP118
+ * class, the §36 blind spot) is invisible, and an FX node emitted immediate on
+ * desktop (tRel=null) vs at-0 on web shifts the rebase anchor asymmetrically →
+ * FALSE onset gaps. A marker both sides fire at t0 anchors both rebasings at the
+ * same absolute zero: real onset gaps surface, the FX artifact dissolves, and a
+ * web cell that renders the anchor but drops the construct reads as "construct
+ * dropped" (a precise STRUCTURE-DIVERGE) instead of an opaque WEB-EMPTY.
+ * `:pretty_bell` is distinct from every construct voice (saw/tb303/beep), so it
+ * is always a separable row, never colliding with the construct's count.
+ */
+const ANCHOR = 'synth :pretty_bell, note: 36, release: 0.1'
+
 /** The driver cuer for `sync` cells — a silent top-level live_loop firing :tick. */
 const DRIVER = `live_loop :driver do\n  cue :tick\n  sleep ${CADENCE}\nend`
 
@@ -137,15 +153,19 @@ function skipReason(construct: Construct, modifier: Modifier): string | null {
   return null
 }
 
-/** Constructs that go through the transpiler's hoist/fork split (the §36 seam column). */
-function isSeam(construct: Construct, position: Position): boolean {
-  // bare_loop is ALWAYS hoisted (top-level → live_loop; in in_thread → sibling live_loop).
-  if (construct === 'bare_loop') return true
-  // in_thread forks a thread; top-level in_thread is start-gate-hoisted (SP118).
-  if (construct === 'in_thread') return true
-  // top-level live_loop / with_fx-wrapped loop are start-gate-hoisted (SP118 fix b).
-  if ((construct === 'live_loop' || construct === 'with_fx') && position === 'top_level') return true
-  return false
+/**
+ * Constructs that go through the transpiler's fork/registration split — the §36
+ * seam column. EMPIRICALLY CORRECTED (run 2): a nested `live_loop` inside a user
+ * `in_thread` ALSO loses the enclosing thread's sequencing (it forks at program
+ * launch, not at the in_thread's cursor — timing AND data), so it is on the seam
+ * regardless of position. The seam is precisely "the construct becomes a separate
+ * scheduler entity (live_loop task / forked thread / hoisted loop), divorced from
+ * sequential __run_once flow." `with_fx` and `at` run inline in __run_once (FX
+ * scope allocation / cursor-time scheduling), so they are NOT on the fork seam —
+ * a with_fx body's own `sync` deadlock is the distinct SP95 build-vs-runtime seam.
+ */
+function isSeam(construct: Construct, _position: Position): boolean {
+  return construct === 'live_loop' || construct === 'in_thread' || construct === 'bare_loop'
 }
 
 // ---------------------------------------------------------------------------
@@ -164,10 +184,11 @@ export function enumerateCells(): Cell[] {
           cells.push({ id, construct, modifier, position, seam, skip, code: '' })
           continue
         }
-        let code = positioned(construct, modifier, position)
-        // sync cells need the driver cuer; emit it first (always top-level).
-        if (modifier === 'sync') code = `${DRIVER}\n\n${code}`
-        cells.push({ id, construct, modifier, position, seam, skip: null, code })
+        const blocks: string[] = [ANCHOR] // shared vt-0 reference anchor (always first)
+        // sync cells need the driver cuer (silent, top-level) before the construct.
+        if (modifier === 'sync') blocks.push(DRIVER)
+        blocks.push(positioned(construct, modifier, position))
+        cells.push({ id, construct, modifier, position, seam, skip: null, code: blocks.join('\n\n') })
       }
     }
   }
