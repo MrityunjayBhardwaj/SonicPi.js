@@ -2244,4 +2244,44 @@ end`)
       expect(r.code).toContain('await __b.sync("tick")')
     })
   })
+
+  // #460 (found by the #459 matrix, data facet): a loop nested in an in_thread
+  // reading a pre-loop assignment got `undefined` forever (the Sandbox proxy
+  // isolates a thread-scope bare assignment from the loop's own scope) → NaN note
+  // → SV51 refuses → silent. Fix: lift such assignments to the top-level shared
+  // scope so both scopes resolve them through the proxy's shared target.
+  describe('#460: in_thread setup var read by a nested loop is lifted to shared scope', () => {
+    const beforeIdx = (code: string, a: string, b: string) => {
+      const ia = code.indexOf(a), ib = code.indexOf(b)
+      return ia !== -1 && ib !== -1 && ia < ib
+    }
+
+    it('hoisted bare loop: the read assignment is lifted ABOVE the sibling live_loop', () => {
+      const r = treeSitterTranspile(`in_thread do\n  n = 7\n  loop do\n    play 60 + n\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/(^|\n)n = 7/)
+      expect(beforeIdx(r.code, 'n = 7', 'live_loop("__inthread_loop_0"')).toBe(true)
+      expect(r.code).toContain('__spAdd(60, n)')
+    })
+
+    it('inline nested live_loop: the read assignment is lifted to top level', () => {
+      const r = treeSitterTranspile(`in_thread do\n  n = 7\n  live_loop :test do\n    play 60 + n\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/(^|\n)n = 7/)
+      expect(beforeIdx(r.code, 'n = 7', 'live_loop("test"')).toBe(true)
+    })
+
+    it('an assignment the loop does NOT read is left inside the in_thread (minimal lift)', () => {
+      const r = treeSitterTranspile(`in_thread do\n  i = 0\n  loop do\n    play 60\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/in_thread\([\s\S]*i = 0/)
+    })
+
+    it('a play action in the setup stays in the in_thread; only the read var lifts', () => {
+      const r = treeSitterTranspile(`in_thread do\n  n = 7\n  play 50\n  loop do\n    play 60 + n\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(beforeIdx(r.code, 'n = 7', 'in_thread(')).toBe(true)
+      expect(r.code).toMatch(/in_thread\([\s\S]*play\(50/)
+    })
+  })
 })

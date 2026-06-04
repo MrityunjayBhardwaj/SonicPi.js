@@ -2190,6 +2190,33 @@ function isVtimeAdvancing(child: any): boolean {
   return /\b(?:sleep|sync|sync_bpm)\b/.test(child?.text ?? '')
 }
 
+/** #460: the LHS name of a bare `lhs = rhs` assignment (identifier only), else null.
+ *  Operator-assignments (`x += 1`) and destructuring are NOT lifted — they depend
+ *  on a prior value, so they must stay where they are. */
+function bareAssignTarget(child: any): string | null {
+  if (child?.type !== 'assignment') return null
+  const lhs = child.namedChildren?.[0]
+  return lhs?.type === 'identifier' ? lhs.text : null
+}
+
+/** #460: collect every identifier READ anywhere in a subtree (over-inclusive —
+ *  used only to intersect with setup assignment LHS names, so extra names are
+ *  harmless). */
+function collectReadIdentifiers(node: any, out: Set<string>): void {
+  if (!node) return
+  if (node.type === 'identifier' && typeof node.text === 'string') out.add(node.text)
+  for (const c of node.namedChildren ?? []) collectReadIdentifiers(c, out)
+}
+
+/** #460: is this child a `live_loop … do … end` call (a nested registered loop
+ *  that gets its OWN scope, so a sibling assignment it reads must be lifted)? */
+function isLiveLoopNode(child: any): boolean {
+  const m = (child?.type === 'call' || child?.type === 'method_call')
+    ? (child.childForFieldName?.('method')?.text ?? child.namedChildren?.[0]?.text)
+    : null
+  return m === 'live_loop' && (child.namedChildren ?? []).some((c: any) => c.type === 'do_block' || c.type === 'block')
+}
+
 function transpileInThread(
   argsNode: any, blockNode: any, ctx: TranspileContext
 ): string {
@@ -2266,6 +2293,35 @@ function transpileInThread(
   }
 
   if (loopChildren.length === 0) {
+    // No bare `loop` to hoist. But a nested `live_loop` keeps its OWN scope, so a
+    // preceding bare assignment it reads (`n = 7; live_loop :x { play 60 + n }`)
+    // is invisible to it (same scope-isolation root as the hoist data facet,
+    // #460). Lift those assignments to the top-level shared scope; the live_loop
+    // stays inline in the in_thread. Only at the program root (canLift below).
+    const canLift0 = !ctx.insideLoop
+    const liveLoops = canLift0 ? bodyChildren.filter(isLiveLoopNode) : []
+    if (liveLoops.length > 0) {
+      const readNames = new Set<string>()
+      for (const ll of liveLoops) collectReadIdentifiers(ll, readNames)
+      const lifted = bodyChildren.filter((c: any) => {
+        const t = bareAssignTarget(c)
+        return t !== null && readNames.has(t)
+      })
+      if (lifted.length > 0) {
+        const remaining = bodyChildren.filter((c: any) => !lifted.includes(c))
+        const liftCtx: TranspileContext = { ...ctxNoGate, insideLoop: false }
+        const liftStr = lifted
+          .map((c: any) => transpileNode(c, liftCtx))
+          .filter((s: string) => s.trim())
+          .join('\n')
+        const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
+        const bodyStr = remaining
+          .map((c: any) => '  ' + transpileNode(c, bodyCtx))
+          .filter((s: string) => s.trim())
+          .join('\n')
+        return `${liftStr}\n${prefix}in_thread(${itOpts}(__b) => {\n${bodyStr}\n${ctx.indent}})`
+      }
+    }
     // No nested loop → original codepath.
     const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
     const bodyStr = transpileBlockBody(blockNode, bodyCtx)
@@ -2298,7 +2354,44 @@ function transpileInThread(
   //     ONCE → keep them in a setup in_thread (folding a `play` into the loop
   //     would re-fire it every iteration).
   const settingChildren = setupChildren.filter(isFlowSensitiveSetting)
-  const actionChildren = setupChildren.filter((c) => !isFlowSensitiveSetting(c))
+  const nonSettingChildren = setupChildren.filter((c) => !isFlowSensitiveSetting(c))
+
+  // #460 (data facet): a bare `loop` is hoisted OUT to a sibling top-level
+  // live_loop, so a pre-loop assignment the loop body reads (`n = 7; loop { play
+  // 60 + n }`) is left behind INSIDE the in_thread arrow. Under the Sandbox's
+  // per-scope proxy (Sandbox.ts:109-128), a bare assignment in a thread/loop
+  // scope writes to that scope's ISOLATED locals — invisible to the sibling
+  // loop's scope → the loop reads `undefined` every iteration → `60 + undefined`
+  // = NaN → SV51 refuses dispatch → the whole loop is silent (matrix
+  // bare_loop__var_read__nested: web 0, desktop 19). Fix: lift such assignments
+  // to the TOP-LEVEL shared scope (emitted before the in_thread, where the proxy
+  // routes a bare assign to the shared target — the same exception __run_once
+  // relies on, SV21), so the hoisted loop reads the value. Free-variable-gated:
+  // only assignments whose LHS the loop actually reads are lifted (minimal). Only
+  // at the program root (canLift); a nested in_thread keeps the old behaviour.
+  const canLift = !ctx.insideLoop
+  const loopReadNames = new Set<string>()
+  if (canLift) for (const ln of loopChildren) collectReadIdentifiers(ln, loopReadNames)
+  const liftedAssignChildren = canLift
+    ? nonSettingChildren.filter((c) => {
+        const t = bareAssignTarget(c)
+        return t !== null && loopReadNames.has(t)
+      })
+    : []
+  const actionChildren = nonSettingChildren.filter((c) => !liftedAssignChildren.includes(c))
+
+  // #460 (data facet): emit the lifted setup assignments at TOP-LEVEL shared
+  // scope, BEFORE the in_thread + hoisted loops. As bare top-level statements
+  // they run during sandbox.execute with no active loop scope → the proxy routes
+  // them to the shared target (Sandbox.ts:130) → the hoisted sibling loop reads
+  // the value. insideLoop:false so they emit unprefixed (not __b.-scoped).
+  if (liftedAssignChildren.length > 0) {
+    const liftCtx: TranspileContext = { ...ctxNoGate, insideLoop: false }
+    for (const c of liftedAssignChildren) {
+      const s = transpileNode(c, liftCtx)
+      if (s.trim()) parts.push(s)
+    }
+  }
 
   // Settings folded into each hoisted loop body. asyncBody so any `await` is legal.
   const settingCtx: TranspileContext = { ...ctxNoGate, insideLoop: true, asyncBody: true }
