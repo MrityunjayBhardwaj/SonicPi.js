@@ -15,16 +15,25 @@
  * limitations (NOT counted as pass). PRNG rows are excluded from the denominator
  * (SV49 non-goal).
  *
+ * SECOND CRITERION — differential matrix (#469): the gate also reads
+ * test_results/diff-matrix.json (tools/diff-matrix.ts → construct×context×position
+ * event-parity vs desktop, dharana §36). It is GREEN iff every active cell is a
+ * structure-match (match === active, and diverge/timing/empty/error/pending all 0).
+ * When present and not-green it BLOCKS the overall gate (listing the diverged
+ * cells); when absent it WARNS only (the matrix needs desktop SP + scsynth and is
+ * not a CI artifact). Overall = rosterPassed && (matrix absent || matrix green).
+ *
  * Usage: npx tsx tools/gate-report.ts
- *   Writes test_results/launch-gate.{json,md}.
+ *   Writes test_results/launch-gate.{json,md,html}.
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { navBlock } from './lib/dashboard-nav.ts'
 
 const ROOT = join(import.meta.dirname, '..')
 const SWEEP = join(ROOT, 'test_results/examples-sweep.json')
 const MANIFEST = join(ROOT, 'tools/gate-reproducers/manifest.json')
+const DIFF_MATRIX = join(ROOT, 'test_results/diff-matrix.json')
 
 interface SweepRow {
   example: string; verdict: string; prng: boolean; heavy: boolean
@@ -73,12 +82,47 @@ const gateRows: GateRow[] = denom.map(r => {
 const passCount = gateRows.filter(g => g.pass).length
 const total = gateRows.length
 const pct = total ? (passCount / total) * 100 : 0
-const passed = pct >= manifest.gateThresholdPct
+const rosterPassed = pct >= manifest.gateThresholdPct
+
+// ---- Second criterion: differential matrix (#469 / dharana §36) ----
+interface MatrixCounts {
+  match: number; diverge: number; timing: number; webEmpty: number
+  desktopEmpty: number; error: number; skipped: number; pending: number
+  active: number; total: number
+}
+interface MatrixCriterion {
+  present: boolean; green: boolean | null; generatedAt?: string; window?: number
+  counts?: MatrixCounts; diverged?: string[]; note: string
+}
+function readMatrix(): MatrixCriterion {
+  if (!existsSync(DIFF_MATRIX)) {
+    return { present: false, green: null, note: 'diff-matrix.json absent — run `npx tsx tools/diff-matrix.ts --fresh && npx tsx tools/build-diff-matrix.ts` (needs desktop SP + scsynth). Not blocking.' }
+  }
+  const m = JSON.parse(readFileSync(DIFF_MATRIX, 'utf8'))
+  const c: MatrixCounts = m.counts
+  const offenders = c.diverge + c.timing + c.webEmpty + c.desktopEmpty + c.error + c.pending
+  const green = c.match === c.active && offenders === 0
+  const diverged: string[] = (m.diverged ?? []).map((d: any) => typeof d === 'string' ? d : (d.cell ?? d.id ?? JSON.stringify(d)))
+  return {
+    present: true, green, generatedAt: m.generatedAt, window: m.window, counts: c, diverged,
+    note: green
+      ? `${c.match}/${c.active} cells structure-match · 0 diverge/timing/empty/error.`
+      : `NOT green — match ${c.match}/${c.active}, diverge ${c.diverge}, timing ${c.timing}, web-empty ${c.webEmpty}, desktop-empty ${c.desktopEmpty}, error ${c.error}, pending ${c.pending}.`,
+  }
+}
+const matrix = readMatrix()
+
+// Overall: roster threshold AND (matrix green when present). Absent matrix warns, does not block.
+const passed = rosterPassed && (matrix.green !== false)
 
 // ---- write JSON ----
 const out = {
-  generatedFrom: 'examples-sweep.json + tools/gate-reproducers/manifest.json',
-  denominator: total, passCount, pct: +pct.toFixed(1), thresholdPct: manifest.gateThresholdPct, passed,
+  generatedFrom: 'examples-sweep.json + tools/gate-reproducers/manifest.json + test_results/diff-matrix.json',
+  passed,
+  roster: { denominator: total, passCount, pct: +pct.toFixed(1), thresholdPct: manifest.gateThresholdPct, passed: rosterPassed },
+  differentialMatrix: matrix,
+  // Back-compat: keep the roster fields at top level (pre-#469 consumers read these).
+  denominator: total, passCount, pct: +pct.toFixed(1), thresholdPct: manifest.gateThresholdPct,
   rows: gateRows,
   exclusions: manifest.exclusions,
 }
@@ -86,10 +130,21 @@ writeFileSync(join(ROOT, 'test_results/launch-gate.json'), JSON.stringify(out, n
 
 // ---- write Markdown ----
 const verdictIcon = (g: GateRow) => g.pass ? '✅' : (g.gateVerdict === 'inconcl' ? '⚠️' : '❌')
+const matrixIcon = matrix.green === null ? '⚠️' : matrix.green ? '✅' : '❌'
 const md = [
-  `# Launch Gate — PRNG-free non-heavy official roster`,
+  `# Launch Gate`,
   ``,
-  `**${passCount}/${total} = ${pct.toFixed(1)}%** · threshold ≥${manifest.gateThresholdPct}% · **${passed ? '✅ PASS' : '❌ NOT MET'}**`,
+  `## Overall: **${passed ? '✅ PASS' : '❌ NOT MET'}** — roster ${rosterPassed ? 'pass' : 'fail'} · differential matrix ${matrix.green === null ? 'absent (warn)' : matrix.green ? 'green' : 'NOT green'}`,
+  ``,
+  `### Criterion 1 — PRNG-free non-heavy official roster`,
+  ``,
+  `**${passCount}/${total} = ${pct.toFixed(1)}%** · threshold ≥${manifest.gateThresholdPct}% · **${rosterPassed ? '✅ PASS' : '❌ NOT MET'}**`,
+  ``,
+  `### Criterion 2 — Differential matrix ${matrixIcon} (#469 · dharana §36)`,
+  ``,
+  matrix.present
+    ? `${matrix.note}${matrix.generatedAt ? ` _(captured ${matrix.generatedAt}, ${matrix.window}ms window)_` : ''}${matrix.diverged && matrix.diverged.length ? `\n\nOffending cells: ${matrix.diverged.map(c => `\`${c}\``).join(', ')}` : ''}`
+    : matrix.note,
   ``,
   `> Pass = MATCH or PRNG-VARIANT. Rows the pitch-trackers cannot grade are graded via an instrument-friendly projection that exercises the same engine logic (see \`tools/gate-reproducers/\`). The raw sweep keeps the unvarnished verdicts; this is the launch-gate computation.`,
   ``,
@@ -133,12 +188,27 @@ const html = `<!doctype html>
   code { background: #1b1f29; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   .detail { color: #9aa4b2; font-size: 12px; }
   .excl li { color: #9aa4b2; margin: 4px 0; }
+  .crit { border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+  .crit h2 { font-size: 14px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .03em; color: #9aa4b2; }
+  .crit .v { font-size: 18px; font-weight: 700; }
+  .crit.pass { border-left: 3px solid #4ade80; } .crit.pass .v { color: #4ade80; }
+  .crit.fail { border-left: 3px solid #f87171; } .crit.fail .v { color: #f87171; }
+  .crit.warn { border-left: 3px solid #fbbf24; } .crit.warn .v { color: #fbbf24; }
 </style></head>
 <body>
   ${navBlock('🚦 Tier-1 launch gate · SV46')}
   <div class="wrap">
-    <h1>Launch Gate — PRNG-free non-heavy official roster</h1>
-    <div class="verdict ${passed ? 'pass' : 'fail'}">${passCount}/${total} = ${pct.toFixed(1)}% · threshold ≥${manifest.gateThresholdPct}% · ${passed ? '✅ PASS' : '❌ NOT MET'}</div>
+    <h1>Launch Gate</h1>
+    <div class="verdict ${passed ? 'pass' : 'fail'}">Overall: ${passed ? '✅ PASS' : '❌ NOT MET'}</div>
+    <div class="crit ${rosterPassed ? 'pass' : 'fail'}">
+      <h2>Criterion 1 — PRNG-free non-heavy official roster</h2>
+      <div class="v">${passCount}/${total} = ${pct.toFixed(1)}% · threshold ≥${manifest.gateThresholdPct}% · ${rosterPassed ? '✅ PASS' : '❌ NOT MET'}</div>
+    </div>
+    <div class="crit ${matrix.green === null ? 'warn' : matrix.green ? 'pass' : 'fail'}">
+      <h2>Criterion 2 — Differential matrix <span class="detail">(#469 · construct×context×position vs desktop · dharana §36)</span></h2>
+      <div class="v">${matrix.green === null ? '⚠️ ABSENT (warn, not blocking)' : matrix.green ? '✅ GREEN' : '❌ NOT GREEN'}</div>
+      <p class="detail">${esc(matrix.note)}${matrix.generatedAt ? ` · captured ${matrix.generatedAt}, ${matrix.window}ms window` : ''}${matrix.diverged && matrix.diverged.length ? ` · offenders: ${matrix.diverged.map(c => esc(c)).join(', ')}` : ''} — <a href="diff-matrix.html" style="color:#9aa4b2">open matrix →</a></p>
+    </div>
     <p class="note">Pass = MATCH or PRNG-VARIANT. Rows the pitch-trackers cannot grade are graded via an instrument-friendly <b>projection</b> that exercises the same engine logic (<code>tools/gate-reproducers/</code>). The raw sweep keeps the unvarnished verdicts; this is the launch-gate computation. Projection verdicts depend on #405 + #409 (merged), re-captured live on merged main.</p>
     <table>
       <thead><tr><th>Row</th><th>Raw sweep</th><th>Gate verdict</th><th>Graded via</th><th>Detail</th></tr></thead>
@@ -155,6 +225,8 @@ ${manifest.exclusions.map(e => `      <li><b>${esc(e.example)}</b> — ${esc(e.r
 </body></html>`
 writeFileSync(join(ROOT, 'test_results/launch-gate.html'), html)
 
-console.log(`Launch gate: ${passCount}/${total} = ${pct.toFixed(1)}% — ${passed ? 'PASS' : 'NOT MET'}`)
-console.log(`Wrote test_results/launch-gate.{json,md}`)
+console.log(`Launch gate OVERALL: ${passed ? 'PASS' : 'NOT MET'}`)
+console.log(`  Criterion 1 — roster: ${passCount}/${total} = ${pct.toFixed(1)}% — ${rosterPassed ? 'PASS' : 'NOT MET'}`)
+console.log(`  Criterion 2 — diff matrix: ${matrix.green === null ? 'ABSENT (warn)' : matrix.green ? 'GREEN' : 'NOT GREEN'} — ${matrix.note}`)
+console.log(`Wrote test_results/launch-gate.{json,md,html}`)
 for (const g of gateRows) console.log(`  ${g.pass ? 'PASS' : 'fail'}  ${g.example.padEnd(20)} ${g.gateVerdict.padEnd(10)} (${g.gradedVia})`)
