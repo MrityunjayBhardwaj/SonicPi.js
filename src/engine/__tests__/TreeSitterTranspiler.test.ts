@@ -2244,4 +2244,108 @@ end`)
       expect(r.code).toContain('await __b.sync("tick")')
     })
   })
+
+  // #460 (found by the #459 matrix, data facet): a loop nested in an in_thread
+  // reading a pre-loop assignment got `undefined` forever (the Sandbox proxy
+  // isolates a thread-scope bare assignment from the loop's own scope) → NaN note
+  // → SV51 refuses → silent. Fix: lift such assignments to the top-level shared
+  // scope so both scopes resolve them through the proxy's shared target.
+  describe('#460: in_thread setup var read by a nested loop is lifted to shared scope', () => {
+    const beforeIdx = (code: string, a: string, b: string) => {
+      const ia = code.indexOf(a), ib = code.indexOf(b)
+      return ia !== -1 && ib !== -1 && ia < ib
+    }
+
+    it('hoisted bare loop: the read assignment is lifted ABOVE the sibling live_loop', () => {
+      const r = treeSitterTranspile(`in_thread do\n  n = 7\n  loop do\n    play 60 + n\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/(^|\n)n = 7/)
+      expect(beforeIdx(r.code, 'n = 7', 'live_loop("__inthread_loop_0"')).toBe(true)
+      expect(r.code).toContain('__spAdd(60, n)')
+    })
+
+    it('inline nested live_loop: the read assignment is lifted to top level', () => {
+      const r = treeSitterTranspile(`in_thread do\n  n = 7\n  live_loop :test do\n    play 60 + n\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/(^|\n)n = 7/)
+      expect(beforeIdx(r.code, 'n = 7', 'live_loop("test"')).toBe(true)
+    })
+
+    it('an assignment the loop does NOT read is left inside the in_thread (minimal lift)', () => {
+      const r = treeSitterTranspile(`in_thread do\n  i = 0\n  loop do\n    play 60\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/in_thread\([\s\S]*i = 0/)
+    })
+
+    it('a play action in the setup stays in the in_thread; only the read var lifts', () => {
+      const r = treeSitterTranspile(`in_thread do\n  n = 7\n  play 50\n  loop do\n    play 60 + n\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(beforeIdx(r.code, 'n = 7', 'in_thread(')).toBe(true)
+      expect(r.code).toMatch(/in_thread\([\s\S]*play\(50/)
+    })
+  })
+
+  // #460 (timing facet, found by the #459 matrix cell
+  // live_loop__preceding_sleep__nested): an inline nested live_loop emitted as a
+  // bare global live_loop() registers at launch (vt 0), ignoring a preceding
+  // `sleep`/`sync` in the in_thread body (web saw@0.03s vs desktop@4s). Fix: gate
+  // it on a synthetic `__itg_N` cue the in_thread fires AFTER the vtime-advancing
+  // setup. NOT hoisting — the live_loop stays inline (SP72 propagation), the
+  // engine's wrappedLiveLoop honours `__startGate` (#448).
+  describe('#460: nested live_loop after a vtime-advancing setup is start-gated in place', () => {
+    const beforeIdx = (code: string, a: string, b: string) => {
+      const ia = code.indexOf(a), ib = code.indexOf(b)
+      return ia !== -1 && ib !== -1 && ia < ib
+    }
+
+    it('sleep before nested live_loop → cue injected + __startGate on the inline live_loop', () => {
+      const r = treeSitterTranspile(`in_thread do\n  sleep 4\n  live_loop :x do\n    play 60\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      // The live_loop stays INLINE inside the in_thread (not hoisted to a sibling).
+      expect(r.code).toMatch(/in_thread\([\s\S]*live_loop\("x",\s*\{__startGate:\s*"__itg_0"/)
+      // The cue is fired AFTER the sleep and BEFORE the live_loop registers.
+      expect(beforeIdx(r.code, '__b.sleep(4)', '__b.cue("__itg_0")')).toBe(true)
+      expect(beforeIdx(r.code, '__b.cue("__itg_0")', 'live_loop("x"')).toBe(true)
+    })
+
+    it('sync before nested live_loop → also gated (sync is vtime-advancing)', () => {
+      const r = treeSitterTranspile(`in_thread do\n  sync :go\n  live_loop :x do\n    play 60\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toMatch(/live_loop\("x",\s*\{__startGate:\s*"__itg_0"/)
+    })
+
+    it('nested live_loop WITHOUT a preceding vtime statement is NOT gated', () => {
+      const r = treeSitterTranspile(`in_thread do\n  live_loop :x do\n    play 60\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).not.toContain('__startGate')
+      expect(r.code).not.toContain('__itg_0')
+    })
+
+    it('use_synth (non-vtime) before sleep + nested live_loop: gated, use_synth kept inline before the loop (SP72)', () => {
+      const r = treeSitterTranspile(`in_thread do\n  use_synth :prophet\n  sleep 4\n  live_loop :probe do\n    play 60\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      // use_synth stays inline in the in_thread (parentBuilder propagation) AND
+      // precedes the still-inline live_loop registration; the loop is gated.
+      expect(r.code).toMatch(/in_thread\([\s\S]*use_synth\("prophet"\)[\s\S]*live_loop\("probe",\s*\{__startGate/)
+      expect(beforeIdx(r.code, 'use_synth("prophet")', 'live_loop("probe"')).toBe(true)
+    })
+
+    it('combined data+timing: var-read lifts to top level AND the live_loop is gated', () => {
+      const r = treeSitterTranspile(`in_thread do\n  n = 7\n  sleep 4\n  live_loop :x do\n    play 60 + n\n    sleep 0.5\n  end\nend`)
+      expect(r.ok).toBe(true)
+      // data facet: n lifted above the in_thread
+      expect(beforeIdx(r.code, 'n = 7', 'in_thread(')).toBe(true)
+      // timing facet: gated in place
+      expect(r.code).toMatch(/live_loop\("x",\s*\{__startGate:\s*"__itg_0"/)
+      expect(r.code).toContain('__spAdd(60, n)')
+    })
+
+    it('a nested in_thread (not at program root) does NOT gate its inner live_loop', () => {
+      const r = treeSitterTranspile(`in_thread do\n  in_thread do\n    sleep 4\n    live_loop :x do\n      play 60\n      sleep 0.5\n    end\n  end\nend`)
+      expect(r.ok).toBe(true)
+      // The cue/gate machinery is top-level only (SP118); the inner in_thread
+      // keeps the un-gated path.
+      expect(r.code).not.toContain('__startGate')
+    })
+  })
 })
