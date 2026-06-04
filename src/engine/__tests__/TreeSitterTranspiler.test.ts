@@ -2207,4 +2207,41 @@ end`)
       expect(r.code).toContain('live_loop("__loop_0"')
     })
   })
+
+  // #461 (found by the #459 differential-coverage matrix): a `sync` inside a
+  // with_fx body was emitted as `await __b.sync(...)` inside the NON-async with_fx
+  // callback → "await is only valid in async functions" → invalid JS → the WHOLE
+  // program rendered nothing. The with_fx body must take the runtime-step sync
+  // path (no await; AudioInterpreter `case 'sync'` awaits it when walking the
+  // sub-program), so the callback can stay non-async.
+  describe('#461: sync inside with_fx must not emit await in the non-async callback', () => {
+    it('transpiles with_fx { sync } to valid JS (runtime-step sync, no await)', () => {
+      const r = treeSitterTranspile(`with_fx :reverb do\n  sync :tick\n  play 60\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('__b.sync("tick")')
+      expect(r.code).not.toContain('await __b.sync')
+    })
+
+    it('transpiles with_fx { N.times { sync } } to valid JS', () => {
+      const r = treeSitterTranspile(
+        `with_fx :reverb do\n  8.times do\n    sync :tick\n    synth :saw, note: 60\n  end\nend`,
+      )
+      expect(r.ok).toBe(true)
+      expect(r.code).not.toContain('await __b.sync')
+    })
+
+    it('the full #461 reproducer (driver + with_fx sync loop) transpiles cleanly', () => {
+      const r = treeSitterTranspile(
+        `live_loop :driver do\n  cue :tick\n  sleep 0.5\nend\n\nwith_fx :reverb do\n  8.times do\n    sync :tick\n    synth :saw, note: 60\n  end\nend`,
+      )
+      expect(r.ok).toBe(true)
+    })
+
+    it('a top-level live_loop with sync still emits the build-time await (unchanged)', () => {
+      // regression guard: the fix must NOT touch the async-live_loop sync path.
+      const r = treeSitterTranspile(`live_loop :x do\n  sync :tick\n  play 60\nend`)
+      expect(r.ok).toBe(true)
+      expect(r.code).toContain('await __b.sync("tick")')
+    })
+  })
 })

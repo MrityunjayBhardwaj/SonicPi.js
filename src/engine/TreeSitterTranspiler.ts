@@ -2122,9 +2122,19 @@ function transpileWithBlock(
   // Inside a loop, the block body is inside ProgramBuilder context (insideLoop: true).
   // At top level, with_fx just wraps live_loops — the body stays at top-level context.
   // The engine's topLevelWithFx passes null to the callback, so `b` is not available.
+  // #461: the with_fx callback arrow is emitted NON-async (line ~2157), so its
+  // body must NOT inherit `asyncBody` from an enclosing async wrapper (e.g.
+  // __run_once, whose bareCtx sets asyncBody:true). If it did, a `sync` in the
+  // body would emit `await __b.sync(...)` inside a non-async arrow → "await is
+  // only valid in async functions" → whole program is invalid JS → renders
+  // nothing. Inside with_fx, `sync`/`sync_bpm` must take the runtime-step path
+  // (pushed Step, awaited by AudioInterpreter `case 'sync'` when the sub-program
+  // is walked) — exactly what the line-1436 comment intends. Hoisted bare-loops
+  // inside with_fx are unaffected: transpileWithFxLoopBody builds its OWN async
+  // live_loop ctx (the hoisted loop IS async).
   const bodyCtx: TranspileContext = ctx.insideLoop
-    ? { ...ctx, insideLoop: true }
-    : { ...ctx }  // keep insideLoop false — live_loops inside will set their own
+    ? { ...ctx, insideLoop: true, asyncBody: false }
+    : { ...ctx, asyncBody: false }  // keep insideLoop false — live_loops inside will set their own
   // #426/SP111: a bare `loop do … end` directly inside with_fx must be hoisted
   // to an auto-named live_loop, exactly as top-level (lines ~1116) and in_thread
   // (transpileInThread) loops are (SV16). Building it inline emits a synchronous
