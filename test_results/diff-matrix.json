@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-06-03T23:24:54.813Z",
+  "generatedAt": "2026-06-04T14:30:35.208Z",
   "window": 8000,
   "counts": {
-    "match": 48,
-    "diverge": 2,
-    "timing": 1,
-    "webEmpty": 1,
+    "match": 52,
+    "diverge": 0,
+    "timing": 0,
+    "webEmpty": 0,
     "desktopEmpty": 0,
     "error": 0,
     "skipped": 8,
@@ -15,49 +15,11 @@
   },
   "fatalityRead": {
     "seamActive": 34,
-    "seamDiverge": 3,
-    "nonSeamDiverge": 1,
+    "seamDiverge": 0,
+    "nonSeamDiverge": 0,
     "note": "seamDiverge clustering with diverse failure modes = fatality (restructure); else converging family (patch)."
   },
-  "diverged": [
-    {
-      "id": "live_loop__preceding_sleep__nested",
-      "seam": true,
-      "kind": "timing",
-      "reasons": [
-        "Significant synthdef multiset matches.",
-        "Gating/timing: shared layer first-onset differs ≥3s — saw desktop@4s vs web@0.027s"
-      ]
-    },
-    {
-      "id": "live_loop__var_read__nested",
-      "seam": true,
-      "kind": "diverge",
-      "reasons": [
-        "Web DROPPED 1 significant layer(s) desktop produces: beep×19",
-        "Significant-layer first-appearance order differs (desktop: beep | web: ) — thread-start timing."
-      ]
-    },
-    {
-      "id": "bare_loop__var_read__nested",
-      "seam": true,
-      "kind": "diverge",
-      "reasons": [
-        "Web DROPPED 1 significant layer(s) desktop produces: beep×19",
-        "Significant-layer first-appearance order differs (desktop: beep | web: ) — thread-start timing."
-      ]
-    },
-    {
-      "id": "with_fx__sync__top_level",
-      "seam": false,
-      "kind": "web_empty",
-      "reasons": [
-        "Web produced no voice /s_new — engine refused or silent.",
-        "Rare one-sided synthdef(s): pretty_bell desktop×1",
-        "Significant-layer first-appearance order differs (desktop: saw | web: ) — thread-start timing."
-      ]
-    }
-  ],
+  "diverged": [],
   "cells": [
     {
       "id": "bare_loop__delay__top_level",
@@ -138,7 +100,7 @@
     },
     {
       "id": "live_loop__preceding_sleep__nested",
-      "status": "timing",
+      "status": "match",
       "verdict": "STRUCTURE-MATCH",
       "seam": true,
       "skip": null
@@ -180,8 +142,8 @@
     },
     {
       "id": "live_loop__var_read__nested",
-      "status": "diverge",
-      "verdict": "STRUCTURE-DIVERGE",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
       "seam": true,
       "skip": null
     },
@@ -334,8 +296,8 @@
     },
     {
       "id": "bare_loop__var_read__nested",
-      "status": "diverge",
-      "verdict": "STRUCTURE-DIVERGE",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
       "seam": true,
       "skip": null
     },
@@ -383,8 +345,8 @@
     },
     {
       "id": "with_fx__sync__top_level",
-      "status": "web_empty",
-      "verdict": "WEB-EMPTY",
+      "status": "match",
+      "verdict": "STRUCTURE-MATCH",
       "seam": false,
       "skip": null
     },
