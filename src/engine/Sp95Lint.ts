@@ -37,11 +37,29 @@ export interface Sp95Warning {
 }
 
 /**
- * Run all SP95-loud detectors over the given Ruby source. All SP95 idioms are
- * now implemented (see module header), so this returns `[]`. Retained as the
- * integration point for the warning channel so a future build-time lint can
- * slot in here without re-wiring SonicPiEngine / App / capture.ts. Pure, O(1).
+ * Run all build-time DSL lints over the given Ruby source. The SP95 detectors
+ * are retired (see module header); this is the retained integration point for
+ * non-fatal build-time warnings (the channel a future lint slots into). Pure.
  */
-export function detectSp95Limitations(_src: string): Sp95Warning[] {
-  return []
+export function detectSp95Limitations(src: string): Sp95Warning[] {
+  const warnings: Sp95Warning[] = []
+
+  // `with_density` is NOT a Sonic Pi function — desktop has only `density`
+  // (core.rb:3973) and RAISES on `with_density` (the thread dies, halting all
+  // code after it). Our transpiler instead runs it AS `density` (squash AND
+  // repeat). This warning makes the divergence-from-desktop visible and guides
+  // the user to the real name rather than letting it pass silently (#379,
+  // loud-not-silent / SV50). The `^[^#\n]*` guard matches a call position only,
+  // skipping pure-comment lines and inline `# … with_density` comments.
+  if (/^[^#\n]*\bwith_density\b/m.test(src)) {
+    warnings.push({
+      pattern: 'with_density',
+      title: 'with_density is not a Sonic Pi function',
+      message:
+        'Did you mean `density`? Running `with_density` as `density` (squash and repeat). ' +
+        'Desktop Sonic Pi has only `density` and errors on `with_density`.',
+    })
+  }
+
+  return warnings
 }

@@ -1296,7 +1296,7 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     }
 
     // with_fx :name, opts do ... end
-    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose' || methodName === 'with_arg_bpm_scaling' || methodName === 'with_synth_defaults' || methodName === 'with_sample_defaults' || methodName === 'with_random_seed' || methodName === 'with_octave' || methodName === 'with_density' || methodName === 'with_arg_checks' || methodName === 'with_debug' || methodName === 'with_timing_guarantees' || methodName === 'with_merged_synth_defaults' || methodName === 'with_merged_sample_defaults') {
+    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose' || methodName === 'with_arg_bpm_scaling' || methodName === 'with_synth_defaults' || methodName === 'with_sample_defaults' || methodName === 'with_random_seed' || methodName === 'with_octave' || methodName === 'with_arg_checks' || methodName === 'with_debug' || methodName === 'with_timing_guarantees' || methodName === 'with_merged_synth_defaults' || methodName === 'with_merged_sample_defaults') {
       return transpileWithBlock(methodName, argsNode, blockNode, ctx)
     }
 
@@ -1327,8 +1327,13 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return `assert_error((__b) => {\n${bodyStr}\n${ctx.indent}})`
     }
 
-    // density N do ... end
-    if (methodName === 'density') {
+    // density N do ... end   (+ `with_density` — NOT a real Sonic Pi function;
+    // desktop has only `density` (core.rb:3973) and errors on `with_density`.
+    // We run it AS density (compress+repeat) and surface a build-time warning via
+    // Sp95Lint so the user is guided to the real name — loud, not a silent crash.
+    // The internal ProgramBuilder.with_density (used by with_swing/at) is a
+    // distinct TS method, unaffected by this transpiler routing.)
+    if (methodName === 'density' || methodName === 'with_density') {
       return transpileDensity(argsNode, blockNode, ctx)
     }
 
@@ -2627,11 +2632,23 @@ function transpileDensity(
     : '1'
   const bodyStr = transpileBlockBody(blockNode, ctx)
   const bRef = ctx.insideLoop ? '__b' : '__densityB'
+  // Desktop `density(d)` (core.rb:3973-3987) does TWO things, not one: it
+  // compresses the block's bpm by `d` (our `bRef.density` factor → sleeps /d at
+  // ProgramBuilder.sleep) AND runs the block `reps` times (reps = d<1 ? 1 : d).
+  // "Squash AND repeat time." We previously only compressed and ran the body
+  // once → `density 2 do A; B end` played `A B` where desktop plays `A B A B`
+  // (#379). The for-loop below adds the repetition. Each emit gets its own `{}`
+  // block so the `__df`/`__prevDensity`/`__dreps`/`__di` consts are block-scoped
+  // → nested `density` blocks shadow cleanly without a counter.
   const lines = ['{']
   if (!ctx.insideLoop) lines.push(`  const ${bRef} = { density: 1 }`)
+  lines.push(`  const __df = ${factor}`)
   lines.push(`  const __prevDensity = ${bRef}.density`)
-  lines.push(`  ${bRef}.density = __prevDensity * ${factor}`)
+  lines.push(`  ${bRef}.density = __prevDensity * __df`)
+  lines.push(`  const __dreps = __df < 1 ? 1 : Math.floor(__df)`)
+  lines.push(`  for (let __di = 0; __di < __dreps; __di++) {`)
   lines.push(bodyStr)
+  lines.push(`  }`)
   lines.push(`  ${bRef}.density = __prevDensity`)
   lines.push('}')
   return lines.join('\n' + ctx.indent)
