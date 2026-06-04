@@ -46,6 +46,7 @@
     font-weight:700;font-size:14px}
   .gate-badge.pass{background:#243218;color:var(--pass)}
   .gate-badge.fail{background:#321820;color:var(--fail)}
+  .gate-badge.warn{background:#322a18;color:#fbbf24}
   .gate-badge small{font-weight:400;color:var(--text-mute);font-size:11px}
   .gate-excl{font-size:11px;color:var(--text-mute);font-family:var(--mono);margin-top:2px}
   .gate-rows{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;align-content:center}
@@ -99,13 +100,14 @@
 <script src="nav.js"></script>
 <div class="wrap">
   <h1>SonicPi.js — Parity Dashboard</h1>
-  <p class="sub">Desktop Sonic Pi ↔ browser engine, every example pool. Built <b>2026-06-03 22:53 UTC</b> from the freshly-captured manifests. <b>Tier-1 pitch is the verdict</b> (SV46); consistency scores are timbre/level support only.</p>
+  <p class="sub">Desktop Sonic Pi ↔ browser engine, every example pool. Built <b>2026-06-04 15:18 UTC</b> from the freshly-captured manifests. <b>Tier-1 pitch is the verdict</b> (SV46); consistency scores are timbre/level support only.</p>
 
   <a class="gate-hero pass" href="launch-gate.html">
     <div class="gate-left">
-      <div class="gate-verdict">🚦 Tier-1 launch gate</div>
+      <div class="gate-verdict">🚦 Tier-1 launch gate — PASS</div>
       <div class="gate-big"><b>5/7</b> <span>= 71.4%</span></div>
-      <div class="gate-badge pass">PASS <small>(≥ 70%)</small></div>
+      <div class="gate-badge pass">roster PASS <small>(≥ 70%)</small></div>
+      <div class="gate-badge pass">matrix ✓ 52/52</div>
       <div class="gate-excl">excluded: ambient_experiment (PRNG non-goal SV49)</div>
     </div>
     <div class="gate-rows"><div class="grow p"><span>✓</span><code>chord_inversions</code><em>match · projection</em></div><div class="grow p"><span>✓</span><code>reich_phase</code><em>match · projection</em></div><div class="grow f"><span>✗</span><code>dark_neon</code><em>inconcl · documented-limitation</em></div><div class="grow p"><span>✓</span><code>mod_303_phade</code><em>match · raw-refreshed</em></div><div class="grow f"><span>✗</span><code>bach</code><em>inconcl · documented-limitation</em></div><div class="grow p"><span>✓</span><code>driving_pulse</code><em>match · projection</em></div><div class="grow p"><span>✓</span><code>monday_blues</code><em>match · projection</em></div></div>

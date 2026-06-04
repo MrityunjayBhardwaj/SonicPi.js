@@ -22,13 +22,28 @@
   code { background: #1b1f29; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   .detail { color: #9aa4b2; font-size: 12px; }
   .excl li { color: #9aa4b2; margin: 4px 0; }
+  .crit { border: 1px solid #262b36; border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+  .crit h2 { font-size: 14px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .03em; color: #9aa4b2; }
+  .crit .v { font-size: 18px; font-weight: 700; }
+  .crit.pass { border-left: 3px solid #4ade80; } .crit.pass .v { color: #4ade80; }
+  .crit.fail { border-left: 3px solid #f87171; } .crit.fail .v { color: #f87171; }
+  .crit.warn { border-left: 3px solid #fbbf24; } .crit.warn .v { color: #fbbf24; }
 </style></head>
 <body>
   <nav class="tab-bar" id="topnav" data-meta="🚦 Tier-1 launch gate · SV46"></nav>
 <script src="nav.js"></script>
   <div class="wrap">
-    <h1>Launch Gate — PRNG-free non-heavy official roster</h1>
-    <div class="verdict pass">5/7 = 71.4% · threshold ≥70% · ✅ PASS</div>
+    <h1>Launch Gate</h1>
+    <div class="verdict pass">Overall: ✅ PASS</div>
+    <div class="crit pass">
+      <h2>Criterion 1 — PRNG-free non-heavy official roster</h2>
+      <div class="v">5/7 = 71.4% · threshold ≥70% · ✅ PASS</div>
+    </div>
+    <div class="crit pass">
+      <h2>Criterion 2 — Differential matrix <span class="detail">(#469 · construct×context×position vs desktop · dharana §36)</span></h2>
+      <div class="v">✅ GREEN</div>
+      <p class="detail">52/52 cells structure-match · 0 diverge/timing/empty/error. · captured 2026-06-04T14:30:35.208Z, 8000ms window — <a href="diff-matrix.html" style="color:#9aa4b2">open matrix →</a></p>
+    </div>
     <p class="note">Pass = MATCH or PRNG-VARIANT. Rows the pitch-trackers cannot grade are graded via an instrument-friendly <b>projection</b> that exercises the same engine logic (<code>tools/gate-reproducers/</code>). The raw sweep keeps the unvarnished verdicts; this is the launch-gate computation. Projection verdicts depend on #405 + #409 (merged), re-captured live on merged main.</p>
     <table>
       <thead><tr><th>Row</th><th>Raw sweep</th><th>Gate verdict</th><th>Graded via</th><th>Detail</th></tr></thead>

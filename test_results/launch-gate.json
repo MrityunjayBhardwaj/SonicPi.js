@@ -1,10 +1,37 @@
 {
-  "generatedFrom": "examples-sweep.json + tools/gate-reproducers/manifest.json",
+  "generatedFrom": "examples-sweep.json + tools/gate-reproducers/manifest.json + test_results/diff-matrix.json",
+  "passed": true,
+  "roster": {
+    "denominator": 7,
+    "passCount": 5,
+    "pct": 71.4,
+    "thresholdPct": 70,
+    "passed": true
+  },
+  "differentialMatrix": {
+    "present": true,
+    "green": true,
+    "generatedAt": "2026-06-04T14:30:35.208Z",
+    "window": 8000,
+    "counts": {
+      "match": 52,
+      "diverge": 0,
+      "timing": 0,
+      "webEmpty": 0,
+      "desktopEmpty": 0,
+      "error": 0,
+      "skipped": 8,
+      "pending": 0,
+      "active": 52,
+      "total": 60
+    },
+    "diverged": [],
+    "note": "52/52 cells structure-match · 0 diverge/timing/empty/error."
+  },
   "denominator": 7,
   "passCount": 5,
   "pct": 71.4,
   "thresholdPct": 70,
-  "passed": true,
   "rows": [
     {
       "example": "chord_inversions",
