@@ -2293,38 +2293,93 @@ function transpileInThread(
   }
 
   if (loopChildren.length === 0) {
-    // No bare `loop` to hoist. But a nested `live_loop` keeps its OWN scope, so a
-    // preceding bare assignment it reads (`n = 7; live_loop :x { play 60 + n }`)
-    // is invisible to it (same scope-isolation root as the hoist data facet,
-    // #460). Lift those assignments to the top-level shared scope; the live_loop
-    // stays inline in the in_thread. Only at the program root (canLift below).
+    // No bare `loop` to hoist. Two facets of the SAME fork/scope split (#460)
+    // hit a NESTED `live_loop` that stays inline in the in_thread body:
+    //
+    //   • DATA (SP121): the live_loop keeps its OWN scope, so a preceding bare
+    //     assignment it reads (`n = 7; live_loop :x { play 60 + n }`) is invisible
+    //     to it (scope-isolation, Sandbox.ts:109-128). Lift those assignments to
+    //     the top-level shared scope; the live_loop stays inline.
+    //   • TIMING (#460): the inline live_loop is emitted as a BARE GLOBAL
+    //     `live_loop()` call (transpileLiveLoop never prefixes — SV16), so it
+    //     registers at launch (vt 0) during the in_thread builderFn, IGNORING a
+    //     preceding `sleep`/`sync` in the body (matrix
+    //     live_loop__preceding_sleep__nested: web saw@0.03s vs desktop@4s). Gate
+    //     its first iteration on a synthetic cue (`__itg_N`) the in_thread fires
+    //     AFTER the vtime-advancing setup, so it forks at the enclosing cursor's
+    //     vtime. Mirrors the #457 bare-loop `__itg` gate, but the live_loop stays
+    //     INLINE — it is NOT hoisted (hoisting a nested live_loop out of the
+    //     in_thread breaks SP72's use_synth-into-nested-live_loop propagation, the
+    //     T-G test). The engine's wrappedLiveLoop already honours `__startGate`
+    //     (#448) regardless of nesting depth → ZERO engine change. The cue is a
+    //     deferred runtime step fired at vt T while the waiter was armed at launch
+    //     → no register/fire race (SK21).
+    //
+    // Both are root-only (a nested in_thread keeps the un-lifted, un-gated path —
+    // the cue machinery is top-level, SP118).
     const canLift0 = !ctx.insideLoop
     const liveLoops = canLift0 ? bodyChildren.filter(isLiveLoopNode) : []
+    let lifted: any[] = []
     if (liveLoops.length > 0) {
       const readNames = new Set<string>()
       for (const ll of liveLoops) collectReadIdentifiers(ll, readNames)
-      const lifted = bodyChildren.filter((c: any) => {
+      lifted = bodyChildren.filter((c: any) => {
         const t = bareAssignTarget(c)
         return t !== null && readNames.has(t)
       })
-      if (lifted.length > 0) {
-        const remaining = bodyChildren.filter((c: any) => !lifted.includes(c))
-        const liftCtx: TranspileContext = { ...ctxNoGate, insideLoop: false }
-        const liftStr = lifted
-          .map((c: any) => transpileNode(c, liftCtx))
-          .filter((s: string) => s.trim())
-          .join('\n')
-        const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
-        const bodyStr = remaining
-          .map((c: any) => '  ' + transpileNode(c, bodyCtx))
-          .filter((s: string) => s.trim())
-          .join('\n')
-        return `${liftStr}\n${prefix}in_thread(${itOpts}(__b) => {\n${bodyStr}\n${ctx.indent}})`
+    }
+    const hasLift = lifted.length > 0
+    const remaining = hasLift ? bodyChildren.filter((c: any) => !lifted.includes(c)) : bodyChildren
+
+    // Timing gate needed? — a nested live_loop preceded (in source order) by a
+    // vtime-advancing statement. Pre-scanned so the plain case keeps the original
+    // transpileBlockBody codepath byte-for-byte (no regression to existing tests).
+    const canGate0 = !ctx.insideLoop
+    let needsGate = false
+    if (canGate0) {
+      let seen = false
+      for (const c of remaining) {
+        if (seen && isLiveLoopNode(c)) { needsGate = true; break }
+        if (isVtimeAdvancing(c)) seen = true
       }
     }
-    // No nested loop → original codepath.
-    const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
-    const bodyStr = transpileBlockBody(blockNode, bodyCtx)
+
+    if (!hasLift && !needsGate) {
+      // No nested loop to lift, nothing to gate → original codepath, unchanged.
+      const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
+      const bodyStr = transpileBlockBody(blockNode, bodyCtx)
+      return `${prefix}in_thread(${itOpts}(__b) => {\n${bodyStr}\n${ctx.indent}})`
+    }
+
+    // Lift + gate path: build the in_thread body child-by-child so we can (a) omit
+    // the lifted assignments and (b) inject a `__b.cue("__itg_N")` right before any
+    // gated live_loop and tag that live_loop's registration `{ __startGate }`.
+    const bodyLines: string[] = []
+    let seenVtime = false
+    for (const c of remaining) {
+      if (canGate0 && seenVtime && isLiveLoopNode(c)) {
+        const gate = `__itg_${(ctx.inthreadGateCounter ??= { n: 0 }).n++}`
+        bodyLines.push(`  __b.cue(${JSON.stringify(gate)})`)
+        const gateCtx: TranspileContext = { ...ctxNoGate, insideLoop: true, startGate: gate }
+        const s = transpileNode(c, gateCtx)
+        if (s.trim()) bodyLines.push('  ' + s)
+      } else {
+        const bodyCtx: TranspileContext = { ...ctxNoGate, insideLoop: true }
+        const s = transpileNode(c, bodyCtx)
+        if (s.trim()) bodyLines.push('  ' + s)
+        if (isVtimeAdvancing(c)) seenVtime = true
+      }
+    }
+    const bodyStr = bodyLines.join('\n')
+
+    if (hasLift) {
+      const liftCtx: TranspileContext = { ...ctxNoGate, insideLoop: false }
+      const liftStr = lifted
+        .map((c: any) => transpileNode(c, liftCtx))
+        .filter((s: string) => s.trim())
+        .join('\n')
+      return `${liftStr}\n${prefix}in_thread(${itOpts}(__b) => {\n${bodyStr}\n${ctx.indent}})`
+    }
     return `${prefix}in_thread(${itOpts}(__b) => {\n${bodyStr}\n${ctx.indent}})`
   }
 
