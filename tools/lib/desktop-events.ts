@@ -116,6 +116,20 @@ export interface OscEvent {
   raw: string
 }
 
+/**
+ * Is this event an FX node (with_fx synthdef)? Mirrors event-parity's `classify`
+ * fx test. Used to EXCLUDE FX nodes from the rebase anchor: with_fx creates its
+ * FX node at registration time, which on web is tRel=0 even when the with_fx sits
+ * after a sleep. Anchoring the rebase on it shifts the whole web timeline and
+ * manufactures a false onset gap vs desktop (where the FX node is immediate,
+ * tRel=null, already excluded). Anchoring on non-FX events (voices + the vt-0
+ * marker) keeps both sides on the same zero. (SP122 residual, issue #466.)
+ */
+export function isFxEvent(e: { synthdef?: string }): boolean {
+  const s = e.synthdef
+  return !!s && (s.includes('-fx_') || s.includes('_fx_'))
+}
+
 /** NTP 64-bit fixed-point → seconds (high 32 = secs since 1900, low 32 = fraction). */
 function ntpToSeconds(ntpStr: string): number {
   const v = BigInt(ntpStr)
@@ -201,7 +215,13 @@ export function parseDumpOsc(text: string): OscEvent[] {
   // timeline (the absolute NTP epoch is meaningless for diff). Anchor on the
   // minimum, not the first-in-order — events are not strictly time-sorted, and a
   // first-in-order anchor produces spurious negative onsets.
-  const scheduled = events.filter((e) => e.tRel !== null).map((e) => e.tRel as number)
+  // EXCLUDE FX nodes from the anchor (issue #466): see isFxEvent. Desktop FX
+  // nodes are usually already immediate (tRel=null) and excluded, but anchoring
+  // on non-FX symmetrically with the web side guarantees both share the same
+  // zero. Fall back to all scheduled events if there are no non-FX ones.
+  const nonFx = events.filter((e) => e.tRel !== null && !isFxEvent(e)).map((e) => e.tRel as number)
+  const allScheduled = events.filter((e) => e.tRel !== null).map((e) => e.tRel as number)
+  const scheduled = nonFx.length > 0 ? nonFx : allScheduled
   if (scheduled.length > 0) {
     const t0 = Math.min(...scheduled)
     for (const e of events) {

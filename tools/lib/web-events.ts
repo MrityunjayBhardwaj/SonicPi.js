@@ -16,7 +16,7 @@
  */
 
 import { chromium, type Browser } from '@playwright/test'
-import type { OscEvent } from './desktop-events.ts'
+import { isFxEvent, type OscEvent } from './desktop-events.ts'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:5173'
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -74,11 +74,18 @@ function parseParams(body: string): Record<string, number | string> {
   return params
 }
 
-function rebase(events: OscEvent[]): OscEvent[] {
+export function rebase(events: OscEvent[]): OscEvent[] {
   // Anchor on the EARLIEST event (minimum tRel), not the first-in-order — the
   // trace stream is emission-ordered, not strictly time-sorted, so a
   // first-in-order anchor produces spurious negative onsets.
-  const ts = events.filter((e) => e.tRel !== null).map((e) => e.tRel as number)
+  // EXCLUDE FX nodes from the anchor (issue #466, SP122 residual): with_fx
+  // creates its FX node at tRel=0 on web even when the with_fx sits after a
+  // sleep, so anchoring on it shifts the whole timeline and manufactures a false
+  // onset gap vs desktop (where the FX node is immediate, tRel=null). Anchor on
+  // non-FX events (voices + the vt-0 marker). Fall back to all if FX-only.
+  const nonFx = events.filter((e) => e.tRel !== null && !isFxEvent(e)).map((e) => e.tRel as number)
+  const all = events.filter((e) => e.tRel !== null).map((e) => e.tRel as number)
+  const ts = nonFx.length > 0 ? nonFx : all
   if (ts.length === 0) return events
   const t0 = Math.min(...ts)
   for (const e of events) {

@@ -3,8 +3,8 @@
  * Pure functions only — no Sonic Pi / browser needed.
  */
 import { describe, it, expect } from 'vitest'
-import { parseDumpOsc, type OscEvent } from '../lib/desktop-events.ts'
-import { parseTraceLine } from '../lib/web-events.ts'
+import { parseDumpOsc, isFxEvent, type OscEvent } from '../lib/desktop-events.ts'
+import { parseTraceLine, rebase } from '../lib/web-events.ts'
 import { buildReport } from '../event-parity.ts'
 
 describe('parseDumpOsc (desktop scsynth dumpOSC stream)', () => {
@@ -84,6 +84,43 @@ describe('parseTraceLine (web formatOscTrace stream)', () => {
     expect(parseTraceLine('[t:2.0000] /n_set 1056 {amp: 0}')!.addr).toBe('/n_set')
     expect(parseTraceLine('how does it feel?')).toBeNull()
     expect(parseTraceLine('[t:0.0] /run-code 5')).toBeNull()
+  })
+})
+
+// --- rebase: FX nodes must not anchor the timeline (issue #466 / SP122) -------
+describe('web rebase excludes FX nodes from the anchor', () => {
+  const ev = (synthdef: string, tRel: number): OscEvent => ({ addr: '/s_new', synthdef, params: {}, tRel, raw: '' })
+
+  it('anchors on the earliest NON-FX event, not an earlier FX node', () => {
+    // The #466 scenario: web emits the with_fx FX node at tRel=0 (registration),
+    // the vt-0 marker bell at 2.935, and the first saw at 6.935. Anchoring on the
+    // FX node (old behaviour) leaves the bell at 2.935 / saw at 6.935 → a false
+    // ~2.9s onset gap vs desktop (which anchors on the bell). Excluding FX from
+    // the anchor puts the bell at 0 and the saw at 4.0, matching desktop.
+    const out = rebase([
+      ev('sonic-pi-fx_reverb', 0),
+      ev('sonic-pi-pretty_bell', 2.935),
+      ev('sonic-pi-saw', 6.935),
+    ])
+    const bell = out.find((e) => e.synthdef === 'sonic-pi-pretty_bell')!
+    const saw = out.find((e) => e.synthdef === 'sonic-pi-saw')!
+    const fx = out.find((e) => e.synthdef === 'sonic-pi-fx_reverb')!
+    expect(bell.tRel).toBe(0) // marker is the shared zero
+    expect(saw.tRel).toBeCloseTo(4.0, 3) // == desktop, no false gap
+    expect(fx.tRel).toBeCloseTo(-2.935, 3) // FX shifted with everything (excluded from compare anyway)
+  })
+
+  it('falls back to all scheduled events when there are no non-FX events', () => {
+    const out = rebase([ev('sonic-pi-fx_reverb', 5), ev('sonic-pi-fx_echo', 7)])
+    expect(out.find((e) => e.synthdef === 'sonic-pi-fx_reverb')!.tRel).toBe(0)
+    expect(out.find((e) => e.synthdef === 'sonic-pi-fx_echo')!.tRel).toBeCloseTo(2, 3)
+  })
+
+  it('matches isFxEvent on both naming conventions', () => {
+    expect(isFxEvent({ synthdef: 'sonic-pi-fx_reverb' })).toBe(true)
+    expect(isFxEvent({ synthdef: 'sonic_pi_fx_echo' })).toBe(true)
+    expect(isFxEvent({ synthdef: 'sonic-pi-beep' })).toBe(false)
+    expect(isFxEvent({ synthdef: undefined })).toBe(false)
   })
 })
 
