@@ -58,6 +58,11 @@ interface ConsistencyManifest {
 }
 interface GateManifest {
   denominator: number; passCount: number; pct: number; thresholdPct: number; passed: boolean
+  // passed is the OVERALL verdict (roster AND differential matrix, #469). roster.passed
+  // is the roster-only verdict; differentialMatrix is the second criterion (optional —
+  // absent in pre-#469 manifests).
+  roster?: { passed: boolean }
+  differentialMatrix?: { present: boolean; green: boolean | null; counts?: { match: number; active: number }; note: string }
   rows: { example: string; gateVerdict: string; pass: boolean; gradedVia: string; detail: string }[]
   exclusions?: { example: string; reason: string }[]
 }
@@ -174,16 +179,26 @@ function gateHero(g: GateManifest | null): string {
   }
   const verdict = g.passed ? 'PASS' : 'NOT MET'
   const cls = g.passed ? 'pass' : 'fail'
+  // Roster badge reflects the roster criterion specifically (not the overall verdict),
+  // so its pct and PASS/NOT-MET stay self-consistent even when the matrix blocks (#469).
+  const rosterPassed = g.roster?.passed ?? g.passed
+  const rosterCls = rosterPassed ? 'pass' : 'fail'
   const rows = g.rows.map(r =>
     `<div class="grow ${r.pass ? 'p' : 'f'}"><span>${r.pass ? '✓' : '✗'}</span><code>${esc(r.example)}</code><em>${esc(r.gateVerdict)} · ${esc(r.gradedVia)}</em></div>`
   ).join('')
   const excl = g.exclusions?.length
     ? `<div class="gate-excl">excluded: ${g.exclusions.map(e => esc(e.example)).join(', ')} (PRNG non-goal SV49)</div>` : ''
+  // Second criterion (#469): differential matrix. Optional — absent in pre-#469 manifests.
+  const dm = g.differentialMatrix
+  const matrixBadge = dm
+    ? `<div class="gate-badge ${dm.green === null ? 'warn' : dm.green ? 'pass' : 'fail'}">matrix ${dm.green === null ? '⚠ absent' : dm.green ? `✓ ${dm.counts ? `${dm.counts.match}/${dm.counts.active}` : 'green'}` : '✗ not green'}</div>`
+    : ''
   return `<a class="gate-hero ${cls}" href="launch-gate.html">
     <div class="gate-left">
-      <div class="gate-verdict">🚦 Tier-1 launch gate</div>
+      <div class="gate-verdict">🚦 Tier-1 launch gate — ${verdict}</div>
       <div class="gate-big"><b>${g.passCount}/${g.denominator}</b> <span>= ${g.pct}%</span></div>
-      <div class="gate-badge ${cls}">${verdict} <small>(≥ ${g.thresholdPct}%)</small></div>
+      <div class="gate-badge ${rosterCls}">roster ${rosterPassed ? 'PASS' : 'NOT MET'} <small>(≥ ${g.thresholdPct}%)</small></div>
+      ${matrixBadge}
       ${excl}
     </div>
     <div class="gate-rows">${rows}</div>
@@ -241,6 +256,7 @@ const html = `<!doctype html>
     font-weight:700;font-size:14px}
   .gate-badge.pass{background:#243218;color:var(--pass)}
   .gate-badge.fail{background:#321820;color:var(--fail)}
+  .gate-badge.warn{background:#322a18;color:#fbbf24}
   .gate-badge small{font-weight:400;color:var(--text-mute);font-size:11px}
   .gate-excl{font-size:11px;color:var(--text-mute);font-family:var(--mono);margin-top:2px}
   .gate-rows{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;align-content:center}
