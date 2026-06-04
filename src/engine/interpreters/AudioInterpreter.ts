@@ -20,7 +20,13 @@ import type { SuperSonicBridge } from '../SuperSonicBridge'
 import type { SoundEventStream, SoundEvent } from '../SoundEventStream'
 import type { MidiBridge } from '../MidiBridge'
 
-/** State for a reusable inner FX node (persists across loop iterations). */
+/**
+ * State for one live inner FX node. Pre-#452 this was REUSED across loop
+ * iterations (one node per loop position); since #452 each iteration creates a
+ * fresh node (desktop parity) and this tracks one live INSTANCE — overlapping
+ * instances coexist in `reusableFx` under nodeId-suffixed keys, each freed by
+ * its own kill timer kill_delay after its inner audio finishes.
+ */
 interface ReusableFxState {
   bus: number
   groupId: number
@@ -56,18 +62,22 @@ export interface AudioContext {
   printHandler?: (msg: string) => void
   nodeRefMap: Map<number, number>
   /**
-   * Reusable inner FX nodes — keyed by "taskId:fxIndex".
-   * with_fx inside a live_loop reuses the same FX node across iterations
-   * instead of creating a new one each time. This prevents additive signal
-   * stacking from overlapping echo/delay/reverb nodes. See issue #70.
+   * Live inner FX node instances — keyed by "taskId:fxIndex#nodeId".
+   * Since #452 a with_fx inside a live_loop creates a FRESH FX node every
+   * iteration (matching desktop SP), so several instances of the same loop
+   * position can be alive at once (overlapping, bounded by kill_delay). The
+   * nodeId suffix keeps them distinct so iteration N+1 can't overwrite N's
+   * entry. Used for inner-play `aliveUntil` bumping + hot-swap teardown.
+   * (Pre-#452 this reused one node per loop position to avoid additive
+   * stacking — issue #70 — but that diverged from desktop, which overlaps.)
    */
   reusableFx: Map<string, ReusableFxState>
   /**
-   * Stack of currently-active with_fx scopes (innermost last), keyed by
-   * `${taskId}:fx${fxIndex}` matching `reusableFx`. Lazily initialised in
-   * `case 'fx'`; absent in paths that never enter an FX. When a play/sample
-   * fires, every enclosing FX's `aliveUntil` is extended so the FX bus
-   * outlives the audible synth (mirrors desktop sound.rb:1817-1822).
+   * Stack of currently-active with_fx scopes (innermost last), holding the
+   * per-instance keys ("taskId:fxIndex#nodeId") that index `reusableFx`.
+   * Lazily initialised in `case 'fx'`; absent in paths that never enter an FX.
+   * When a play/sample fires, every enclosing FX's `aliveUntil` is extended so
+   * the FX bus outlives the audible synth (mirrors desktop sound.rb:1817-1822).
    */
   currentFxStack?: string[]
   /**
@@ -350,76 +360,32 @@ export async function runProgram(
           break
         }
         const fxIndex = fxCounter.value++
-        const fxKey = `${ctx.taskId}:fx${fxIndex}`
+        const baseKey = `${ctx.taskId}:fx${fxIndex}`
         const prevOutBus = task.outBus
 
-        // Reuse FX node across loop iterations (issue #70).
-        // First iteration: create FX node + bus, store in reusableFx map.
-        // Subsequent iterations: reuse the same node — inner synths write
-        // to the same bus, FX processes a continuous stream.
-        // This prevents additive signal stacking from overlapping echo nodes.
-        // Lazy-init the FX scope stack so non-FX paths pay nothing. Each entry
-        // is a key into `ctx.reusableFx` and lives only for this block's body.
+        // #452: create a FRESH inner FX node EVERY iteration — desktop parity.
+        // Desktop SP's with_fx block instantiates a new FX synth each pass and
+        // frees it kill_delay after its inner audio finishes (block_until_finished
+        // then Kernel.sleep(kill_delay), sound.rb:1817-1822); overlapping
+        // iterations therefore overlap FX nodes. Pre-#452 we REUSED one node per
+        // loop position (issue #70 anti-stacking), but that diverged: when an
+        // inner synth's release ran past the next iteration the kill timer never
+        // fired, collapsing N desktop nodes to 1 and skipping the per-iteration
+        // LFO reset on modulating FX (wobble/slicer/panslicer). Now every pass
+        // re-creates; overlap is bounded by the same kill_delay desktop uses.
+        // Lazy-init the FX scope stack so non-FX paths pay nothing; each entry is
+        // a per-INSTANCE key into `ctx.reusableFx` (nodeId-suffixed) so concurrent
+        // live instances of the same loop position never collide.
         const fxStack = (ctx.currentFxStack ??= [])
 
-        const existing = ctx.reusableFx.get(fxKey)
-        if (existing) {
-          // Reuse — cancel pending kill timer, route through existing FX bus
-          if (existing.killTimer) {
-            existing.killTimer.cancel()
-            existing.killTimer = undefined
-          }
-          if (step.nodeRef && existing.nodeId !== undefined) {
-            ctx.nodeRefMap.set(step.nodeRef, existing.nodeId)
-          }
-          task.outBus = existing.bus
-          // Reset aliveUntil for THIS iteration's plays/samples; the prior
-          // iteration's value is no longer load-bearing (we just cancelled
-          // that kill timer above). aliveUntil is a floor — `case 'play'`
-          // bumps it up as inner synths dispatch.
-          existing.aliveUntil = task.virtualTime
-          fxStack.push(fxKey)
-          try {
-            for (let rep = 0; rep < reps; rep++) await runProgram(step.body, ctx, fxCounter)
-          } finally {
-            fxStack.pop()
-            task.outBus = prevOutBus
-            ctx.bridge.flushMessages()
-            // Schedule kill in VIRTUAL TIME (SV41) — cancelled if next iter
-            // reuses before its horizon. setTimeout-based (real-time) scheduling
-            // raced post-SV40-purge real-time-paced iterations (SP87).
-            //
-            // GUARD: only schedule if our `existing` state is STILL the active
-            // entry in the Map. After SonicPiEngine's hot-swap reusableFx.clear,
-            // this iter's `existing` reference becomes stale (resources already
-            // freed by clear); a scheduled kill would (a) leak an uncancellable
-            // callback and (b) eventually run /n_free + freeBus on the freed
-            // (and possibly re-allocated) resources. The next iter will hit
-            // CREATE branch and own the new state's killTimer.
-            if (ctx.reusableFx.get(fxKey) === existing) {
-              const killDelay = (step.opts.kill_delay as number) ?? 1.0
-              // Wait for inner audio to finish (aliveUntil) THEN add kill_delay —
-              // matches desktop sound.rb:1817-1822 (tracker.block_until_finished
-              // then Kernel.sleep(kill_delay)). Without this, a sustained synth
-              // inside this FX (e.g. `play release: 60`) was truncated to ~1s
-              // (mod_303_phade).
-              const killAt = Math.max(task.virtualTime, existing.aliveUntil) + killDelay
-              existing.killTimer = ctx.scheduler.scheduleAtVirtualTime(killAt, () => {
-                // /n_free the FX synth itself — applyFxImmediate puts it in
-                // root group 101 (not the container group), so freeGroup
-                // alone leaves the synth running and ringing into outer FX.
-                ctx.bridge!.freeNode(existing.nodeId)
-                ctx.bridge!.freeGroup(existing.groupId)
-                ctx.bridge!.freeBus(existing.bus)
-                ctx.reusableFx.delete(fxKey)
-              })
-            }
-          }
-        } else {
-          // First iteration — create FX node
+        {
           const newBus = ctx.bridge.allocateBus()
           const fxGroupId = ctx.bridge.createFxGroup()
           let fxNodeId: number | undefined
+          // Per-instance key — finalised to `${baseKey}#${nodeId}` once the node
+          // id is known (below). Until then `baseKey` is a harmless placeholder
+          // (only read by the kill scheduler, which no-ops if no state was set).
+          let instanceKey = baseKey
           try {
             // SP83/#423: create the FX node with an IMMEDIATE timetag (0), not
             // the future `vt + schedAhead`. A future timetag puts the /s_new in
@@ -466,7 +432,13 @@ export async function runProgram(
               ctx.nodeRefMap.set(step.nodeRef, fxNodeId)
             }
             task.outBus = newBus
-            // Store for reuse — with pending kill timer as safety net.
+            // Finalise the per-instance key now that the node id exists. nodeId
+            // is globally unique, so overlapping iterations of THIS loop position
+            // get distinct keys — iteration N+1 can't overwrite N's entry, and
+            // N's kill timer deletes only its own slot (a stable position key
+            // would mis-delete N+1's live entry → hot-swap leak / wrong free).
+            instanceKey = `${baseKey}#${fxNodeId}`
+            // Track this live instance — pending kill timer scheduled in finally.
             // aliveUntil starts at the current vt (no plays yet); `case 'play'`
             // bumps it as inner synths dispatch.
             const state: ReusableFxState = {
@@ -476,8 +448,8 @@ export async function runProgram(
               outBus: prevOutBus,
               aliveUntil: task.virtualTime,
             }
-            ctx.reusableFx.set(fxKey, state)
-            fxStack.push(fxKey)
+            ctx.reusableFx.set(instanceKey, state)
+            fxStack.push(instanceKey)
             try {
               for (let rep = 0; rep < reps; rep++) await runProgram(step.body, ctx, fxCounter)
             } finally {
@@ -491,17 +463,21 @@ export async function runProgram(
             // one ordered bundle. No-op once an inner synth already flushed it.
             ctx.bridge.flushImmediateFx()
             ctx.bridge.flushMessages()
-            // Schedule kill in VIRTUAL TIME (SV41) — if next iter reuses, cancelled.
-            // killAt = max(vt_at_block_exit, aliveUntil) + killDelay — see reuse branch.
+            // Schedule this instance's kill in VIRTUAL TIME (SV41). killAt =
+            // max(vt_at_block_exit, aliveUntil) + kill_delay — waits for inner
+            // audio (aliveUntil, bumped by inner plays/samples) THEN kill_delay,
+            // mirroring desktop block_until_finished + Kernel.sleep(kill_delay).
+            // Overlapping instances each free themselves under their own key;
+            // hot-swap cancels these timers before freeing (no double-free).
             const killDelay = (step.opts.kill_delay as number) ?? 1.0
-            const state = ctx.reusableFx.get(fxKey)
+            const state = ctx.reusableFx.get(instanceKey)
             if (state) {
               const killAt = Math.max(task.virtualTime, state.aliveUntil) + killDelay
               state.killTimer = ctx.scheduler.scheduleAtVirtualTime(killAt, () => {
                 ctx.bridge!.freeNode(state.nodeId)
                 ctx.bridge!.freeGroup(state.groupId)
                 ctx.bridge!.freeBus(state.bus)
-                ctx.reusableFx.delete(fxKey)
+                ctx.reusableFx.delete(instanceKey)
               })
             }
           }

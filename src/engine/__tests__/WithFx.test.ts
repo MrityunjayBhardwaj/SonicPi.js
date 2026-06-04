@@ -157,6 +157,49 @@ describe('with_fx', () => {
     expect(bridge.calls).toContain('free:16')
   })
 
+  it('inner with_fx creates a FRESH node every iteration — no cross-iteration reuse (#452)', async () => {
+    // Pre-#452 an inner with_fx node was REUSED across loop iterations when its
+    // kill timer hadn't fired yet (issue #70 anti-stacking). For a long-release
+    // inner synth (release ≥ loop period) the kill never fired, so the node was
+    // created ONCE and the remaining iterations skipped creation — diverging
+    // from desktop SP (which instantiates a fresh FX synth every pass) and
+    // dropping the per-iteration LFO reset for wobble/slicer. dark_neon: web
+    // fx_wobble 1× vs desktop 5×; long-release reverb diverged identically, so
+    // it is lifetime- not FX-name-specific.
+    //
+    // Post-#452: every iteration creates a new node (unique nodeId-suffixed key),
+    // overlapping nodes freed by their own kill timers (desktop parity). Asserted
+    // by counting createFxGroup calls across two iterations of the SAME with_fx
+    // at a loop period (1 beat) SHORTER than the inner release (4 beats) — the
+    // exact condition that made the old code reuse.
+    const scheduler = new VirtualTimeScheduler({ getAudioTime: () => 0, schedAheadTime: 100 })
+    const eventStream = new SoundEventStream()
+    const nodeRefMap = new Map<number, number>()
+    const bridge = createMockBridge()
+    // ONE shared ctx so reusableFx persists across iterations (as in the engine).
+    const ctx = makeAudioCtx(scheduler, 'test', eventStream, nodeRefMap, bridge)
+
+    const program = new ProgramBuilder(0)
+      .with_fx('wobble', (b) => b.play(60, { release: 4 }))
+      .sleep(1)
+      .build()
+
+    scheduler.registerLoop('test', async () => {
+      await runProgram(program, ctx)
+    })
+
+    // Drive ≥2 iterations (loop period 1 beat). The old code would reuse on
+    // iteration 2 (kill timer at vt+5 not yet fired) → exactly one createGroup.
+    scheduler.tick(100); await flushMicrotasks()
+    scheduler.tick(100); await flushMicrotasks()
+    scheduler.tick(100); await flushMicrotasks()
+
+    const creates = bridge.calls.filter(c => c.startsWith('createGroup:'))
+    expect(creates.length).toBeGreaterThanOrEqual(2)
+    // Each instance is a DISTINCT node (no shared reuse) — group ids differ.
+    expect(new Set(creates).size).toBe(creates.length)
+  })
+
   it('nested FX chains buses correctly', async () => {
     const scheduler = new VirtualTimeScheduler({
       getAudioTime: () => 0,
