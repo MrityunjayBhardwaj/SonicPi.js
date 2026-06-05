@@ -101,7 +101,43 @@ interface SynthRow {
   webOnset: number | null
 }
 
-interface ParityReport {
+// ---------------------------------------------------------------------------
+// Onset-SEQUENCE parity (SV61, #377/#378) — the authoritative tiebreaker.
+//
+// The multiset/verdict above answers "does web produce the same LAYERS?". The
+// onset-sequence parity below answers the stricter "does each shared layer fire
+// at the same TIMES?". Together they are the complete statement of the engine's
+// deterministic output (stages 1-6, terminating at the /s_new emission;
+// server.rb:345,672,723) — the layer that the engine OWNS, before scsynth's
+// stage-7+ DSP. Pitch-tracking the WAV measures stage 7+, which sums N voices
+// into one waveform and re-infers fundamentals frame-by-frame, losing per-event
+// identity. THAT loss is the false-DIVERGE class (#453 cymbal, #379 kicks, #378
+// multi-loop interleave). When the audio comparator flags DIVERGE/INCONCL on a
+// deterministic piece but the /s_new structure AND onset sequences match, the
+// engine played the right notes at the right times — the residual is scsynth
+// rendering (#417/#268/#273) or tracker noise, not an engine bug.
+// ---------------------------------------------------------------------------
+
+export interface OnsetSeqRow {
+  synthdef: string
+  desktopOnsets: number[]
+  webOnsets: number[]
+  comparedLen: number // common-prefix length actually compared
+  matched: boolean
+  firstMismatchIdx: number // -1 when matched (or nothing to compare)
+  maxDevMs: number // largest |Δ| over the compared prefix, in ms
+}
+
+export interface SequenceParity {
+  // null = no judgeable shared significant layer (can neither confirm nor deny);
+  // a tiebreaker must NOT promote on null (conservative — SV50 discipline).
+  match: boolean | null
+  epsilonMs: number
+  rows: OnsetSeqRow[]
+  reasons: string[]
+}
+
+export interface ParityReport {
   verdict: 'STRUCTURE-MATCH' | 'STRUCTURE-DIVERGE' | 'DESKTOP-EMPTY' | 'WEB-EMPTY'
   isPrng: boolean
   reasons: string[]
@@ -113,6 +149,12 @@ interface ParityReport {
   orderMatch: boolean
   desktopOrder: string[]
   webOrder: string[]
+  // Per-synthdef onset-sequence parity (SV61). Orthogonal to `verdict` (which is
+  // the multiset structure): a piece can STRUCTURE-MATCH the layers but mis-time
+  // them (wrong loop period) — that is a real engine bug and shows here as
+  // match=false. The EVENT-MATCH tiebreaker requires BOTH STRUCTURE-MATCH and
+  // sequenceParity.match===true.
+  sequenceParity: SequenceParity
 }
 
 // Count tolerance for shared synthdefs (PRNG walks vary run-to-run, SV49).
@@ -173,6 +215,94 @@ function diffCounts(
 // First-onset gap that counts as a gating divergence: a shared layer that
 // starts much later on one side (e.g. cue-gated on desktop, ungated on web).
 const ONSET_GAP_SEC = 3
+
+// Per-onset match tolerance for the onset-SEQUENCE parity (SV61). Desktop
+// schedules in real time and carries ~2ms scheduling jitter (observed on #378:
+// 1.998 vs web's exact 2.0). 15ms sits comfortably above that jitter floor and
+// far below any real timing bug (a wrong loop period drifts UNBOUNDED — the very
+// first cycle already exceeds 15ms, e.g. period 2.0 vs 2.5 ⇒ 500ms at onset 1).
+// Too loose masks real timing bugs; too tight makes jitter a false-DIVERGE. The
+// PREFIX-compare below (not full-length) absorbs the cold-start window-trim.
+const ONSET_EPS_SEC = 0.015
+
+/** Voice-only /s_new onsets per synthdef, sorted ascending. FX/infra excluded
+ *  (same `classify` partition the multiset diff uses); null tRel (immediate,
+ *  unscheduled) dropped — only scheduled onsets are comparable across engines. */
+function voiceOnsetsBySynthdef(events: OscEvent[]): Record<string, number[]> {
+  const out: Record<string, number[]> = {}
+  for (const e of events) {
+    if (e.addr !== '/s_new' || !e.synthdef || e.tRel === null) continue
+    if (classify(e.synthdef) !== 'voice') continue
+    ;(out[e.synthdef] ??= []).push(e.tRel)
+  }
+  for (const k of Object.keys(out)) out[k].sort((a, b) => a - b)
+  return out
+}
+
+/**
+ * Onset-SEQUENCE parity (SV61). For every SIGNIFICANT layer present on BOTH sides
+ * (a dropped layer is already a STRUCTURE-DIVERGE; per-onset timing is only
+ * meaningful for shared layers), compare the two sorted onset sequences:
+ *  • PREFIX-compare the common-length prefix — web typically captures ~1 fewer
+ *    cycle because cold-start warmup (SP22/SV15) trims the fixed wall-clock
+ *    window; the shorter tail must NOT be penalised (mirrors the Tier-1 pitch
+ *    prefix-compare).
+ *  • per-onset match within ε (ONSET_EPS_SEC) to absorb desktop's ~2ms jitter.
+ * match===true iff every judged shared layer's prefix matches within ε.
+ * match===null when there is no judgeable shared significant layer.
+ */
+function computeSequenceParity(
+  desktop: OscEvent[],
+  web: OscEvent[],
+  rows: SynthRow[],
+  eps = ONSET_EPS_SEC,
+): SequenceParity {
+  const dOn = voiceOnsetsBySynthdef(desktop)
+  const wOn = voiceOnsetsBySynthdef(web)
+  const shared = rows.filter(
+    (r) => r.significant && r.status !== 'only-desktop' && r.status !== 'only-web',
+  )
+  const seqRows: OnsetSeqRow[] = []
+  const reasons: string[] = []
+  for (const r of shared) {
+    const d = dOn[r.synthdef] ?? []
+    const w = wOn[r.synthdef] ?? []
+    const len = Math.min(d.length, w.length)
+    let firstMismatchIdx = -1
+    let maxDevMs = 0
+    for (let i = 0; i < len; i++) {
+      const devMs = Math.abs(d[i] - w[i]) * 1000
+      if (devMs > maxDevMs) maxDevMs = devMs
+      if (devMs > eps * 1000 && firstMismatchIdx < 0) firstMismatchIdx = i
+    }
+    const matched = len > 0 && firstMismatchIdx < 0
+    seqRows.push({
+      synthdef: r.synthdef,
+      desktopOnsets: d,
+      webOnsets: w,
+      comparedLen: len,
+      matched,
+      firstMismatchIdx,
+      maxDevMs: Math.round(maxDevMs * 10) / 10,
+    })
+    if (len === 0) {
+      reasons.push(`${short(r.synthdef)}: no scheduled onsets to compare on one side`)
+    } else if (!matched) {
+      const i = firstMismatchIdx
+      reasons.push(
+        `${short(r.synthdef)}: onset #${i} desktop ${d[i]}s vs web ${w[i]}s ` +
+          `(Δ ${Math.round(Math.abs(d[i] - w[i]) * 1000)}ms > ${eps * 1000}ms ε) — mis-timed layer`,
+      )
+    } else {
+      reasons.push(
+        `${short(r.synthdef)}: ${len} onsets match within ε (max Δ ${seqRows[seqRows.length - 1].maxDevMs}ms)`,
+      )
+    }
+  }
+  const judged = seqRows.filter((s) => s.comparedLen > 0)
+  const match = judged.length === 0 ? null : judged.every((s) => s.matched)
+  return { match, epsilonMs: eps * 1000, rows: seqRows, reasons }
+}
 
 export function buildReport(desktop: OscEvent[], web: OscEvent[], code: string): ParityReport {
   const ds = summarize(desktop)
@@ -261,6 +391,9 @@ export function buildReport(desktop: OscEvent[], web: OscEvent[], code: string):
         `web: ${wSig.map(short).join('→')})${isPrng ? ' — common for PRNG layer selection' : ' — thread-start timing'}.`,
     )
 
+  // Onset-sequence parity (SV61) — orthogonal to the multiset verdict above.
+  const sequenceParity = computeSequenceParity(desktop, web, rows)
+
   return {
     verdict,
     isPrng,
@@ -273,6 +406,7 @@ export function buildReport(desktop: OscEvent[], web: OscEvent[], code: string):
     orderMatch,
     desktopOrder: dSig.map(short),
     webOrder: wSig.map(short),
+    sequenceParity,
   }
 }
 
@@ -320,6 +454,25 @@ function printReport(name: string, r: ParityReport): void {
       console.log(`  ${short(row.synthdef).padEnd(22)} ${String(row.desktop).padStart(7)} ${String(row.web).padStart(6)}  ${flag}`)
     }
   }
+  // Onset-sequence parity (SV61) — the stricter "same times?" check.
+  const sp = r.sequenceParity
+  const spIcon = sp.match === null ? '—' : sp.match ? '✓' : '✗'
+  const spWord = sp.match === null ? 'N/A (no judgeable shared layer)' : sp.match ? 'MATCH' : 'DIVERGE'
+  console.log(`\nOnset-sequence parity (SV61, ε=${sp.epsilonMs}ms, prefix-compared): ${spIcon} ${spWord}`)
+  for (const row of sp.rows) {
+    const ic = row.comparedLen === 0 ? '—' : row.matched ? '✓' : '✗'
+    const detail = row.comparedLen === 0
+      ? 'no comparable onsets'
+      : row.matched
+        ? `${row.comparedLen} onsets, max Δ ${row.maxDevMs}ms`
+        : `mismatch @#${row.firstMismatchIdx} (max Δ ${row.maxDevMs}ms)`
+    console.log(`  ${ic} ${short(row.synthdef).padEnd(22)} ${detail}`)
+  }
+  if (r.verdict === 'STRUCTURE-MATCH' && sp.match === true)
+    console.log(`  → EVENT-MATCH eligible: structure + onset sequences both match (engine plays right notes at right times).`)
+  else if (r.verdict === 'STRUCTURE-MATCH' && sp.match === false)
+    console.log(`  → NOT event-match: layers match but onset timing diverges — real engine timing bug.`)
+
   console.log(`\nNote: PRNG param VALUES are not diffed (SV49 non-goal). Structure + timing only.`)
   console.log(`A fixed wall-clock window counts more events on the faster-progressing engine;`)
   console.log(`"DROPPED" = a significant desktop layer web never produces (the robust divergence).`)
