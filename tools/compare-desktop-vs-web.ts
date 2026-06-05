@@ -605,20 +605,22 @@ function writeComparisonReport(r: ComparisonResult): void {
       const sp = epr.sequenceParity
       const spWord = sp.match === null ? 'N/A (no judgeable shared layer)' : sp.match ? '✓ MATCH' : '✗ DIVERGE'
       lines.push(`- **Structure (synthdef multiset):** ${epr.verdict} — desktop ${epr.desktopTotal} voice \`/s_new\`, web ${epr.webTotal}`)
-      lines.push(`- **Onset sequence (ε=${sp.epsilonMs}ms, prefix-compared):** ${spWord}`)
+      lines.push(`- **Onset sequence (ε=${sp.epsilonMs}ms, prefix-compared${sp.notesChecked ? ', + per-tick NOTE multiset' : ', timing-only — PRNG, SV49'}):** ${spWord}`)
       for (const row of sp.rows) {
         const ic = row.comparedLen === 0 ? '◦' : row.matched ? '✓' : '✗'
         const detail = row.comparedLen === 0
           ? 'no comparable onsets'
-          : row.matched
-            ? `${row.comparedLen} onsets within ε (max Δ ${row.maxDevMs}ms)`
-            : `mismatch @onset #${row.firstMismatchIdx} (max Δ ${row.maxDevMs}ms)`
+          : !row.timingMatched
+            ? `mis-timed @onset #${row.firstMismatchIdx} (max Δ ${row.maxDevMs}ms)`
+            : row.noteMatched === false
+              ? `onset times match within ε but per-tick NOTE multiset differs — wrong notes (transposition?)`
+              : `${row.comparedLen} onsets within ε (max Δ ${row.maxDevMs}ms)${row.noteMatched ? ', notes match' : ''}`
         lines.push(`  - ${ic} \`${row.synthdef.replace(/^sonic-pi-/, '')}\` — ${detail}`)
       }
       if (eventMatchPromoted) {
         lines.push(`- ✅ **EVENT-MATCH:** structure + onset sequences both match — the engine's deterministic output (stages 1-6, terminating at the OSC emission) is correct. The audio Tier-1 divergence is stage-7+ scsynth rendering or tracker noise, not an engine bug (SV61; #453/#379/#378 class).`)
       } else if (epr.verdict === 'STRUCTURE-MATCH' && sp.match === false) {
-        lines.push(`- ❌ **NOT event-match:** layers match but onset timing diverges — a REAL engine timing bug (the audio DIVERGE stands).`)
+        lines.push(`- ❌ **NOT event-match:** layers match but the onset sequence (timing or per-tick notes) diverges — a REAL engine bug (the audio DIVERGE stands).`)
       } else if (epr.verdict !== 'STRUCTURE-MATCH') {
         lines.push(`- ❌ **NOT event-match:** ${epr.verdict} — ${epr.reasons[0] ?? 'structure differs'} (real engine divergence; the audio verdict stands).`)
       }

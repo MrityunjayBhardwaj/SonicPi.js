@@ -123,9 +123,16 @@ export interface OnsetSeqRow {
   desktopOnsets: number[]
   webOnsets: number[]
   comparedLen: number // common-prefix length actually compared
-  matched: boolean
-  firstMismatchIdx: number // -1 when matched (or nothing to compare)
+  timingMatched: boolean // onset TIMES match within ε over the prefix
+  firstMismatchIdx: number // -1 when timing matched (or nothing to compare)
   maxDevMs: number // largest |Δ| over the compared prefix, in ms
+  // NOTE-value parity per timetag (deterministic pieces only — SV49: PRNG VALUES
+  // are expected to differ, so notes are NOT checked when isPrng). null = not
+  // checked (PRNG, or nothing to compare). false = same synthdef fires at the
+  // same times but with DIFFERENT notes (a real transposition/wrong-note bug).
+  noteMatched: boolean | null
+  // matched = timingMatched AND (noteMatched !== false). The promotion gate.
+  matched: boolean
 }
 
 export interface SequenceParity {
@@ -133,6 +140,7 @@ export interface SequenceParity {
   // a tiebreaker must NOT promote on null (conservative — SV50 discipline).
   match: boolean | null
   epsilonMs: number
+  notesChecked: boolean // false for PRNG pieces (SV49 — values expected to differ)
   rows: OnsetSeqRow[]
   reasons: string[]
 }
@@ -225,83 +233,138 @@ const ONSET_GAP_SEC = 3
 // PREFIX-compare below (not full-length) absorbs the cold-start window-trim.
 const ONSET_EPS_SEC = 0.015
 
-/** Voice-only /s_new onsets per synthdef, sorted ascending. FX/infra excluded
- *  (same `classify` partition the multiset diff uses); null tRel (immediate,
- *  unscheduled) dropped — only scheduled onsets are comparable across engines. */
-function voiceOnsetsBySynthdef(events: OscEvent[]): Record<string, number[]> {
-  const out: Record<string, number[]> = {}
+interface VoiceEvent { t: number; note: number | null }
+
+/** Voice-only /s_new {time, note} per synthdef, sorted by (time, note). FX/infra
+ *  excluded (same `classify` partition the multiset diff uses); null tRel
+ *  (immediate, unscheduled) dropped — only scheduled events are comparable. The
+ *  secondary sort by note canonicalises the order WITHIN a simultaneous cluster
+ *  (e.g. bizet plays two octave-stacked beeps at one tick) so the two engines'
+ *  intra-tick serialisation order — which is musically inaudible and arbitrary —
+ *  does not register as a divergence. */
+function voiceEventsBySynthdef(events: OscEvent[]): Record<string, VoiceEvent[]> {
+  const out: Record<string, VoiceEvent[]> = {}
   for (const e of events) {
     if (e.addr !== '/s_new' || !e.synthdef || e.tRel === null) continue
     if (classify(e.synthdef) !== 'voice') continue
-    ;(out[e.synthdef] ??= []).push(e.tRel)
+    const note = typeof e.params?.note === 'number' ? (e.params.note as number) : null
+    ;(out[e.synthdef] ??= []).push({ t: e.tRel, note })
   }
-  for (const k of Object.keys(out)) out[k].sort((a, b) => a - b)
+  for (const k of Object.keys(out))
+    out[k].sort((a, b) => a.t - b.t || (a.note ?? 0) - (b.note ?? 0))
   return out
+}
+
+// Bucket width for grouping near-simultaneous onsets into one "tick" when
+// comparing the per-tick NOTE multiset. Wider than ε so jitter never splits a
+// cluster, far below any musical inter-onset gap.
+const TICK_BUCKET_SEC = 0.02
+
+/** The sorted multiset of notes at each time-bucket, as a comparable string key
+ *  per bucket index (buckets ordered by time). */
+function noteBucketsByTime(evs: VoiceEvent[]): string[] {
+  const m = new Map<number, number[]>()
+  for (const e of evs) {
+    const k = Math.round(e.t / TICK_BUCKET_SEC)
+    if (!m.has(k)) m.set(k, [])
+    m.get(k)!.push(e.note ?? NaN)
+  }
+  return [...m.keys()].sort((a, b) => a - b).map((k) =>
+    JSON.stringify(m.get(k)!.slice().sort((a, b) => a - b)),
+  )
 }
 
 /**
  * Onset-SEQUENCE parity (SV61). For every SIGNIFICANT layer present on BOTH sides
- * (a dropped layer is already a STRUCTURE-DIVERGE; per-onset timing is only
- * meaningful for shared layers), compare the two sorted onset sequences:
- *  • PREFIX-compare the common-length prefix — web typically captures ~1 fewer
- *    cycle because cold-start warmup (SP22/SV15) trims the fixed wall-clock
- *    window; the shorter tail must NOT be penalised (mirrors the Tier-1 pitch
- *    prefix-compare).
- *  • per-onset match within ε (ONSET_EPS_SEC) to absorb desktop's ~2ms jitter.
- * match===true iff every judged shared layer's prefix matches within ε.
+ * (a dropped layer is already a STRUCTURE-DIVERGE; per-event parity is only
+ * meaningful for shared layers), the engine's deterministic output is verified on
+ * TWO axes:
+ *  1. TIMING — PREFIX-compare the sorted onset times. PREFIX because web captures
+ *     ~1 fewer cycle (cold-start warmup trims the fixed window, SP22/SV15); ε
+ *     (ONSET_EPS_SEC) absorbs desktop's ~2ms real-time jitter.
+ *  2. NOTES — per-timetag note MULTISET equality (deterministic pieces only —
+ *     SV49: PRNG note VALUES are expected to differ). This closes the hole that
+ *     timing+structure alone leaves: a real transposition bug (same synthdef at
+ *     the same times, WRONG notes) would otherwise be falsely EVENT-MATCHed.
+ *     Compared as multisets-per-tick because simultaneous onsets (octave stacks)
+ *     have arbitrary intra-tick order on each engine — only the set is musical.
+ * matched = timingMatched AND noteMatched !== false.
  * match===null when there is no judgeable shared significant layer.
  */
 function computeSequenceParity(
   desktop: OscEvent[],
   web: OscEvent[],
   rows: SynthRow[],
+  checkNotes: boolean,
   eps = ONSET_EPS_SEC,
 ): SequenceParity {
-  const dOn = voiceOnsetsBySynthdef(desktop)
-  const wOn = voiceOnsetsBySynthdef(web)
+  const dEv = voiceEventsBySynthdef(desktop)
+  const wEv = voiceEventsBySynthdef(web)
   const shared = rows.filter(
     (r) => r.significant && r.status !== 'only-desktop' && r.status !== 'only-web',
   )
   const seqRows: OnsetSeqRow[] = []
   const reasons: string[] = []
   for (const r of shared) {
-    const d = dOn[r.synthdef] ?? []
-    const w = wOn[r.synthdef] ?? []
-    const len = Math.min(d.length, w.length)
+    const d = dEv[r.synthdef] ?? []
+    const w = wEv[r.synthdef] ?? []
+    const dT = d.map((e) => e.t)
+    const wT = w.map((e) => e.t)
+    const len = Math.min(dT.length, wT.length)
+    // Axis 1 — timing.
     let firstMismatchIdx = -1
     let maxDevMs = 0
     for (let i = 0; i < len; i++) {
-      const devMs = Math.abs(d[i] - w[i]) * 1000
+      const devMs = Math.abs(dT[i] - wT[i]) * 1000
       if (devMs > maxDevMs) maxDevMs = devMs
       if (devMs > eps * 1000 && firstMismatchIdx < 0) firstMismatchIdx = i
     }
-    const matched = len > 0 && firstMismatchIdx < 0
+    const timingMatched = len > 0 && firstMismatchIdx < 0
+    // Axis 2 — notes (deterministic only). Per-tick multiset over the common
+    // prefix of buckets.
+    let noteMatched: boolean | null = null
+    if (checkNotes && len > 0) {
+      const dB = noteBucketsByTime(d)
+      const wB = noteBucketsByTime(w)
+      const bn = Math.min(dB.length, wB.length)
+      let ok = bn > 0
+      for (let i = 0; i < bn; i++) if (dB[i] !== wB[i]) { ok = false; break }
+      noteMatched = ok
+    }
+    const matched = timingMatched && noteMatched !== false
     seqRows.push({
       synthdef: r.synthdef,
-      desktopOnsets: d,
-      webOnsets: w,
+      desktopOnsets: dT,
+      webOnsets: wT,
       comparedLen: len,
-      matched,
+      timingMatched,
       firstMismatchIdx,
       maxDevMs: Math.round(maxDevMs * 10) / 10,
+      noteMatched,
+      matched,
     })
     if (len === 0) {
       reasons.push(`${short(r.synthdef)}: no scheduled onsets to compare on one side`)
-    } else if (!matched) {
+    } else if (!timingMatched) {
       const i = firstMismatchIdx
       reasons.push(
-        `${short(r.synthdef)}: onset #${i} desktop ${d[i]}s vs web ${w[i]}s ` +
-          `(Δ ${Math.round(Math.abs(d[i] - w[i]) * 1000)}ms > ${eps * 1000}ms ε) — mis-timed layer`,
+        `${short(r.synthdef)}: onset #${i} desktop ${dT[i]}s vs web ${wT[i]}s ` +
+          `(Δ ${Math.round(Math.abs(dT[i] - wT[i]) * 1000)}ms > ${eps * 1000}ms ε) — mis-timed layer`,
+      )
+    } else if (noteMatched === false) {
+      reasons.push(
+        `${short(r.synthdef)}: onset times match but per-tick NOTE multiset differs — wrong notes (transposition?)`,
       )
     } else {
       reasons.push(
-        `${short(r.synthdef)}: ${len} onsets match within ε (max Δ ${seqRows[seqRows.length - 1].maxDevMs}ms)`,
+        `${short(r.synthdef)}: ${len} onsets match within ε (max Δ ${Math.round(maxDevMs * 10) / 10}ms)` +
+          `${noteMatched ? ', notes match' : ''}`,
       )
     }
   }
   const judged = seqRows.filter((s) => s.comparedLen > 0)
   const match = judged.length === 0 ? null : judged.every((s) => s.matched)
-  return { match, epsilonMs: eps * 1000, rows: seqRows, reasons }
+  return { match, epsilonMs: eps * 1000, notesChecked: checkNotes, rows: seqRows, reasons }
 }
 
 export function buildReport(desktop: OscEvent[], web: OscEvent[], code: string): ParityReport {
@@ -392,7 +455,9 @@ export function buildReport(desktop: OscEvent[], web: OscEvent[], code: string):
     )
 
   // Onset-sequence parity (SV61) — orthogonal to the multiset verdict above.
-  const sequenceParity = computeSequenceParity(desktop, web, rows)
+  // Notes are checked only on deterministic pieces (SV49: PRNG note VALUES differ
+  // by construction; for PRNG we verify timing/structure, not note values).
+  const sequenceParity = computeSequenceParity(desktop, web, rows, !isPrng)
 
   return {
     verdict,
@@ -458,20 +523,22 @@ function printReport(name: string, r: ParityReport): void {
   const sp = r.sequenceParity
   const spIcon = sp.match === null ? '—' : sp.match ? '✓' : '✗'
   const spWord = sp.match === null ? 'N/A (no judgeable shared layer)' : sp.match ? 'MATCH' : 'DIVERGE'
-  console.log(`\nOnset-sequence parity (SV61, ε=${sp.epsilonMs}ms, prefix-compared): ${spIcon} ${spWord}`)
+  console.log(`\nOnset-sequence parity (SV61, ε=${sp.epsilonMs}ms, prefix-compared${sp.notesChecked ? ', +notes' : ', timing-only (PRNG)'}): ${spIcon} ${spWord}`)
   for (const row of sp.rows) {
     const ic = row.comparedLen === 0 ? '—' : row.matched ? '✓' : '✗'
     const detail = row.comparedLen === 0
       ? 'no comparable onsets'
-      : row.matched
-        ? `${row.comparedLen} onsets, max Δ ${row.maxDevMs}ms`
-        : `mismatch @#${row.firstMismatchIdx} (max Δ ${row.maxDevMs}ms)`
+      : !row.timingMatched
+        ? `mis-timed @#${row.firstMismatchIdx} (max Δ ${row.maxDevMs}ms)`
+        : row.noteMatched === false
+          ? `times match but NOTES differ (wrong notes)`
+          : `${row.comparedLen} onsets, max Δ ${row.maxDevMs}ms${row.noteMatched ? ', notes ✓' : ''}`
     console.log(`  ${ic} ${short(row.synthdef).padEnd(22)} ${detail}`)
   }
   if (r.verdict === 'STRUCTURE-MATCH' && sp.match === true)
     console.log(`  → EVENT-MATCH eligible: structure + onset sequences both match (engine plays right notes at right times).`)
   else if (r.verdict === 'STRUCTURE-MATCH' && sp.match === false)
-    console.log(`  → NOT event-match: layers match but onset timing diverges — real engine timing bug.`)
+    console.log(`  → NOT event-match: layers match but onset sequence (timing or notes) diverges — real engine bug.`)
 
   console.log(`\nNote: PRNG param VALUES are not diffed (SV49 non-goal). Structure + timing only.`)
   console.log(`A fixed wall-clock window counts more events on the faster-progressing engine;`)

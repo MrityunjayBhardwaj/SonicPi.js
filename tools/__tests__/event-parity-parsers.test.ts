@@ -260,3 +260,51 @@ describe('buildReport onset-sequence parity (SV61)', () => {
     expect(r.sequenceParity.match).toBeNull()
   })
 })
+
+// --- NOTE-value parity per timetag (closes the timing≠notes hole) -----------
+// onsets WITH note values for one synthdef
+function atN(synthdef: string, pairs: Array<[number, number]>): OscEvent[] {
+  return pairs.map(([t, note]) => ({ addr: '/s_new', synthdef, params: { note }, tRel: t, raw: '' }))
+}
+
+describe('buildReport onset-sequence parity — NOTE axis (SV61, deterministic)', () => {
+  it('checks notes on deterministic pieces (notesChecked=true) and matches identical note sequences', () => {
+    const seq: Array<[number, number]> = [[0, 60], [1, 62], [2, 64], [3, 65], [4, 67]]
+    const r = buildReport(atN('sonic-pi-tb303', seq), atN('sonic-pi-tb303', seq), 'play 60')
+    expect(r.sequenceParity.notesChecked).toBe(true)
+    expect(r.sequenceParity.match).toBe(true)
+    expect(r.sequenceParity.rows[0].noteMatched).toBe(true)
+  })
+
+  it('is order-invariant WITHIN a simultaneous cluster (octave stack) — the #378 fix', () => {
+    // bizet plays two beeps per tick (look, look-12). The intra-tick serialisation
+    // order is arbitrary per engine and inaudible; only the per-tick SET is musical.
+    const d = atN('sonic-pi-tb303', [[0, 60], [0, 48], [1, 62], [1, 50], [2, 64], [2, 52]])
+    const w = atN('sonic-pi-tb303', [[0, 48], [0, 60], [1, 50], [1, 62], [2, 52], [2, 64]]) // reordered within tick
+    const r = buildReport(d, w, 'play 60')
+    expect(r.sequenceParity.match).toBe(true)
+    expect(r.sequenceParity.rows[0].noteMatched).toBe(true)
+  })
+
+  // ── THE HOLE THIS CLOSES (negative control) ─────────────────────────────────
+  it('NEGATIVE CONTROL: same synthdef at the same TIMES but TRANSPOSED notes does NOT promote', () => {
+    const times: Array<[number, number]> = [[0, 60], [1, 62], [2, 64], [3, 65], [4, 67]]
+    const transposed: Array<[number, number]> = times.map(([t, n]) => [t, n + 7]) // up a fifth
+    const r = buildReport(atN('sonic-pi-tb303', times), atN('sonic-pi-tb303', transposed), 'play 60')
+    expect(r.sequenceParity.rows[0].timingMatched).toBe(true) // times identical
+    expect(r.sequenceParity.rows[0].noteMatched).toBe(false) // …but wrong notes
+    expect(r.sequenceParity.match).toBe(false) // → never EVENT-MATCH promoted
+    expect(r.sequenceParity.reasons.join(' ')).toMatch(/wrong notes|transposition/)
+  })
+
+  it('does NOT check notes on PRNG pieces (notesChecked=false) — SV49, values vary by construction', () => {
+    // Same times, different notes, but the source is PRNG → notes are not compared
+    // (the random walk legitimately differs); timing parity still holds.
+    const times: Array<[number, number]> = [[0, 60], [1, 62], [2, 64], [3, 65], [4, 67]]
+    const other: Array<[number, number]> = [[0, 72], [1, 48], [2, 55], [3, 90], [4, 53]]
+    const r = buildReport(atN('sonic-pi-tb303', times), atN('sonic-pi-tb303', other), 's = scale(:c, :major).choose')
+    expect(r.sequenceParity.notesChecked).toBe(false)
+    expect(r.sequenceParity.rows[0].noteMatched).toBeNull()
+    expect(r.sequenceParity.match).toBe(true) // timing matches; notes not a criterion for PRNG
+  })
+})
