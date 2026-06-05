@@ -1011,13 +1011,20 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   const children = node.namedChildren
 
   // Check if there are bare DSL calls at the top level
-  // Also detect .times do, .each do blocks, and bare with_fx (no live_loop inside)
+  // Also detect .times do, .each do, density blocks, and bare with_fx (no live_loop inside)
   const hasBareCode = children.some((c: any) => {
     if (c.type === 'call' || c.type === 'method_call') {
       const method = c.childForFieldName('method')?.text ?? c.namedChildren[0]?.text
       if (BARE_DSL_CALLS.has(method)) return true
       // .times do / .each do — method_call on a receiver
       if (method === 'times' || method === 'each') return true
+      // #473: a top-level `density`/`with_density` block routes to bareCode and
+      // emits bare play/sleep — it MUST trip the wrap gate so its body gets the
+      // `__b.` prefix. Without this, a program whose ONLY statement is a density
+      // block bypasses the __run_once wrapper and the inner `play` is undefined
+      // (`play is not a function`). Sibling of the times/each case above; density
+      // already lands in `bareCode` (the else branch below) once wrapping is on.
+      if (method === 'density' || method === 'with_density') return true
     }
     return false
   })
