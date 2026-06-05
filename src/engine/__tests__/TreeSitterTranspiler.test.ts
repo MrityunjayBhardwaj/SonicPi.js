@@ -2349,3 +2349,60 @@ end`)
     })
   })
 })
+
+describe('#484/SP130 — __run_once wrap gate is structural (bare DSL reaching top level), not name-enumerated', () => {
+  // A top-level block whose body emits bare play/sleep must trip the gate so the
+  // body gets `__b` in scope. Previously the gate enumerated construct names
+  // (play/sleep/…, times/each, density) → a program whose ONLY statement was a
+  // density (#473) / uncomment / if block bypassed the wrapper → `play is not a
+  // function`. The fix scans each top-level child's subtree for a bare DSL call,
+  // stopping at registering blocks (live_loop/in_thread/with_fx-w-loop/define/at/
+  // loop) and at `comment` (dead body).
+
+  const wraps = (code: string) => /__run_once/.test(autoTranspile(code))
+  const hasBarePlay = (code: string) => /(^|\n)\s*play\(/.test(autoTranspile(code))
+
+  it('uncomment block as the SOLE statement wraps (its body RUNS)', () => {
+    expect(wraps('uncomment do\n  play 60\nend')).toBe(true)
+    expect(hasBarePlay('uncomment do\n  play 60\nend')).toBe(false)
+    expect(autoTranspile('uncomment do\n  play 60\nend')).toMatch(/__b\.play\(60/)
+  })
+
+  it.each([
+    ['if', 'if true\n  play 60\nend'],
+    ['unless', 'unless false\n  play 60\nend'],
+    ['case', 'case 1\nwhen 1\n  play 60\nend'],
+    ['while', 'while false\n  play 60\nend'],
+  ])('%s control-flow block with a bare play as the sole statement wraps', (_label, code) => {
+    expect(wraps(code)).toBe(true)
+    expect(hasBarePlay(code)).toBe(false)
+  })
+
+  it('a deeply nested bare play (if inside density) still reaches the gate', () => {
+    const code = 'density 2 do\n  if true\n    play 60\n  end\nend'
+    expect(wraps(code)).toBe(true)
+    expect(hasBarePlay(code)).toBe(false)
+  })
+
+  // Registering blocks own their builder → must NOT trip the gate (no __run_once).
+  it.each([
+    ['live_loop', 'live_loop :x do\n  play 60\n  sleep 1\nend'],
+    ['in_thread', 'in_thread do\n  play 60\nend'],
+    ['define-only', 'define :foo do\n  play 60\nend'],
+    ['with_fx wrapping live_loop', 'with_fx :reverb do\n  live_loop :x do\n    play 60\n    sleep 1\n  end\nend'],
+    ['at (self-building closure)', 'at [0, 1] do\n  play 60\nend'],
+  ])('%s does NOT trip the wrap gate (carries its own builder)', (_label, code) => {
+    expect(wraps(code)).toBe(false)
+    expect(hasBarePlay(code)).toBe(false)
+  })
+
+  it('comment block (dead body) does NOT trip the gate — but uncomment does', () => {
+    expect(wraps('comment do\n  play 60\nend')).toBe(false)
+    expect(wraps('uncomment do\n  play 60\nend')).toBe(true)
+  })
+
+  it('a bare with_fx wrapping a bare play DOES wrap (its body is bareCode)', () => {
+    expect(wraps('with_fx :reverb do\n  play 60\nend')).toBe(true)
+    expect(hasBarePlay('with_fx :reverb do\n  play 60\nend')).toBe(false)
+  })
+})

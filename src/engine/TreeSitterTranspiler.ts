@@ -984,6 +984,48 @@ const BARE_DSL_CALLS = new Set([
   // virtual time.
   'recording_start', 'recording_stop', 'recording_save', 'recording_delete',
 ])
+
+// #484/SP130: block constructs that carry their OWN ProgramBuilder — their body's
+// bare DSL calls bind to that block's `__b`, NOT the top-level `__run_once` wrapper.
+// The bare-DSL scan below STOPS at these (does not descend into their bodies):
+//  - live_loop / in_thread / define / ndefine / defonce: own scheduled task / fn scope.
+//  - at: emits its own `(__b) => …` closure (self-contained).
+//  - loop: a bare `loop do` is hoisted to an auto-named live_loop (own builder),
+//    and is separately detected by `hasBareLoop` (which fires even for a DSL-free
+//    body, to avoid a bare `while(true)` at program root — SV16/#190).
+// `with_fx` is deliberately NOT here: a bare `with_fx` (one not wrapping a
+// live_loop/loop) routes its body to `bareCode`, so its bare play DOES need the
+// __run_once __b — the scan must descend into it. A `with_fx` that DOES wrap a
+// live_loop/loop is stopped deeper, when the scan reaches that inner construct.
+const REGISTERING_BLOCK_METHODS = new Set([
+  'live_loop', 'in_thread', 'define', 'ndefine', 'defonce', 'at', 'loop',
+])
+
+// #484/SP130: does this subtree contain a bare DSL call that would land in the
+// top-level `bareCode` bucket (and therefore need the `__run_once` wrapper's `__b`)?
+// Recurses generically through ALL node types — so `if`/`unless`/`case`/`while`
+// statements and `comment`/`uncomment`/`density` blocks are covered WITHOUT
+// enumerating their names — but STOPS at registering blocks (above), whose bodies
+// bind to their own builder. This replaces the old name-enumeration in
+// `hasBareCode` (`play`/`sleep`/…, `times`/`each`, `density`): the gate is now
+// STRUCTURAL ("a bare DSL call reaches top level") instead of nominal.
+function subtreeHasBareDslCall(node: any): boolean {
+  if (!node) return false
+  if (node.type === 'call' || node.type === 'method_call') {
+    const method = node.childForFieldName('method')?.text ?? node.namedChildren?.[0]?.text
+    if (method && BARE_DSL_CALLS.has(method)) return true
+    // Stop: this construct owns its builder — its body's bare calls are not
+    // top-level bareCode. Do not descend into its arguments/block.
+    if (method && REGISTERING_BLOCK_METHODS.has(method)) return false
+    // Stop: `comment` DROPS its body (transpiled to `/* commented out */`), so it
+    // emits no bare calls — descending would falsely trip the gate. NOTE: this is
+    // `comment` only; `uncomment` RUNS its body and must still be descended into.
+    if (method === 'comment') return false
+  }
+  const kids: any[] = node.namedChildren ?? []
+  return kids.some(subtreeHasBareDslCall)
+}
+
 // Top-level `loop do … end` is NOT bare code — it is its own scheduler-owned
 // live_loop (auto-named below). Wrapping it in `__run_once` would trap the
 // run_once iteration inside `while(true)` and the loop would never yield
@@ -1010,24 +1052,16 @@ function extractLiteralSynthArg(callNode: any): string | null {
 function transpileProgram(node: any, ctx: TranspileContext): string {
   const children = node.namedChildren
 
-  // Check if there are bare DSL calls at the top level
-  // Also detect .times do, .each do, density blocks, and bare with_fx (no live_loop inside)
-  const hasBareCode = children.some((c: any) => {
-    if (c.type === 'call' || c.type === 'method_call') {
-      const method = c.childForFieldName('method')?.text ?? c.namedChildren[0]?.text
-      if (BARE_DSL_CALLS.has(method)) return true
-      // .times do / .each do — method_call on a receiver
-      if (method === 'times' || method === 'each') return true
-      // #473: a top-level `density`/`with_density` block routes to bareCode and
-      // emits bare play/sleep — it MUST trip the wrap gate so its body gets the
-      // `__b.` prefix. Without this, a program whose ONLY statement is a density
-      // block bypasses the __run_once wrapper and the inner `play` is undefined
-      // (`play is not a function`). Sibling of the times/each case above; density
-      // already lands in `bareCode` (the else branch below) once wrapping is on.
-      if (method === 'density' || method === 'with_density') return true
-    }
-    return false
-  })
+  // #473/#484/SP130: STRUCTURAL detection — a top-level child needs the
+  // `__run_once` wrapper iff its subtree contains a bare DSL call that would land
+  // in `bareCode` (recursing into structural blocks like density / .times / .each /
+  // `if`/`unless`/`case`/`while` / uncomment, but STOPPING at registering blocks
+  // that carry their own `__b`). This replaces the old name-enumeration (`play`/
+  // `sleep`/…, `times`/`each`, `density`), which kept missing constructs whose body
+  // emitted bare `play`/`sleep` — e.g. a program whose ONLY statement was a
+  // `density` (#473) / `uncomment` / `if` block crashed with `play is not a
+  // function` because the gate stayed false and the body had no `__b` in scope.
+  const hasBareCode = children.some(subtreeHasBareDslCall)
   // Also check for bare with_fx that doesn't contain live_loops
   const hasBareFx = children.some((c: any) => {
     if (c.type !== 'call' && c.type !== 'method_call') return false
