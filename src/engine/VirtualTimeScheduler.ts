@@ -213,6 +213,17 @@ export class VirtualTimeScheduler {
     bpm?: number
     synth?: string
     outBus?: number
+    // #475: anchor the new task's start virtual time to a specific cursor
+    // instead of the wall-clock getAudioTime(). A thread spawned mid-run by a
+    // nested `in_thread`/`at` (AudioInterpreter `case 'thread'`) must fork at
+    // the SPAWNING thread's current virtualTime — desktop SP semantics: a child
+    // thread inherits the spawner's clock (in_thread doesn't advance the
+    // spawner). Without this, the child starts at getAudioTime(), which lags
+    // the spawner's logical cursor by ~schedAheadTime → fires ~0.3s early.
+    // Launch-time registrations (top-level live_loop/in_thread via
+    // SonicPiEngine) omit it and keep getAudioTime() — their offset is handled
+    // by the #448 start-gate cue, not here.
+    virtualTime?: number
   }): void {
     const existing = this.tasks.get(name)
     if (existing && existing.running) {
@@ -223,7 +234,7 @@ export class VirtualTimeScheduler {
 
     const task: TaskState = {
       id: name,
-      virtualTime: this.getAudioTime(),
+      virtualTime: options?.virtualTime ?? this.getAudioTime(),
       bpm: options?.bpm ?? 60,
       density: 1,
       currentSynth: options?.synth ?? 'beep',

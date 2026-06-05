@@ -504,6 +504,15 @@ export async function runProgram(
           bpm: task.bpm,
           synth: task.currentSynth,
           outBus: task.outBus,
+          // #475: fork at the SPAWNING thread's current cursor, not the
+          // scheduler's wall-clock getAudioTime(). A nested `in_thread`/`at`
+          // reaches this step while `task` is at its logical virtualTime (e.g.
+          // a with_fx block cursor at vt 2.0); getAudioTime() lags that by
+          // ~schedAheadTime, so without this anchor the child fires ~0.3s early
+          // (SP118-family residual — #448's start-gate only covered TOP-LEVEL
+          // in_thread; the nested path forks here). Desktop SP: a child thread
+          // inherits the spawner's clock.
+          virtualTime: task.virtualTime,
         })
         break
       }
