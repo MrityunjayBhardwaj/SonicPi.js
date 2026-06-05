@@ -177,6 +177,20 @@ export class SonicPiEngine {
    * code wrapped in `in_thread` by capture tools).
    */
   private currentBuildBuilder: ProgramBuilder | null = null
+  /**
+   * #480: the absolute scheduler virtualTime of the task whose builderFn is
+   * currently running. Companion to `currentBuildBuilder` — a nested `live_loop`
+   * that registers from inside this builderFn anchors its OWN start vtime to this
+   * value instead of `getAudioTime()`. Launch-registered loops (the anchor,
+   * top-level live_loops) get `getAudioTime()` at launch; a nested live_loop's
+   * registration is DEFERRED to its parent's first-tick body execution, so
+   * `getAudioTime()` there is ~1-3 ticks (≈27ms) later → a fixed onset skew vs
+   * desktop, which forks the child at the parent thread's current vtime. Same
+   * wall-clock-seed root as #475 (`case 'thread'`), here for the global-live_loop
+   * registration path. The #460 `__itg` start-gate (preceding-sleep case)
+   * overrides this via `cueVirtualTime`, so the two compose.
+   */
+  private currentBuildTaskVt: number | null = null
   /** Persistent top-level FX state — keyed by scope ID, shared across loops in same with_fx. */
   private persistentFx = new Map<string, { buses: number[]; groups: number[]; nodeIds: number[]; outBus: number }>()
   /** Maps loop name → FX scope ID (loops under same with_fx share a scope). */
@@ -853,6 +867,11 @@ export class SonicPiEngine {
           // ANOTHER live_loop's body still see the correct (innermost) parent.
           const prevBuildBuilder = this.currentBuildBuilder
           this.currentBuildBuilder = builder
+          // #480: stash this task's absolute virtualTime so a nested live_loop
+          // registering inside builderFn forks at this thread's cursor, not the
+          // deferred-registration getAudioTime(). Push/restore like the builder.
+          const prevBuildTaskVt = this.currentBuildTaskVt
+          this.currentBuildTaskVt = task.virtualTime
           // SP95(d) #393: wire the scheduler so `b.sync()` awaits the cue
           // payload mid-build (build-time resolution → post-sync get/e[:val]
           // read fresh state). Only this audio build path wires it; the
@@ -888,6 +907,7 @@ export class SonicPiEngine {
             await builderFn(builder)
           } finally {
             this.currentBuildBuilder = prevBuildBuilder
+            this.currentBuildTaskVt = prevBuildTaskVt
             this.buildNestingDepth--
             scopeHandle?.exitScope()
           }
@@ -931,6 +951,14 @@ export class SonicPiEngine {
           ? parentBuilder.currentBpm : defaultBpm
         const inheritedSynth = (this.buildNestingDepth > 0 && parentBuilder)
           ? parentBuilder.currentDefaultSynth : defaultSynth
+        // #480: a nested registration (depth>0) forks at the parent thread's
+        // current vtime, not the deferred-registration getAudioTime(). Top-level
+        // (depth 0) registrations keep getAudioTime() (undefined anchor) — their
+        // launch-time seed is correct, and the #448 start-gate handles any
+        // source-position offset. A preceding-sleep nested loop is additionally
+        // #460-`__itg`-gated, which overrides this anchor via cueVirtualTime.
+        const nestedAnchorVt = (this.buildNestingDepth > 0 && this.currentBuildTaskVt !== null)
+          ? this.currentBuildTaskVt : undefined
 
         if (this.buildNestingDepth > 0 && isReEvaluate) {
           // Nested hot-swap (issue #199): this call is firing from inside an
@@ -952,7 +980,7 @@ export class SonicPiEngine {
             existing.outBus = loopBus
           } else {
             // New inner declared during hot-swap (e.g. user added it on Run).
-            scheduler.registerLoop(name, asyncFn, { bpm: inheritedBpm, synth: inheritedSynth })
+            scheduler.registerLoop(name, asyncFn, { bpm: inheritedBpm, synth: inheritedSynth, virtualTime: nestedAnchorVt })
             const task = scheduler.getTask(name)
             if (task) task.outBus = loopBus
           }
@@ -960,7 +988,11 @@ export class SonicPiEngine {
           pendingLoops.set(name, asyncFn)
           pendingDefaults.set(name, { bpm: defaultBpm, synth: defaultSynth })
         } else {
-          scheduler.registerLoop(name, asyncFn)
+          // #480: nestedAnchorVt is undefined at depth 0 → registerLoop keeps
+          // getAudioTime() (top-level launch seed, unchanged). At depth>0 it
+          // forks the child at the parent thread's vtime (fixes the ~27ms
+          // deferred-registration skew vs desktop).
+          scheduler.registerLoop(name, asyncFn, { virtualTime: nestedAnchorVt })
           const task = scheduler.getTask(name)
           if (task) {
             // SP72: nested initial registration inherits parent builder's bpm
