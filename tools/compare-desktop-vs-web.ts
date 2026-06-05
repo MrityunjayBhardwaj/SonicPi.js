@@ -33,6 +33,9 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'fs'
 import { resolve, dirname, basename } from 'path'
 import { fileURLToPath } from 'url'
 import { spawn } from 'child_process'
+import { captureDesktopEvents } from './lib/desktop-events.ts'
+import { captureWebEvents } from './lib/web-events.ts'
+import { buildReport, type ParityReport } from './event-parity.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CAPTURES_DIR = resolve(__dirname, '../.captures')
@@ -186,6 +189,22 @@ interface ComparisonResult {
   // yield a Tier-1 verdict (MATCH / PRNG-VARIANT) instead of an automatic
   // INCONCL. Populated only in the asymmetric case; null otherwise.
   reconciledPitch?: { desktop: PitchTrack | null; web: PitchTrack | null } | null
+  // Event-parity tiebreaker (SV61, #377/#378). Acquired ONLY on a DETERMINISTIC
+  // piece whose audio Tier-1 verdict is DIVERGE/INCONCL. The authoritative
+  // cross-engine correctness check is per-synthdef /s_new onset-sequence parity
+  // (the engine's deterministic output terminates at the OSC emission,
+  // server.rb:345,672 — audio is the lossy stage-7+ layer where the pitch
+  // tracker false-DIVERGEs). null when not applicable / not acquired / failed.
+  eventParity?: EventParityInfo | null
+}
+
+interface EventParityInfo {
+  report: ParityReport
+  // The EVENT-MATCH promotion decision is computed in writeComparisonReport (it
+  // needs the audio Tier-1 verdict, which lives there). This carries the raw
+  // event-parity result + a one-line note for the headline + diagnostics.
+  note: string
+  error?: string
 }
 
 function writeComparisonReport(r: ComparisonResult): void {
@@ -500,6 +519,30 @@ function writeComparisonReport(r: ComparisonResult): void {
     t1.push(`- ⚠ pitch-track unavailable (desktop=${dp ? 'ok' : 'none'}, web=${wp ? 'ok' : 'none'}) — Tier 1 verdict cannot be formed`)
   }
 
+  // ── Event-parity tiebreaker (SV61, #377/#378) ──────────────────────────────
+  // "Did the engine play the right notes?" is decided at desktop's /s_new
+  // EMISSION boundary (stages 1-6: eval→play→normalize→BPM-scale→trigger→bundle,
+  // server.rb:345,672,723) — NOT in the audio. So when the audio comparator
+  // flags a Tier-1 pitch DIVERGE/INCONCL on a DETERMINISTIC piece, the
+  // authoritative check is per-synthdef /s_new onset-sequence parity. A
+  // STRUCTURE-MATCH + onset-sequence MATCH means the engine emitted the right
+  // notes at the right times; the audio divergence is stage-7 scsynth-WASM-vs-
+  // native rendering (#417/#268/#273) or pitch-tracker noise (#453/#379/#378) —
+  // neither an engine bug. This supersedes the per-sub-class heuristics (#444
+  // PRNG-only, #428 projections, #377 multiLoopPhaseDrift) with ONE
+  // method-independent boundary check.
+  //
+  // It only PROMOTES a ✗/⚠ audio verdict (never demotes a ✓/≈), and only when
+  // BOTH structure AND onset sequences match — so a real mis-timed/dropped layer
+  // (sequenceParity.match=false / STRUCTURE-DIVERGE) is NEVER promoted (SV50).
+  let eventMatchPromoted = false
+  const ep = r.eventParity
+  const audioWasNonMatch = pitchVerdict.startsWith('✗') || pitchVerdict.startsWith('⚠')
+  if (ep && !ep.error && audioWasNonMatch && !invalid && !webEngineError && webNoWavClass === null) {
+    const epr = ep.report
+    if (epr.verdict === 'STRUCTURE-MATCH' && epr.sequenceParity.match === true) eventMatchPromoted = true
+  }
+
   // Headline verdict
   const softNote = aggregatesUnreliable ? '  · ⚠ Tier-0 SOFT: level/count aggregates unreliable (Tier 1 pitch unaffected)' : ''
   lines.push('## Verdict')
@@ -525,6 +568,13 @@ function writeComparisonReport(r: ComparisonResult): void {
     lines.push(`### ✅ Tier 1 ${pitchVerdict}  (the musical-correctness verdict)${softNote}`)
   } else if (pitchVerdict.startsWith('≈')) {
     lines.push(`### ≈ Tier 1 PRNG-VARIANT — musically equivalent (same composition, different random walk). ${pitchVerdict.slice(2)}${softNote}`)
+  } else if (eventMatchPromoted) {
+    // SV61 (#377/#378): the audio Tier-1 said DIVERGE/INCONCL, but per-synthdef
+    // /s_new onset-sequence parity STRUCTURE-MATCHES — the engine emitted the
+    // right notes at the right times. The audio divergence is stage-7 rendering
+    // or tracker noise, not an engine bug.
+    const audioSaid = pitchVerdict.replace(/^[✗⚠]\s*/, '')
+    lines.push(`### ✅ EVENT-MATCH — per-synthdef \`/s_new\` onset-sequence parity STRUCTURE-MATCHES desktop (SV61): the engine emitted the right notes at the right times. The audio Tier-1 said _"${audioSaid}"_, but that measures stage-7+ scsynth DSP (WASM-vs-native rendering / pitch-tracker noise), not the engine. Authoritative cross-engine check passes.${softNote}`)
   } else if (pitchVerdict.startsWith('✗')) {
     lines.push(`### ❌ Tier 1 ${pitchVerdict}  (musical correctness FAILED — Tier 2/3 cannot override this)`)
   } else {
@@ -544,6 +594,37 @@ function writeComparisonReport(r: ComparisonResult): void {
   lines.push('### Tier 1 — Musical correctness (THE verdict — energy/MFCC may never override)')
   for (const v of t1) lines.push(v)
   lines.push('')
+
+  // Event-parity tiebreaker section (SV61) — only present when acquired.
+  if (ep) {
+    lines.push('### Tier 1.0 — Event parity (`/s_new` onset-sequence vs desktop — SV61 authoritative tiebreaker)')
+    if (ep.error) {
+      lines.push(`- ⚠ event-parity acquisition failed: ${ep.error}`)
+    } else {
+      const epr = ep.report
+      const sp = epr.sequenceParity
+      const spWord = sp.match === null ? 'N/A (no judgeable shared layer)' : sp.match ? '✓ MATCH' : '✗ DIVERGE'
+      lines.push(`- **Structure (synthdef multiset):** ${epr.verdict} — desktop ${epr.desktopTotal} voice \`/s_new\`, web ${epr.webTotal}`)
+      lines.push(`- **Onset sequence (ε=${sp.epsilonMs}ms, prefix-compared):** ${spWord}`)
+      for (const row of sp.rows) {
+        const ic = row.comparedLen === 0 ? '◦' : row.matched ? '✓' : '✗'
+        const detail = row.comparedLen === 0
+          ? 'no comparable onsets'
+          : row.matched
+            ? `${row.comparedLen} onsets within ε (max Δ ${row.maxDevMs}ms)`
+            : `mismatch @onset #${row.firstMismatchIdx} (max Δ ${row.maxDevMs}ms)`
+        lines.push(`  - ${ic} \`${row.synthdef.replace(/^sonic-pi-/, '')}\` — ${detail}`)
+      }
+      if (eventMatchPromoted) {
+        lines.push(`- ✅ **EVENT-MATCH:** structure + onset sequences both match — the engine's deterministic output (stages 1-6, terminating at the OSC emission) is correct. The audio Tier-1 divergence is stage-7+ scsynth rendering or tracker noise, not an engine bug (SV61; #453/#379/#378 class).`)
+      } else if (epr.verdict === 'STRUCTURE-MATCH' && sp.match === false) {
+        lines.push(`- ❌ **NOT event-match:** layers match but onset timing diverges — a REAL engine timing bug (the audio DIVERGE stands).`)
+      } else if (epr.verdict !== 'STRUCTURE-MATCH') {
+        lines.push(`- ❌ **NOT event-match:** ${epr.verdict} — ${epr.reasons[0] ?? 'structure differs'} (real engine divergence; the audio verdict stands).`)
+      }
+    }
+    lines.push('')
+  }
   lines.push('### Tier 3 — Level / gain (reported; NOT a musical-correctness blocker — known ~0.5× web gain-staging)')
   if (aggregatesUnreliable) lines.push('> ⚠ Tier-0 SOFT failed — these ratios span misaligned windows; treat as indicative only.')
   if (dStats && wStats) {
@@ -815,6 +896,54 @@ async function main(): Promise<void> {
     reconciledPitch = { desktop: dRec, web: wRec }
   }
 
+  // ── Event-parity tiebreaker acquisition (SV61, #377/#378) ──────────────────
+  // On a DETERMINISTIC piece whose audio Tier-1 verdict is NOT a clean match,
+  // acquire the authoritative per-synthdef /s_new onset-sequence parity (a
+  // separate, lightweight event capture — no audio). Gated tightly so the cost
+  // (one extra desktop+web run) is paid ONLY on the rows that need a tiebreaker:
+  //   • deterministic only — PRNG rows are an SV49 non-goal (excluded), and a
+  //     different random walk legitimately changes the event stream too.
+  //   • both WAVs present — an INVALID/missing-WAV row is not a DIVERGE/INCONCL
+  //     the event layer can rescue.
+  //   • audio NOT a clean match — a clean PITCH-MATCH needs no tiebreaker.
+  // Over-triggering is SAFE: the tiebreaker only PROMOTES a STRUCTURE+sequence
+  // match; if it doesn't match, the original audio verdict stands (SV50).
+  const PRNG_RE = /(\b(?:rrand|rrand_i|rand|rand_i|one_in|dice|use_random_seed)\b|\.(?:choose|shuffle|pick)\b|\b(?:choose|shuffle|pick)\s*\()/
+  const isDeterministic = !PRNG_RE.test(args.code)
+  const audioNotCleanMatch = (): boolean => {
+    if (!desktopPitch || !webPitch) return false // verdict is INVALID, not DIVERGE/INCONCL
+    if (desktopPitch.inconclusive || webPitch.inconclusive) return true
+    if (desktopPitch.method !== webPitch.method) return true // method asymmetry → INCONCL (#376)
+    const pc = desktopPitch.compare === 'pitch_class' || webPitch.compare === 'pitch_class'
+    const dSeq = (pc ? desktopPitch.pc : desktopPitch.midi).filter(x => x !== null) as number[]
+    const wSeq = (pc ? webPitch.pc : webPitch.midi).filter(x => x !== null) as number[]
+    const n = Math.min(dSeq.length, wSeq.length)
+    if (n === 0) return false
+    for (let i = 0; i < n; i++) if (dSeq[i] !== wSeq[i]) return true // prefix divergence
+    return false
+  }
+  let eventParity: EventParityInfo | null = null
+  if (isDeterministic && desktopStats && webStats && audioNotCleanMatch()) {
+    console.log(`  Audio Tier-1 non-match on a deterministic source — acquiring /s_new event-parity tiebreaker (SV61)...`)
+    try {
+      const [dEv, wEv] = await Promise.all([
+        captureDesktopEvents(args.code, { duration: args.duration }),
+        captureWebEvents(args.code, { duration: args.duration }),
+      ])
+      const report = buildReport(dEv.events, wEv.events, args.code)
+      const sp = report.sequenceParity
+      eventParity = {
+        report,
+        note: `${report.verdict} · onset-seq ${sp.match === null ? 'n/a' : sp.match ? 'match' : 'diverge'} · d${report.desktopTotal}/w${report.webTotal}`,
+      }
+      console.log(`  event-parity: ${eventParity.note}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      eventParity = { report: null as unknown as ParityReport, note: 'acquisition failed', error: msg }
+      console.log(`  ⚠ event-parity acquisition failed: ${msg}`)
+    }
+  }
+
   const result: ComparisonResult = {
     timestamp: new Date().toISOString(),
     code: args.code,
@@ -826,6 +955,7 @@ async function main(): Promise<void> {
     spectrogramError,
     reportPath,
     reconciledPitch,
+    eventParity,
   }
   writeComparisonReport(result)
 
