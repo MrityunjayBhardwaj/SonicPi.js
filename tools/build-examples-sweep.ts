@@ -75,7 +75,7 @@ interface SweepRow {
   category: string
   example: string
   path: string
-  verdict: 'match' | 'diverge' | 'prng-variant' | 'invalid' | 'inconcl' | 'error' | 'engine-silent' | 'tool-fail'
+  verdict: 'match' | 'event-match' | 'diverge' | 'prng-variant' | 'invalid' | 'inconcl' | 'error' | 'engine-silent' | 'tool-fail'
   verdictRaw: string
   tempoDesktop: number | null
   tempoWeb: number | null
@@ -157,9 +157,16 @@ function parseReport(reportPath: string): Partial<SweepRow> {
   const verdictLine = md.match(/^###\s+(.+)$/m)
   if (verdictLine) {
     row.verdictRaw = verdictLine[1].trim()
+    // SV61 (#377/#378): EVENT-MATCH MUST be matched FIRST. Its headline QUOTES
+    // the superseded audio verdict (e.g. `…said "PITCH DIVERGENCE at note 2…"`),
+    // so the PITCH DIVERGENCE / inconclusive branches below would mis-route it if
+    // they ran first. EVENT-MATCH = the /s_new onset-sequence parity tiebreaker
+    // promoted a false audio DIVERGE/INCONCL to a pass (engine plays the right
+    // notes at the right times; residual is stage-7 rendering / tracker noise).
+    if (/^✅ EVENT-MATCH\b/.test(row.verdictRaw)) row.verdict = 'event-match'
     // #371: match ERROR before INVALID — the ERROR header contains "❌" too,
     // and the ERROR root cause must NOT be re-bucketed as a generic INVALID.
-    if (/^❌ ERROR\b/.test(row.verdictRaw) || /\bERROR\b — Web engine threw/.test(row.verdictRaw)) row.verdict = 'error'
+    else if (/^❌ ERROR\b/.test(row.verdictRaw) || /\bERROR\b — Web engine threw/.test(row.verdictRaw)) row.verdict = 'error'
     else if (/PRNG-VARIANT/.test(row.verdictRaw)) row.verdict = 'prng-variant'
     else if (/PITCH-MATCH/.test(row.verdictRaw)) row.verdict = 'match'
     else if (/PITCH DIVERGENCE/.test(row.verdictRaw)) {
@@ -386,6 +393,7 @@ for (const examplePath of EXAMPLES) {
 // Counts and the headline sweep metadata
 const counts = {
   match: rows.filter(r => r.verdict === 'match').length,
+  eventMatch: rows.filter(r => r.verdict === 'event-match').length, // SV61 tiebreaker pass
   diverge: rows.filter(r => r.verdict === 'diverge').length,
   prngVariant: rows.filter(r => r.verdict === 'prng-variant').length,
   invalid: rows.filter(r => r.verdict === 'invalid').length,
@@ -429,7 +437,7 @@ if (existsSync(VIEWER_HTML)) {
 }
 
 console.log(`✓ Built ${rows.length} entries → ${OUT_JSON}`)
-console.log(`  match=${counts.match} · prng-variant=${counts.prngVariant} · diverge=${counts.diverge} · invalid=${counts.invalid} · inconcl=${counts.inconcl} · error=${counts.error}`)
+console.log(`  match=${counts.match} · event-match=${counts.eventMatch} · prng-variant=${counts.prngVariant} · diverge=${counts.diverge} · invalid=${counts.invalid} · inconcl=${counts.inconcl} · error=${counts.error}`)
 console.log(`  PRNG-driven=${counts.prng} · PRNG-free real divergences=${counts.prngFreeReal} (the actionable backlog) · heavy-tool-fail=${counts.heavy}`)
 const missingDesk = rows.filter(r => !r.artifacts.desktopWav).length
 const missingWeb = rows.filter(r => !r.artifacts.webWav).length

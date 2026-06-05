@@ -46,7 +46,7 @@ const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g,
 // ── Manifest shapes (only the fields we read) ──────────────────────────────
 interface PitchManifest {
   generatedAt?: string
-  counts: { match: number; diverge: number; prngVariant: number; invalid: number; inconcl: number; error: number; engineSilent?: number; toolFail?: number; prng: number; prngFreeReal: number; heavy: number; totalRows: number }
+  counts: { match: number; eventMatch?: number; diverge: number; prngVariant: number; invalid: number; inconcl: number; error: number; engineSilent?: number; toolFail?: number; prng: number; prngFreeReal: number; heavy: number; totalRows: number }
 }
 interface ConsistencyManifest {
   generatedAt?: string
@@ -95,6 +95,7 @@ function pitchCard(title: string, count: number, viewer: string, m: PitchManifes
   // PRNG-free actionable divergences are the launch-relevant number.
   const chips = [
     chip('MATCH', c.match, 'pass'),
+    chip('EVENT-MATCH', c.eventMatch ?? 0, 'pass'), // SV61 tiebreaker pass (#377/#378)
     chip('PRNG-variant', c.prngVariant, 'accent'),
     chip('DIVERGE', c.diverge, 'fail'),
     chip('INCONCL', c.inconcl, 'incon'),

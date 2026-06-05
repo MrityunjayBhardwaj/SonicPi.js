@@ -49,7 +49,12 @@ const sweep = JSON.parse(readFileSync(SWEEP, 'utf8'))
 const rows: SweepRow[] = sweep.entries
 const manifest: Manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'))
 
-const isPass = (v: string) => v === 'match' || v === 'prng-variant' || v === 'prngVariant'
+// SV61 (#377/#378): EVENT-MATCH is a PASS. On a deterministic piece, per-synthdef
+// /s_new onset-sequence parity is the AUTHORITATIVE cross-engine correctness check
+// (the engine's output terminates at the OSC emission, server.rb:345,672; audio is
+// the lossy stage-7+ layer). A STRUCTURE + onset-sequence match means the engine
+// played the right notes at the right times — a real DIVERGE is never promoted.
+const isPass = (v: string) => v === 'match' || v === 'event-match' || v === 'prng-variant' || v === 'prngVariant'
 
 // Denominator: PRNG-free, non-heavy official rows.
 const denom = rows.filter(r => !r.prng && !r.heavy)

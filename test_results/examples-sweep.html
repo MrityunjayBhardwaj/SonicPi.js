@@ -104,6 +104,7 @@
       }
       .chip[data-on="1"] { color: var(--text); background: var(--bg-row-active); border-color: var(--accent-2); }
       .chip[data-on="1"][data-verdict="match"] { color: var(--pass); border-color: var(--pass); }
+      .chip[data-on="1"][data-verdict="event-match"] { color: var(--pass); border-color: var(--pass); }
       .chip[data-on="1"][data-verdict="diverge"] { color: var(--fail); border-color: var(--fail); }
       .chip[data-on="1"][data-verdict="prng-variant"] { color: var(--accent-2); border-color: var(--accent-2); }
       .chip[data-on="1"][data-verdict="invalid"] { color: var(--flag); border-color: var(--flag); }
@@ -132,6 +133,7 @@
 
       .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 600; letter-spacing: 0.05em; font-family: var(--mono); }
       .badge.match { color: var(--pass); background: rgba(158,206,106,0.12); }
+      .badge.event-match { color: var(--pass); background: rgba(158,206,106,0.12); }
       .badge.diverge { color: var(--fail); background: rgba(247,118,142,0.12); }
       .badge.prng-variant { color: var(--accent-2); background: rgba(122,162,247,0.12); }
       .badge.invalid { color: var(--flag); background: rgba(224,175,104,0.12); }
@@ -230,6 +232,7 @@
       .stat .n { font-size: 24px; font-weight: 600; font-family: var(--mono); }
       .stat .label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
       .stat.match .n { color: var(--pass); }
+      .stat.event-match .n { color: var(--pass); }
       .stat.diverge .n { color: var(--fail); }
       .stat.prng-variant .n { color: var(--accent-2); }
       .stat.invalid .n { color: var(--flag); }
@@ -269,6 +272,7 @@
             <input id="search" type="search" placeholder="search examples (e.g. ambient, acid)" autocomplete="off" spellcheck="false" />
             <div class="filters" id="filters">
               <button class="chip" data-verdict="match" data-on="1">✅ MATCH</button>
+              <button class="chip" data-verdict="event-match" data-on="1">✅ EVENT-MATCH</button>
               <button class="chip" data-verdict="prng-variant" data-on="1">≈ PRNG-VARIANT</button>
               <button class="chip" data-verdict="diverge" data-on="1">❌ DIVERGE</button>
               <button class="chip" data-verdict="invalid" data-on="1">⚠ INVALID</button>
@@ -478,6 +482,7 @@
             </div>
             <div class="stat-grid">
               <div class="stat match" data-only="match"><div class="n">${c.match}</div><div class="label">✅ match</div></div>
+              <div class="stat event-match" data-only="event-match"><div class="n">${c.eventMatch ?? 0}</div><div class="label">✅ event-match</div></div>
               <div class="stat prng-variant" data-only="prng-variant"><div class="n">${c.prngVariant ?? 0}</div><div class="label">≈ prng-variant</div></div>
               <div class="stat diverge" data-only="diverge"><div class="n">${c.diverge}</div><div class="label">❌ diverge</div></div>
               <div class="stat invalid" data-only="invalid"><div class="n">${c.invalid}</div><div class="label">⚠ invalid</div></div>
