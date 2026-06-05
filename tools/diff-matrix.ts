@@ -35,7 +35,7 @@ import { captureDesktopEvents, type OscEvent } from './lib/desktop-events.ts'
 import { captureWebEvents } from './lib/web-events.ts'
 import { buildReport } from './event-parity.ts'
 import { enumerateCells, summarizeCells, type Cell } from './lib/matrix-cells.ts'
-import { isSequenceMistimed } from './lib/matrix-status.ts'
+import { isSequenceMistimed, hasCoarseOnsetGap } from './lib/matrix-status.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -84,13 +84,15 @@ function saveResults(rf: ResultsFile): void {
   writeFileSync(RESULTS, JSON.stringify(rf, null, 2))
 }
 
-// Coarse console/resume status for the driver. The VIEWER (build-diff-matrix.ts
-// → diff-matrix.json) is the gate-authoritative classifier and additionally
-// applies the coarse ≥ONSET_GAP fallback + web/desktop-empty split; the driver
-// shares the SV61 onset-sequence signal (#477) so a mis-timed cell — e.g. the
-// #475 nested-in_thread 0.3s drift — shows '✗ timing' live instead of a false ✓.
+// Console/resume status for the driver. The VIEWER (build-diff-matrix.ts →
+// diff-matrix.json) is the gate-authoritative classifier (it additionally splits
+// web/desktop-empty); the driver shares the SAME 'timing' predicates (#477) so a
+// mis-timed cell — e.g. the #475 nested-in_thread 0.3s drift — shows '✗ timing'
+// live instead of a false ✓, agreeing with the viewer's grid.
 function statusFromReport(report: ReturnType<typeof buildReport>): Status {
-  if (report.verdict === 'STRUCTURE-MATCH') return isSequenceMistimed(report) ? 'timing' : 'match'
+  if (report.verdict === 'STRUCTURE-MATCH') {
+    return isSequenceMistimed(report) || hasCoarseOnsetGap(report) ? 'timing' : 'match'
+  }
   if (report.verdict === 'STRUCTURE-DIVERGE') return 'diverge'
   return 'empty' // DESKTOP-EMPTY / WEB-EMPTY
 }
