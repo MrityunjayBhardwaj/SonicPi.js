@@ -35,13 +35,14 @@ import { captureDesktopEvents, type OscEvent } from './lib/desktop-events.ts'
 import { captureWebEvents } from './lib/web-events.ts'
 import { buildReport } from './event-parity.ts'
 import { enumerateCells, summarizeCells, type Cell } from './lib/matrix-cells.ts'
+import { isSequenceMistimed } from './lib/matrix-status.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
 const TR = resolve(ROOT, 'test_results')
 const RESULTS = resolve(TR, 'diff-matrix-results.json')
 
-type Status = 'match' | 'diverge' | 'empty' | 'skipped' | 'error'
+type Status = 'match' | 'diverge' | 'timing' | 'empty' | 'skipped' | 'error'
 
 interface CellResult {
   id: string
@@ -83,9 +84,14 @@ function saveResults(rf: ResultsFile): void {
   writeFileSync(RESULTS, JSON.stringify(rf, null, 2))
 }
 
-function statusFromVerdict(v: string): Status {
-  if (v === 'STRUCTURE-MATCH') return 'match'
-  if (v === 'STRUCTURE-DIVERGE') return 'diverge'
+// Coarse console/resume status for the driver. The VIEWER (build-diff-matrix.ts
+// → diff-matrix.json) is the gate-authoritative classifier and additionally
+// applies the coarse ≥ONSET_GAP fallback + web/desktop-empty split; the driver
+// shares the SV61 onset-sequence signal (#477) so a mis-timed cell — e.g. the
+// #475 nested-in_thread 0.3s drift — shows '✗ timing' live instead of a false ✓.
+function statusFromReport(report: ReturnType<typeof buildReport>): Status {
+  if (report.verdict === 'STRUCTURE-MATCH') return isSequenceMistimed(report) ? 'timing' : 'match'
+  if (report.verdict === 'STRUCTURE-DIVERGE') return 'diverge'
   return 'empty' // DESKTOP-EMPTY / WEB-EMPTY
 }
 
@@ -121,7 +127,7 @@ async function runCell(cell: Cell, duration: number): Promise<CellResult> {
     const report = buildReport(dc.events, wc.events, cell.code)
     return {
       ...base,
-      status: statusFromVerdict(report.verdict),
+      status: statusFromReport(report),
       verdict: report.verdict,
       report,
       desktop: dc.events,
@@ -205,8 +211,11 @@ async function main(): Promise<void> {
     const detail =
       res.status === 'error'
         ? `ERROR ${res.error}`
-        : `${res.verdict} (d${res.report?.desktopTotal ?? '?'}/w${res.report?.webTotal ?? '?'})`
-    console.log(`${res.status === 'match' ? '✓' : res.status === 'diverge' ? '✗' : '⚠'} ${detail}`)
+        : res.status === 'timing'
+          ? `${res.verdict} + onset-seq DIVERGE (d${res.report?.desktopTotal ?? '?'}/w${res.report?.webTotal ?? '?'})`
+          : `${res.verdict} (d${res.report?.desktopTotal ?? '?'}/w${res.report?.webTotal ?? '?'})`
+    const icon = res.status === 'match' ? '✓' : res.status === 'diverge' || res.status === 'timing' ? '✗' : '⚠'
+    console.log(`${icon} ${detail}`)
   }
 
   // Final tally over ALL active cells present in results.
@@ -216,15 +225,22 @@ async function main(): Promise<void> {
   console.log(`MATRIX TALLY — ${active.length} active cells captured`)
   console.log(`  ✓ match    ${tally('match')}`)
   console.log(`  ✗ diverge  ${tally('diverge')}`)
+  console.log(`  ✗ timing   ${tally('timing')}`)
   console.log(`  ⚠ empty    ${tally('empty')}`)
   console.log(`  ! error    ${tally('error')}`)
-  const diverged = active.filter((c) => c.status === 'diverge')
+  // Both diverge (dropped layer) and timing (mis-timed layer) are real engine
+  // bugs per the desktop oracle — list both as offenders.
+  const diverged = active.filter((c) => c.status === 'diverge' || c.status === 'timing')
   if (diverged.length) {
     console.log(`\nDIVERGENT cells (real bugs per the desktop oracle):`)
     for (const c of diverged) {
       const seam = c.seam ? '[seam] ' : ''
-      console.log(`  ✗ ${seam}${c.id}`)
-      for (const r of c.report?.reasons ?? []) console.log(`      • ${r}`)
+      const kind = c.status === 'timing' ? ' (onset-seq)' : ''
+      console.log(`  ✗ ${seam}${c.id}${kind}`)
+      // For a timing cell the multiset reasons are benign (counts match); the
+      // onset-sequence reasons carry the divergence.
+      const reasons = c.status === 'timing' ? c.report?.sequenceParity?.reasons ?? [] : c.report?.reasons ?? []
+      for (const r of reasons) console.log(`      • ${r}`)
     }
   }
   console.log(`${'='.repeat(64)}`)

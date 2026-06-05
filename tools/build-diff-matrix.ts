@@ -18,6 +18,7 @@ import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { navBlock } from './lib/dashboard-nav.ts'
 import { CONSTRUCTS, MODIFIERS, POSITIONS, enumerateCells } from './lib/matrix-cells.ts'
+import { deriveStatus, type Derived } from './lib/matrix-status.ts'
 
 // seam is a CLASSIFICATION (recomputed from the live enumeration), not measured
 // data — so the §36-corrected isSeam applies without re-capturing.
@@ -41,6 +42,8 @@ interface ParityReport {
   verdict: string; isPrng: boolean; reasons: string[]; rows: SynthRow[]; fxRows: SynthRow[]
   desktopTotal: number; webTotal: number; totalRatio: number | null
   orderMatch: boolean; desktopOrder: string[]; webOrder: string[]
+  // SV61 onset-sequence parity (#476) — drives the 'timing' status (#477).
+  sequenceParity?: { match: boolean | null } | null
 }
 interface OscEvent { addr: string; synthdef?: string; params: Record<string, number | string>; tRel: number | null }
 interface CellResult {
@@ -61,39 +64,11 @@ const cells = Object.values(rf.cells)
 const byId = new Map(cells.map((c) => [c.id, c]))
 
 // ── status helpers ───────────────────────────────────────────────────────────
-// A "timing" divergence is the §36-Finding-1 blind spot: the event-parity VERDICT
-// keys on a DROPPED layer (count) and only treats a first-onset gap as a
-// supplementary reason — it never flips MATCH→DIVERGE on timing alone. The matrix
-// exists to MEASURE that class, so we recompute a richer status from the stored
-// report: a count-MATCH with a significant shared layer whose first onsets differ
-// by ≥ ONSET_GAP is a TIMING divergence (a real bug the count-verdict hid).
-const ONSET_GAP = 3 // seconds — matches event-parity ONSET_GAP_SEC
-
-type Derived = 'match' | 'diverge' | 'timing' | 'web_empty' | 'desktop_empty' | 'error' | 'skipped' | 'pending'
-
-function deriveStatus(c: CellResult): Derived {
-  if (c.skip) return 'skipped'
-  if (c.status === 'error') return 'error'
-  if (!c.report) return 'pending'
-  if (c.report.verdict === 'STRUCTURE-DIVERGE') return 'diverge'
-  // WEB-EMPTY = web rendered nothing → an engine bug (a divergence). DESKTOP-EMPTY
-  // = desktop produced nothing → a harness/desktop-staleness issue, NOT an engine
-  // bug (flag for re-run, never counts against the engine).
-  if (c.report.verdict === 'WEB-EMPTY') return 'web_empty'
-  if (c.report.verdict === 'DESKTOP-EMPTY') return 'desktop_empty'
-  // STRUCTURE-MATCH → look for a hidden onset/timing gap.
-  const gapped = c.report.rows.some(
-    (r) =>
-      r.significant &&
-      r.status !== 'only-desktop' &&
-      r.status !== 'only-web' &&
-      Number.isFinite(r.desktopOnset as number) &&
-      Number.isFinite(r.webOnset as number) &&
-      Math.abs((r.desktopOnset as number) - (r.webOnset as number)) >= ONSET_GAP,
-  )
-  return gapped ? 'timing' : 'match'
-}
-
+// Classification (incl. the 'timing' blind-spot recompute) lives in the shared
+// tools/lib/matrix-status.ts so the driver and this viewer agree structurally
+// (#477). 'timing' now fires on the SV61 onset-sequence signal (ε=15ms) as well
+// as the coarse ≥ONSET_GAP first-onset gap — catching sub-second mis-timing like
+// the #475 nested-in_thread fork (0.3s) that the coarse gap alone missed.
 const derivedById = new Map(cells.map((c) => [c.id, deriveStatus(c)]))
 
 // 'timing' and 'diverge' are both real bugs per the desktop oracle (the seam read
