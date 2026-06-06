@@ -1271,7 +1271,12 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
         // advancing bare code (blockGate set in classification) so it forks at
         // the source-position vtime, not vt 0 — same start-gate as live_loop.
         const gate = blockGate.get(c)
-        const optsArg = gate ? `{__startGate: ${JSON.stringify(gate)}}, ` : ''
+        // GAP A: a hoisted bare `loop do` runs INLINE in the main thread (desktop
+        // never forks it) → `__inline: true` ⇒ idPath `[0]`. Merge with the
+        // optional start-gate cue.
+        const optsArg = gate
+          ? `{__startGate: ${JSON.stringify(gate)}, __inline: true}, `
+          : `{__inline: true}, `
         return `${eagerPrefix}live_loop("${name}", ${optsArg}async (__b) => {\n${bodyStr}\n${ctx.indent}})`
       }
     }
@@ -1286,7 +1291,10 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   const parts: string[] = []
   if (topJS.length > 0) parts.push(topJS.join('\n'))
   if (bareJS.length > 0) {
-    parts.push(`live_loop("__run_once", async (__b) => {\n${bareJS.join('\n')}\n  __b.stop()\n})`)
+    // GAP A: `__inline: true` → idPath `[0]`. __run_once IS the main/run thread
+    // (desktop runs bare top-level code inline in the spider thread; we wrap it
+    // in a one-shot live_loop). It does not fork, so it carries no spawn index.
+    parts.push(`live_loop("__run_once", {__inline: true}, async (__b) => {\n${bareJS.join('\n')}\n  __b.stop()\n})`)
   }
   if (blockJS.length > 0) parts.push(blockJS.join('\n'))
 
@@ -2118,7 +2126,13 @@ function transpileWithFxLoopBody(
       // with_fx's block ctx) onto the hoisted live_loop so it forks at the
       // source-position vtime, not vt 0.
       const gate = bodyCtx.startGate
-      const optsArg = gate ? `{__startGate: ${JSON.stringify(gate)}}, ` : ''
+      // GAP A: a `with_fx`-wrapped bare `loop` hoists to `__fxloop_N` but still
+      // runs INLINE in the main thread (the FX wraps it; it never forks) →
+      // `__inline: true` ⇒ idPath `[0]`. (An explicit `live_loop` inside a
+      // with_fx takes transpileLiveLoop's fork path, NOT this one.)
+      const optsArg = gate
+        ? `{__startGate: ${JSON.stringify(gate)}, __inline: true}, `
+        : `{__inline: true}, `
       parts.push(`${ctx.indent}  live_loop("__fxloop_${idx}", ${optsArg}async (__b) => {\n${innerStr}\n${ctx.indent}  })`)
       sawLoop = true
     } else if (sawLoop) {

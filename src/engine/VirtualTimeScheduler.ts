@@ -100,6 +100,27 @@ export interface TaskState {
   asyncFn: () => Promise<void>
   /** Whether this task is actively running */
   running: boolean
+  /**
+   * GAP A — hierarchical thread-id path (desktop's `ThreadId`, `thread_id.rb`).
+   * The main/run thread is `[0]`; a forked child appends its parent's spawn index
+   * (`parentPath ++ [spawnIdx]`, mirroring `runtime.rb:1071-1074`
+   * `parent_path << n_threads_spawned`). Used at equal virtual time as the
+   * cross-thread tiebreak — `(t, idPath)` lexicographic, longer-prefix-greater
+   * (`cueevent.rb:64-74` → `thread_id.rb:41-55`). Inline top-level constructs
+   * (`__run_once` / bare `loop` / `with_fx`-wrapped bare loop) stay `[0]`; they
+   * run in the main thread, they don't fork (PARITY-GAPS GAP A §2 table).
+   *
+   * A1 plumbs this additively (assigned everywhere, read NOWHERE) — the
+   * comparator flip is A2. Default `[0]` keeps any un-tagged path inert.
+   */
+  idPath: number[]
+  /**
+   * GAP A — count of child threads this task has forked. A child's spawn index
+   * is this counter's value at fork time; it post-increments (desktop
+   * `n_threads_spawned`, `runtime.rb:1072`). Per-task so each parent numbers its
+   * own children independently.
+   */
+  childSpawnCount: number
 }
 
 export interface SchedulerEvent {
@@ -224,6 +245,11 @@ export class VirtualTimeScheduler {
     // SonicPiEngine) omit it and keep getAudioTime() — their offset is handled
     // by the #448 start-gate cue, not here.
     virtualTime?: number
+    // GAP A: the hierarchical thread-id path for this task (see TaskState.idPath).
+    // The caller (spawn site) computes it: `[0]` for the main/inline thread,
+    // `[0, n]` for a top-level fork, `parentPath ++ [spawnIdx]` for a nested fork.
+    // Omitted → `[0]` (treat as main/inline — inert under A2's compare).
+    idPath?: number[]
   }): void {
     const existing = this.tasks.get(name)
     if (existing && existing.running) {
@@ -241,6 +267,9 @@ export class VirtualTimeScheduler {
       outBus: options?.outBus ?? 0,
       asyncFn,
       running: true,
+      // GAP A: caller-supplied thread-id path; `[0]` (main/inline) when omitted.
+      idPath: options?.idPath ?? [0],
+      childSpawnCount: 0,
     }
     this.tasks.set(name, task)
 

@@ -513,6 +513,15 @@ export async function runProgram(
           // in_thread; the nested path forks here). Desktop SP: a child thread
           // inherits the spawner's clock.
           virtualTime: task.virtualTime,
+          // GAP A: a nested `in_thread`/`at` forks from the spawning task —
+          // child idPath = `spawner.idPath ++ [spawner.childSpawnCount++]`
+          // (desktop runtime.rb:1071-1074). The spawner is `task` (ctx.taskId),
+          // already fetched above; its own idPath/counter were set at its
+          // registration, so the tree composes to any depth without plumbing
+          // through ctx. Counter post-increments, so each iteration's fork (a
+          // live_loop body re-runs `in_thread` per cycle) gets a fresh distinct
+          // index — matching desktop's per-spawn `n_threads_spawned`.
+          idPath: [...task.idPath, task.childSpawnCount++],
         })
         break
       }

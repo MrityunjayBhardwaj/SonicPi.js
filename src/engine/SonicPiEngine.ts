@@ -1,4 +1,4 @@
-import { VirtualTimeScheduler, DEFAULT_SCHED_AHEAD_TIME } from './VirtualTimeScheduler'
+import { VirtualTimeScheduler, DEFAULT_SCHED_AHEAD_TIME, type TaskState } from './VirtualTimeScheduler'
 import { ProgramBuilder } from './ProgramBuilder'
 import { TimeState } from './TimeState'
 import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioInterpreter'
@@ -88,6 +88,17 @@ export class SonicPiEngine {
    * the user-visible top-level `current_time` reader subtracts this origin.
    */
   private _spiderTimeOrigin = 0
+  /**
+   * GAP A — the main/run thread's child-spawn counter. Every TOP-LEVEL forking
+   * construct (a `live_loop`, top-level `in_thread`/`at`) takes the current value
+   * as its spawn index then post-increments it, so its idPath is `[0, n]` in
+   * registration order (= source order; `__run_once`/inline loops don't fork, so
+   * they don't consume an index). This is "main"'s `n_threads_spawned`
+   * (`runtime.rb:1072`); nested forks use their own parent task's
+   * `childSpawnCount` instead. Reset to 0 on every fresh Run (beside
+   * `_spiderTimeOrigin`) so idPaths reproduce deterministically across Runs.
+   */
+  private _topSpawnCount = 0
   private runtimeErrorHandler: ((err: Error) => void) | null = null
   private printHandler: ((msg: string) => void) | null = null
   private cueHandler: ((name: string, time: number) => void) | null = null
@@ -191,6 +202,15 @@ export class SonicPiEngine {
    * overrides this via `cueVirtualTime`, so the two compose.
    */
   private currentBuildTaskVt: number | null = null
+  /**
+   * GAP A — companion to `currentBuildTaskVt`: the TaskState whose builderFn is
+   * currently running. A nested `live_loop` that registers from inside this
+   * builderFn derives its idPath from this parent (`parent.idPath ++
+   * [parent.childSpawnCount++]`), mirroring desktop's fork-from-the-spawning-
+   * thread (`runtime.rb:1071-1074`). Pushed/restored around `builderFn` like
+   * `currentBuildBuilder`.
+   */
+  private currentBuildTask: TaskState | null = null
   /** Persistent top-level FX state — keyed by scope ID, shared across loops in same with_fx. */
   private persistentFx = new Map<string, { buses: number[]; groups: number[]; nodeIds: number[]; outBus: number }>()
   /** Maps loop name → FX scope ID (loops under same with_fx share a scope). */
@@ -448,6 +468,9 @@ export class SonicPiEngine {
         // Verified: V1=1.616s on first Run, V2=8.677s on Run after Stop+5s
         // wait, Δ=+7.061s (`tools/test_current_time_reset.ts`).
         this._spiderTimeOrigin = audioCtx?.currentTime ?? 0
+        // GAP A: reset main's child-spawn counter so top-level idPaths reproduce
+        // deterministically each fresh Run (same source order ⇒ same `[0, n]`).
+        this._topSpawnCount = 0
         this.scheduler = new VirtualTimeScheduler({
           getAudioTime: () => audioCtx?.currentTime ?? 0,
           schedAheadTime: this.schedAheadTime,
@@ -691,12 +714,19 @@ export class SonicPiEngine {
         // vtime instead of vt 0. Engine-injected (transpiler), distinct from the
         // user-facing `sync:`; awaited BEFORE `sync:` (desktop forks, then syncs).
         let startGate: string | null = null
+        // GAP A: transpiler-injected `__inline: true` marks a construct that runs
+        // INLINE in the main thread (`__run_once`, a hoisted bare `loop`, a
+        // `with_fx`-wrapped bare loop) → idPath `[0]`. Absent ⇒ a top-level fork
+        // (`live_loop`/`in_thread`/`at`) → idPath `[0, n]`. Explicit marker, not
+        // name-sniffing (mirrors `__startGate`; PARITY-GAPS GAP A §2 decision).
+        let isInline = false
         if (typeof builderFnOrOpts === 'function') {
           builderFn = builderFnOrOpts
         } else {
           syncTarget = (builderFnOrOpts.sync as string) ?? null
           delayBeats = typeof builderFnOrOpts.delay === 'number' ? builderFnOrOpts.delay : 0
           startGate = (builderFnOrOpts.__startGate as string) ?? null
+          isInline = builderFnOrOpts.__inline === true
           builderFn = maybeFn!
         }
 
@@ -872,6 +902,10 @@ export class SonicPiEngine {
           // deferred-registration getAudioTime(). Push/restore like the builder.
           const prevBuildTaskVt = this.currentBuildTaskVt
           this.currentBuildTaskVt = task.virtualTime
+          // GAP A: expose this task as the parent for any nested live_loop that
+          // registers inside builderFn — it forks `parent.idPath ++ [spawnIdx]`.
+          const prevBuildTask = this.currentBuildTask
+          this.currentBuildTask = task
           // SP95(d) #393: wire the scheduler so `b.sync()` awaits the cue
           // payload mid-build (build-time resolution → post-sync get/e[:val]
           // read fresh state). Only this audio build path wires it; the
@@ -908,6 +942,7 @@ export class SonicPiEngine {
           } finally {
             this.currentBuildBuilder = prevBuildBuilder
             this.currentBuildTaskVt = prevBuildTaskVt
+            this.currentBuildTask = prevBuildTask
             this.buildNestingDepth--
             scopeHandle?.exitScope()
           }
@@ -959,6 +994,25 @@ export class SonicPiEngine {
         // #460-`__itg`-gated, which overrides this anchor via cueVirtualTime.
         const nestedAnchorVt = (this.buildNestingDepth > 0 && this.currentBuildTaskVt !== null)
           ? this.currentBuildTaskVt : undefined
+        // GAP A: compute this task's thread-id path at registration. Lazy (called
+        // only on the branches that actually registerLoop) so the re-eval
+        // pendingLoops branch never consumes a spawn index — otherwise a hot-swap
+        // Run would drift `_topSpawnCount` even though existing tasks keep their
+        // idPath via SV6. Each call post-increments its counter, so this MUST run
+        // exactly once per fresh registration.
+        //  - nested (depth>0, inside a parent builderFn) → fork from that parent:
+        //    `parent.idPath ++ [parent.childSpawnCount++]` (desktop fork-from-
+        //    spawner, runtime.rb:1071-1074).
+        //  - top-level inline (`__inline`: __run_once / bare loop / fx-wrapped
+        //    bare loop) → `[0]` (runs in main, doesn't fork).
+        //  - top-level fork (live_loop / in_thread / at) → `[0, n]` from main's
+        //    `_topSpawnCount` in registration (= source) order.
+        const consumeIdPath = (): number[] =>
+          (this.buildNestingDepth > 0 && this.currentBuildTask)
+            ? [...this.currentBuildTask.idPath, this.currentBuildTask.childSpawnCount++]
+            : isInline
+              ? [0]
+              : [0, this._topSpawnCount++]
 
         if (this.buildNestingDepth > 0 && isReEvaluate) {
           // Nested hot-swap (issue #199): this call is firing from inside an
@@ -980,7 +1034,7 @@ export class SonicPiEngine {
             existing.outBus = loopBus
           } else {
             // New inner declared during hot-swap (e.g. user added it on Run).
-            scheduler.registerLoop(name, asyncFn, { bpm: inheritedBpm, synth: inheritedSynth, virtualTime: nestedAnchorVt })
+            scheduler.registerLoop(name, asyncFn, { bpm: inheritedBpm, synth: inheritedSynth, virtualTime: nestedAnchorVt, idPath: consumeIdPath() })
             const task = scheduler.getTask(name)
             if (task) task.outBus = loopBus
           }
@@ -992,7 +1046,7 @@ export class SonicPiEngine {
           // getAudioTime() (top-level launch seed, unchanged). At depth>0 it
           // forks the child at the parent thread's vtime (fixes the ~27ms
           // deferred-registration skew vs desktop).
-          scheduler.registerLoop(name, asyncFn, { virtualTime: nestedAnchorVt })
+          scheduler.registerLoop(name, asyncFn, { virtualTime: nestedAnchorVt, idPath: consumeIdPath() })
           const task = scheduler.getTask(name)
           if (task) {
             // SP72: nested initial registration inherits parent builder's bpm
