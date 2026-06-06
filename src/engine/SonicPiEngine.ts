@@ -720,6 +720,21 @@ export class SonicPiEngine {
         // (`live_loop`/`in_thread`/`at`) → idPath `[0, n]`. Explicit marker, not
         // name-sniffing (mirrors `__startGate`; PARITY-GAPS GAP A §2 decision).
         let isInline = false
+        // SP131/#481: a one-shot top-level in_thread (set by topLevelInThread).
+        // Such a thread builds its ENTIRE body in ONE pass, so the build-time
+        // `sync` await (which suspends the build until the cue) would batch every
+        // sync in the body and interpret all the deferred plays at the FINAL vt —
+        // `in_thread { 8.times { sync :tick; play } }` piles all 8 plays at vt 4
+        // instead of spreading them 0.5..4.0. A live_loop avoids this because it
+        // re-builds per iteration (one sync per build). For a one-shot thread we
+        // must take the RUNTIME-STEP sync path instead: skip setSyncContext below
+        // so `b.sync` pushes a `{tag:'sync'}` step that AudioInterpreter `case
+        // 'sync'` blocks on at INTERPRET time — interleaving each sync with the
+        // play after it, exactly like desktop's blocking thread (and like a NESTED
+        // in_thread, which already runs this path via forkBuilder). The trade-off
+        // (no build-time post-sync state read for `e = sync :x; play e[:val]`) is
+        // the same SV47 boundary nested in_thread already lives with.
+        let oneShotThread = false
         if (typeof builderFnOrOpts === 'function') {
           builderFn = builderFnOrOpts
         } else {
@@ -727,6 +742,7 @@ export class SonicPiEngine {
           delayBeats = typeof builderFnOrOpts.delay === 'number' ? builderFnOrOpts.delay : 0
           startGate = (builderFnOrOpts.__startGate as string) ?? null
           isInline = builderFnOrOpts.__inline === true
+          oneShotThread = builderFnOrOpts.__oneShotThread === true
           builderFn = maybeFn!
         }
 
@@ -911,7 +927,12 @@ export class SonicPiEngine {
           // read fresh state). Only this audio build path wires it; the
           // QueryInterpreter/capture build (S2-gated) never does, so an S3
           // sync loop cannot register a phantom waiter through capture.
-          builder.setSyncContext(scheduler, name)
+          // SP131/#481: skip for a one-shot in_thread so its `sync` takes the
+          // runtime-step path (interpret-time blocking) instead of build-time
+          // await — see the oneShotThread comment above. live_loops (and the
+          // single-iteration build per loop tick) keep the build-time await that
+          // #350/#400 depend on.
+          if (!oneShotThread) builder.setSyncContext(scheduler, name)
           // SP95(d) #350 slice 2: wire the Time State so `b.set` writes eagerly
           // at current_time() and `b.get` reads at the reader's current_time().
           builder.setTimeStateContext(this.globalStore, task.idPath)
@@ -1181,8 +1202,13 @@ export class SonicPiEngine {
           fn(b)
           b.stop()
         }
-        if (startGate) fxAwareWrappedLiveLoop(name, { __startGate: startGate }, wrapped)
-        else fxAwareWrappedLiveLoop(name, wrapped)
+        // SP131/#481: mark this as a one-shot thread so wrappedLiveLoop takes the
+        // runtime-step `sync` path (interpret-time blocking) — a single build pass
+        // of the whole body can't batch build-time sync awaits and pile every play
+        // at the final vt; the runtime path interleaves each sync with its play.
+        const itOpts: Record<string, unknown> = { __oneShotThread: true }
+        if (startGate) itOpts.__startGate = startGate
+        fxAwareWrappedLiveLoop(name, itOpts, wrapped)
       }
 
       // Top-level at: create one-shot loops with time offsets
