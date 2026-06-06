@@ -164,4 +164,40 @@ describe('EventHistory.getNextDelivered — `sync` wake-phase (cueDelivers)', ()
     h.insert('ready', 2.5, [0], 'r')
     expect(h.getNextDelivered('ready', 0, [0])!.value).toBe('r')
   })
+
+  // #489: the `after` (last-consumed cue) guard — desktop core.rb:4551-4571
+  // `:sonic_pi_local_last_sync` + event_history.rb:139 strict `ce > matcher.ce`.
+  describe('getNextDelivered `after` — re-sync excludes the consumed cue (#489)', () => {
+    it('an inline/main waiter [0] does NOT re-catch the same equal-vt ancestor cue', () => {
+      // The bare_loop runaway: driver [0,0] cues :tick at vt0; an inline `loop`
+      // waiter [0] catches it (equal-vt ancestor). On the NEXT sync — still vt0,
+      // still [0] — without the guard it re-delivers the SAME (0,[0,0]) cue
+      // forever (1024-voice runaway). With `after` = the consumed cue, it does not.
+      const h = new EventHistory()
+      h.insert('tick', 0, [0, 0], 'tick0')
+      const first = h.getNextDelivered('tick', 0, [0])
+      expect(first!.value).toBe('tick0') // first sync catches the equal-vt cue
+      // re-sync at the same point, excluding the just-consumed (0,[0,0]):
+      expect(h.getNextDelivered('tick', 0, [0], { t: 0, idPath: [0, 0] })).toBeNull()
+    })
+
+    it('after a catch, the NEXT strictly-greater cue is delivered (spread, not pile)', () => {
+      const h = new EventHistory()
+      h.insert('tick', 0, [0, 0], 'tick0')
+      h.insert('tick', 0.5, [0, 0], 'tick1')
+      // consumed (0,[0,0]) → next delivered is (0.5,[0,0]), not a re-catch of vt0.
+      expect(h.getNextDelivered('tick', 0, [0], { t: 0, idPath: [0, 0] })!.value).toBe('tick1')
+      // and after THAT, exclude (0.5,[0,0]) → nothing left → block for the next.
+      expect(h.getNextDelivered('tick', 0.5, [0], { t: 0.5, idPath: [0, 0] })).toBeNull()
+    })
+
+    it('a FIRST sync (after undefined) keeps the pure cueDelivers wake-phase (#400 intact)', () => {
+      const h = new EventHistory()
+      h.insert('tick', 0, [0, 0], 'tick0')
+      // no `after` ⇒ inline [0] still catches the equal-vt ancestor cue,
+      // sibling [0,1] still misses it — unchanged from the #400/#481 contract.
+      expect(h.getNextDelivered('tick', 0, [0])!.value).toBe('tick0')
+      expect(h.getNextDelivered('tick', 0, [0, 1])).toBeNull()
+    })
+  })
 })
