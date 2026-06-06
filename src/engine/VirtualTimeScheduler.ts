@@ -131,7 +131,10 @@ export interface TaskState {
    * waiter (`[0]`) that catches an equal-vt ancestor cue (`[0,0]`) re-catches the
    * SAME cue every iteration (its vt never advances) → runaway. The FIRST sync
    * has no `lastSyncedCue`, so the `(t,idPath)` wake-phase (`cueDelivers`, #400)
-   * is unaffected. Cleared on Run (clear()) and at fresh registration.
+   * is unaffected. Lifecycle: a fresh Run registers a NEW task (undefined →
+   * first-sync semantics); a hot-swap KEEPS the task (and this field), matching
+   * desktop's persistent thread-local — virtual time continues monotonically so
+   * the next cue is still strictly-greater. No explicit reset needed.
    */
   lastSyncedCue?: { t: number; idPath: number[] }
 }
