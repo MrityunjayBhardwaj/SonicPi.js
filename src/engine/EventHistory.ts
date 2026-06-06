@@ -200,12 +200,21 @@ export class EventHistory {
    * and returning the first deliverable yields the smallest deliverable cue —
    * which at equal vt is the ancestor cue (with_fx race fix), and otherwise the
    * earliest strictly-later cue.
+   *
+   * `after` (#489) excludes any cue at or before a previously-consumed cue's
+   * `(t, idPath)` — desktop's re-sync matcher (`core.rb:4551-4571`,
+   * `:sonic_pi_local_last_sync`): the next delivered cue must be STRICTLY greater
+   * (`compareEvent > 0`) than the last one this waiter consumed, so an inline/main
+   * waiter that caught an equal-vt ancestor cue doesn't re-catch it forever. Only
+   * set on a RE-sync; a first sync passes `undefined` so the wake-phase is the
+   * pure `(t,idPath)` `cueDelivers` rule (#400 unaffected).
    */
-  getNextDelivered(key: string | symbol, t: number, idPath: number[]): CueEvent | null {
+  getNextDelivered(key: string | symbol, t: number, idPath: number[], after?: { t: number; idPath: number[] }): CueEvent | null {
     const events = this.store.get(key)
     if (!events || events.length === 0) return null
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i]
+      if (after && compareEvent(e, after) <= 0) continue
       if (cueDelivers(e.t, e.idPath, t, idPath)) return e
     }
     return null

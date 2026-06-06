@@ -1,5 +1,5 @@
 import { MinHeap } from './MinHeap'
-import { EventHistory, cueDelivers } from './EventHistory'
+import { EventHistory, cueDelivers, compareEvent } from './EventHistory'
 
 // ---------------------------------------------------------------------------
 // Cue glob matching (#150) — supports * and ? wildcards in sync targets
@@ -122,6 +122,18 @@ export interface TaskState {
    * own children independently.
    */
   childSpawnCount: number
+  /**
+   * GAP A / #489 — the cue this task most recently consumed via `sync` (its
+   * `(t, idPath)`). Desktop tracks this as `:sonic_pi_local_last_sync`
+   * (`core.rb:4551-4571`): a RE-sync's matcher is the LAST CONSUMED cue, and
+   * `event_history.rb:139` `ce > matcher.ce` is STRICT, so the same cue is never
+   * re-matched — only the next strictly-greater cue is. Without it an inline/main
+   * waiter (`[0]`) that catches an equal-vt ancestor cue (`[0,0]`) re-catches the
+   * SAME cue every iteration (its vt never advances) → runaway. The FIRST sync
+   * has no `lastSyncedCue`, so the `(t,idPath)` wake-phase (`cueDelivers`, #400)
+   * is unaffected. Cleared on Run (clear()) and at fresh registration.
+   */
+  lastSyncedCue?: { t: number; idPath: number[] }
 }
 
 export interface SchedulerEvent {
@@ -493,11 +505,18 @@ export class VirtualTimeScheduler {
       // ([0]) catches a driver cue ([0,0]) at the same vt (#481 with_fx/bare_loop).
       const kept: typeof waiters = []
       for (const waiter of waiters) {
-        if (cueDelivers(cueVirtualTime, cueIdPath, waiter.waiterVt, waiter.waiterIdPath)) {
-          const waiterTask = this.tasks.get(waiter.taskId)
+        const waiterTask = this.tasks.get(waiter.taskId)
+        // #489: don't re-deliver a cue at or before the one this waiter already
+        // consumed (desktop's last-sync matcher). The wake-phase (cueDelivers) is
+        // unchanged; this only excludes an already-seen cue on a re-sync.
+        const after = waiterTask?.lastSyncedCue
+        const delivers = cueDelivers(cueVirtualTime, cueIdPath, waiter.waiterVt, waiter.waiterIdPath)
+          && (!after || compareEvent({ t: cueVirtualTime, idPath: cueIdPath }, after) > 0)
+        if (delivers) {
           if (waiterTask) {
-            // Inherit cue's virtual time (SV5)
+            // Inherit cue's virtual time (SV5) and advance the re-sync matcher.
             waiterTask.virtualTime = cueVirtualTime
+            waiterTask.lastSyncedCue = { t: cueVirtualTime, idPath: cueIdPath }
           }
           waiter.resolve({ args, bpm: cueBpm })
         } else {
@@ -534,10 +553,17 @@ export class VirtualTimeScheduler {
     // History-first only for exact cue names; glob patterns (`sync "/midi:*"`,
     // #150) register and wait for a future matching cue (their cross-key history
     // scan is GAP M / not needed by #350/#481 which use exact names).
+    // #489: a re-sync excludes the cue this task last consumed (and anything
+    // before it) so an inline/main waiter doesn't re-catch the same equal-vt
+    // ancestor cue forever. First sync ⇒ `after` undefined ⇒ pure cueDelivers.
+    const after = task?.lastSyncedCue
     if (!name.includes('*') && !name.includes('?')) {
-      const hit = this.cueHistory.getNextDelivered(name, waiterVt, waiterIdPath)
+      const hit = this.cueHistory.getNextDelivered(name, waiterVt, waiterIdPath, after)
       if (hit) {
-        if (task) task.virtualTime = hit.t // inherit the cue's vt (SV5)
+        if (task) {
+          task.virtualTime = hit.t // inherit the cue's vt (SV5)
+          task.lastSyncedCue = { t: hit.t, idPath: hit.idPath } // #489: advance matcher
+        }
         const payload = hit.value as { args: unknown[]; bpm: number }
         return Promise.resolve({ args: payload.args, bpm: payload.bpm })
       }
