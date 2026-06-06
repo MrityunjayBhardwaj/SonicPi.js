@@ -1,31 +1,26 @@
 /**
- * Web self-consistency under loop-declaration reorder (SV47 / #350 slice 2).
+ * Loop-declaration-order parity with desktop (SV47 Slice 3 / #400 — GAP A2).
  *
- * WHAT THIS PROVES: our engine reads the SAME cross-loop set/get value
- * regardless of the source order in which the two live_loops are declared —
- * {55, 59} for both director-first and player-first. The #350 value-phase fix
- * (eager `b.set` at build + inclusive "last ≤ reader-vt" time-index) does NOT
- * leak a source-order / insertionOrder dependence (our scheduler ties same-vt
- * wakes on insertionOrder, VirtualTimeScheduler.ts:194-196 — NOT a desktop-style
- * total order; the `(time, taskId)` docstring at :152 is aspirational).
+ * WHAT THIS PROVES: our engine now matches desktop's declaration-order
+ * DEPENDENCE via the `(t, idPath)` total order (EventHistory, a port of
+ * `event_history.rb`). director-first → {55, 59}; player-first → {52, 57}.
  *
- * WHAT THIS DOES *NOT* CLAIM: desktop parity on the reversed order. Grounded +
- * reproduced ×3 (2026-05-28), DESKTOP IS declaration-order-DEPENDENT here:
- * director-first → {55,59}, player-first → {52,57}. Root: desktop `sync` =
- * get_next "next cue strictly AFTER my time t" (event_history.rb:215,542) over
- * the full CueEvent total order (t, p, i, d…); at equal vt the (p=priority,
- * i=thread_id, d=thread_delta) thread-identity fields (core.rb:114-119, assigned
- * at thread spawn = declaration order) break the tie, so player-first catches the
- * t=0 cue (index 0 = 52). We do NOT implement that (t,p,i,d) total order — our
- * strict-vt-after wake-phase (Slice 1) collapses the equal-vt case, making web
- * self-consistent instead. Matching desktop's order-dependence is a separate
- * wake-phase/event-ordering parity feature (Slice 3, deferred — see GitHub issue
- * + memory sp95_350_reversed_order_total_order_gap). r1 NORMAL order is the #350
- * gate and is a stable Tier-1 PITCH-MATCH ×3.
+ * Root (grounded ×3, 2026-05-28; ported 2026-06-06): desktop `get`/`sync` resolve
+ * over the full CueEvent total order; at equal virtual time the thread-id path
+ * `i` (assigned at thread spawn = declaration order, runtime.rb:1071-1074) breaks
+ * the tie. The first-declared live_loop gets idPath [0,0], the second [0,1].
+ *  - director-first: director [0,0] writes :root; player [0,1] reads at the
+ *    equal cue vt. (vt,[0,0]) ≤ (vt,[0,1]) → the write IS visible → {55,59}.
+ *  - player-first: player [0,0] reads; director [0,1] writes. (vt,[0,1]) is
+ *    GREATER than (vt,[0,0]) → NOT yet visible → player reads the PRIOR ring
+ *    value → {52,57}.
  *
- * Companion Level-3 reproducers: /tmp/s8/r1_director_section.rb (normal — desktop
- * PITCH-MATCH) + /tmp/s8/r1_director_section_reversed.rb (reversed — desktop
- * diverges to {52,57} BY DESIGN, web stays {55,59}).
+ * This REPLACES the prior "web self-consistency" assertion (both {55,59}), which
+ * was the documented Slice-3 divergence — now closed. No ε is relaxed; the flip
+ * is structural (the idPath axis), falsifiable, and ε-insensitive (SP126/SV61).
+ *
+ * Companion Level-3 reproducers: /tmp/s8/r1_director_section.rb (normal {55,59})
+ * + /tmp/s8/r1_director_section_reversed.rb (reversed {52,57} = desktop).
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
@@ -85,22 +80,21 @@ async function playerPrefix(src: string, n = 2): Promise<number[]> {
   return notes.slice(0, n)
 }
 
-describe('Web self-consistency under loop reorder (SV47 / #350)', () => {
+describe('Loop reorder parity with desktop (SV47 Slice 3 / #400)', () => {
   beforeEach(() => {
     delete (globalThis as Record<string, unknown>).SuperSonic
   })
 
-  it('director-first and player-first produce the IDENTICAL web prefix {55, 59}', async () => {
+  it('declaration order determines the read: director-first {55,59}, player-first {52,57}', async () => {
     const a = await playerPrefix(DIRECTOR_FIRST, 2)
     const b = await playerPrefix(PLAYER_FIRST, 2)
-    // director-first matches desktop's {55, 59} — the #350 value-phase fix
-    // (Level-3 PITCH-MATCH ×3). player-first is web's self-consistent result;
-    // desktop diverges to {52,57} here BY DESIGN (the (t,p,i,d) total-order gap,
-    // Slice 3) — NOT asserted against desktop. See file header.
+    // director-first: director [0,0] write ≤ player [0,1] read → visible → {55,59}.
     expect(a).toEqual([55, 59])
-    expect(b).toEqual([55, 59])
-    // The two web prefixes match each other — web does NOT leak a source-order /
-    // insertionOrder dependence. If it did, they would diverge here.
-    expect(b).toEqual(a)
+    // player-first: director [0,1] write > player [0,0] read → not yet visible →
+    // reads prior ring value → {52,57}. Desktop parity (was a divergence).
+    expect(b).toEqual([52, 57])
+    // The two prefixes now DIVERGE by source order — the (t, idPath) total order
+    // reproduces desktop's declaration-order dependence (no longer self-consistent).
+    expect(b).not.toEqual(a)
   })
 })

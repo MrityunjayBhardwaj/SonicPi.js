@@ -68,7 +68,16 @@ export class ProgramBuilder {
   // cross-loop post-sync `get` a write-before-read happens-before by causation,
   // not by scheduler wake order. Null on builders that were never wired (the
   // deferred {tag:'set'} step still records the write at interpret time).
-  private _timeState: { set(key: string | symbol, value: unknown, t: number): void; get(key: string | symbol, t: number): unknown } | null = null
+  private _timeState: {
+    set(key: string | symbol, value: unknown, t: number, writerIdPath?: number[]): void
+    get(key: string | symbol, t: number, readerIdPath?: number[]): unknown
+  } | null = null
+  // GAP A2 (#400): the owning task's thread-id path (desktop ThreadId). `b.set`
+  // tags its write with it and `b.get` reads at it, so a same-virtual-time
+  // cross-loop set/get resolves by the (t, idPath) total order (writer idPath ≤
+  // reader idPath is visible). Defaults to `[0]` (main) until the engine wires
+  // the real path via setTimeStateContext.
+  private _ownerIdPath: number[] = [0]
 
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
     this.rng = new SeededRandom(seed)
@@ -279,9 +288,14 @@ export class ProgramBuilder {
    * during the engine's build setup; null on builders that never wire it.
    */
   setTimeStateContext(
-    timeState: { set(key: string | symbol, value: unknown, t: number): void; get(key: string | symbol, t: number): unknown },
+    timeState: {
+      set(key: string | symbol, value: unknown, t: number, writerIdPath?: number[]): void
+      get(key: string | symbol, t: number, readerIdPath?: number[]): unknown
+    },
+    ownerIdPath: number[] = [0],
   ): void {
     this._timeState = timeState
+    this._ownerIdPath = ownerIdPath
   }
 
   /** Read the build-phase beat counter (engine persists this across iterations). */
@@ -859,7 +873,9 @@ export class ProgramBuilder {
    * write per (key, build-vt) — no phantom shadow entry at a different vt.
    */
   set(key: string | symbol, value: unknown): this {
-    this._timeState?.set(key, value, this.current_time())
+    // GAP A2: tag the write with the owning task's idPath so a same-vt reader
+    // resolves it by the (t, idPath) total order (#400).
+    this._timeState?.set(key, value, this.current_time(), this._ownerIdPath)
     this.steps.push({ tag: 'set', key, value })
     return this
   }
@@ -882,7 +898,9 @@ export class ProgramBuilder {
   get get(): ((key: string | symbol) => unknown) & Record<string | symbol, unknown> {
     const read = (key: string | symbol): unknown => {
       if (!this._timeState) return null
-      return this._timeState.get(key, this.current_time()) ?? null
+      // GAP A2: read at the owning task's idPath so the (t, idPath) tiebreak
+      // resolves a same-vt cross-loop write by writer-idPath ≤ reader-idPath (#400).
+      return this._timeState.get(key, this.current_time(), this._ownerIdPath) ?? null
     }
     return new Proxy(read, {
       apply(_target, _thisArg, args) {

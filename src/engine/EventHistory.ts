@@ -45,13 +45,6 @@ export interface CueEvent {
 }
 
 /**
- * Float epsilon for the `t` comparison so genuinely-simultaneous events compare
- * EQUAL on time and fall through to the idPath tiebreak (matches the prior
- * fireCue `+ 1e-9` guard against float noise).
- */
-const T_EPSILON = 1e-9
-
-/**
  * Lexicographic compare of two thread-id paths — a port of `ThreadId#<=>`
  * (`thread_id.rb:41-55`). Element-wise over the shared prefix; if equal there,
  * the LONGER path is GREATER (a forked child sorts after its ancestor).
@@ -70,15 +63,25 @@ export function compareIdPath(a: number[], b: number[]): -1 | 0 | 1 {
 
 /**
  * Total order over events — a port of the user-thread-relevant fields of
- * `CueEvent#<=>` (`cueevent.rb:64-74`): `t` first (with epsilon), then `idPath`.
- * `priority` (always 0) and `delta` (GAP D) are omitted. Returns -1 | 0 | 1.
+ * `CueEvent#<=>` (`cueevent.rb:64-74`): `t` first, then `idPath`. `priority`
+ * (always 0) and `delta` (GAP D) are omitted. Returns -1 | 0 | 1.
+ *
+ * The `t` compare is EXACT — desktop compares `time_r` (an exact Rational,
+ * `cueevent.rb:28`), so genuinely-simultaneous events (e.g. a synced waiter that
+ * INHERITED the cuer's vt, or a top-level fork sharing a bit-exact launch origin)
+ * compare equal on `t` and fall through to the idPath tiebreak. The old fireCue
+ * `+ 1e-9` epsilon was a web-only float-noise guard that broke the exact
+ * "last ≤ t" boundary (a write at vt 0.5 must NOT be visible to a get at
+ * 0.5 − 1e-9); the faithful order is exact. (Float-accumulation drift between
+ * two independently-summed cursors is a known edge desktop sidesteps via
+ * Rational — out of scope here.)
  */
 export function compareEvent(
   a: { t: number; idPath: number[] },
   b: { t: number; idPath: number[] },
 ): -1 | 0 | 1 {
-  if (a.t < b.t - T_EPSILON) return -1
-  if (a.t > b.t + T_EPSILON) return 1
+  if (a.t < b.t) return -1
+  if (a.t > b.t) return 1
   return compareIdPath(a.idPath, b.idPath)
 }
 
@@ -160,6 +163,16 @@ export class EventHistory {
   latest(key: string | symbol): unknown {
     const events = this.store.get(key)
     return events && events.length > 0 ? events[0].value : undefined
+  }
+
+  /**
+   * The greatest event for `key` (or `undefined`). Exposed for the TimeState
+   * facade's idempotency guard (skip a re-applied identical write); the pure
+   * store itself never dedups (desktop `event_history.rb` just unshifts).
+   */
+  peekLatest(key: string | symbol): CueEvent | undefined {
+    const events = this.store.get(key)
+    return events && events.length > 0 ? events[0] : undefined
   }
 
   /** Number of distinct keys (facade parity with the prior TimeState). */

@@ -38,8 +38,12 @@ describe('compareEvent (cueevent.rb:64-74 — t then idPath)', () => {
     expect(compareEvent({ t: 0, idPath: [0, 0] }, { t: 0, idPath: [0, 1] })).toBe(-1)
     expect(compareEvent({ t: 0, idPath: [0, 0] }, { t: 0, idPath: [0] })).toBe(1)
   })
-  it('treats float-noise-equal times as equal-t (epsilon)', () => {
-    expect(compareEvent({ t: 0.5, idPath: [0] }, { t: 0.5 + 1e-12, idPath: [0] })).toBe(0)
+  it('compares t EXACTLY (no epsilon) — desktop time_r is a Rational', () => {
+    // The old fireCue +1e-9 epsilon broke the exact "last ≤ t" boundary; the
+    // faithful order is exact, so genuinely-equal vts (synced inherit / bit-exact
+    // launch origin) fall to idPath while a 1e-12 difference still orders by t.
+    expect(compareEvent({ t: 0.5, idPath: [0] }, { t: 0.5, idPath: [0] })).toBe(0)
+    expect(compareEvent({ t: 0.5, idPath: [0] }, { t: 0.5 + 1e-12, idPath: [0] })).toBe(-1)
   })
 })
 

@@ -914,7 +914,7 @@ export class SonicPiEngine {
           builder.setSyncContext(scheduler, name)
           // SP95(d) #350 slice 2: wire the Time State so `b.set` writes eagerly
           // at current_time() and `b.get` reads at the reader's current_time().
-          builder.setTimeStateContext(this.globalStore)
+          builder.setTimeStateContext(this.globalStore, task.idPath)
           // #447: live_loop `delay:` — sleep `delayBeats` beats before the FIRST
           // iteration only (desktop runtime.rb:1196 `sleep delay if delay`, in
           // beats, inside the forked thread before the body). Mark the loop's

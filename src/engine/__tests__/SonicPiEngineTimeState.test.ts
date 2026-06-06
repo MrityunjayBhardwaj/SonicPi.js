@@ -93,9 +93,14 @@ describe('Time State — engine-level cross-loop set/get (SV47 / #350)', () => {
     engine.dispose()
   })
 
-  it('(e) reversed: player declared BEFORE director — STILL reads {55,59} (reorder-invariant)', async () => {
-    // The HARD gate. If this reads {52,57} or anything else, the design has
-    // leaked a source-order dependence — eager-apply by causation is broken.
+  it('(e) reversed: player declared BEFORE director — reads desktop {52,57} (GAP A2 / #400)', async () => {
+    // DESKTOP-PARITY gate (was a documented divergence; SV47 Slice 3 / #400).
+    // Source order now matters via the (t, idPath) total order: player declared
+    // FIRST gets idPath [0,0], director [0,1]. At the equal cue vt, the director's
+    // set ((vt,[0,1])) is GREATER than the player's read point ((vt,[0,0])), so it
+    // is NOT yet visible — the player reads the PRIOR ring value, landing on
+    // {52,57} instead of {55,59}. This mirrors desktop exactly
+    // (event_history.rb get = "greatest event ≤ (t, idPath)").
     const engine = new SonicPiEngine()
     await engine.init()
 
@@ -119,8 +124,8 @@ describe('Time State — engine-level cross-loop set/get (SV47 / #350)', () => {
 
     const played = midiNotes(events, 'player')
     expect(played.length).toBeGreaterThanOrEqual(2)
-    expect(played[0]).toBe(55)
-    expect(played[1]).toBe(59)
+    expect(played[0]).toBe(52)
+    expect(played[1]).toBe(57)
 
     engine.dispose()
   })
@@ -154,17 +159,23 @@ describe('Time State — engine-level cross-loop set/get (SV47 / #350)', () => {
     await drive(engine, 5, 5)
 
     const store = (engine as unknown as {
-      globalStore: { get: (k: string, t?: number) => unknown }
+      globalStore: { get: (k: string, t?: number, readerIdPath?: number[]) => unknown }
     }).globalStore
 
+    // GAP A2: the writes were tagged with `:writer`'s idPath ([0,0] — the first
+    // top-level fork), so a white-box read must use a reader idPath that
+    // dominates the writer's to see them (a main reader at [0] would NOT see a
+    // child loop's equal-t write — correct per the (t, idPath) total order). Read
+    // at the writer's own idPath to isolate the TIME dimension this test checks.
+    const RID = [0, 0]
     // Iteration 1 starts at vt=0 (initial sleep(0) wake), so the per-set
     // timestamps are 0 (set :y, 1) and 2 (set :y, 2 — after sleep 2).
-    expect(store.get('y', -0.5)).toBeNull() // before any write
-    expect(store.get('y', 0)).toBe(1) // at the first set's vt
-    expect(store.get('y', 1)).toBe(1) // between the two sets
-    expect(store.get('y', 1.99)).toBe(1) // just before the second set
-    expect(store.get('y', 2)).toBe(2) // at the second set's vt (inclusive)
-    expect(store.get('y', 10)).toBe(2) // long after — latest stays visible
+    expect(store.get('y', -0.5, RID)).toBeNull() // before any write
+    expect(store.get('y', 0, RID)).toBe(1) // at the first set's vt
+    expect(store.get('y', 1, RID)).toBe(1) // between the two sets
+    expect(store.get('y', 1.99, RID)).toBe(1) // just before the second set
+    expect(store.get('y', 2, RID)).toBe(2) // at the second set's vt (inclusive)
+    expect(store.get('y', 10, RID)).toBe(2) // long after — latest stays visible
 
     engine.dispose()
   })
