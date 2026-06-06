@@ -1,4 +1,5 @@
 import { MinHeap } from './MinHeap'
+import { EventHistory, cueDelivers } from './EventHistory'
 
 // ---------------------------------------------------------------------------
 // Cue glob matching (#150) — supports * and ? wildcards in sync targets
@@ -189,18 +190,31 @@ export class VirtualTimeScheduler {
   /** Map from `${time}:${taskId}` to insertion order for stable sorting */
   // entryOrder Map removed — insertion order stored directly on SleepEntry (#75)
   private _running = false
-  /** Cue state: last cue per name with virtual time, args, and cuer's BPM. */
-  private cueMap = new Map<string, { time: number; args: unknown[]; bpm: number }>()
+  /**
+   * GAP A2 — cue history: the `(t, idPath)`-ordered store of fired cues (port of
+   * the cue side of `event_history.rb`), replacing the old single-entry cueMap.
+   * `sync` resolves over it (`getNext` = next cue strictly after the sync point),
+   * which (a) fixes the with_fx registration race — a same-`t` higher-idPath cue
+   * that fired before the waiter registered is still found in history — and (b)
+   * applies the `(t, idPath)` tiebreak at equal vt (#481). Capped per key
+   * (the auto-cue fires once per loop iteration; old cues are irrelevant to a
+   * forward-looking `sync`) so it does not grow unbounded the way cueMap never
+   * did. Value = `{ args, bpm }` (the cuer's BPM at fire time, for sync_bpm).
+   */
+  private cueHistory = new EventHistory({ maxPerKey: 256 })
   /** Tasks waiting for a cue */
   private syncWaiters = new Map<string, Array<{
     taskId: string
     resolve: (payload: SyncPayload) => void
     /**
-     * Virtual time at which this waiter began syncing. A cue is delivered only
-     * if it fires STRICTLY AFTER this (desktop SK15 wake-phase semantic) — see
-     * fireCue.
+     * The waiter's sync point `(virtualTime, idPath)`. A cue is delivered only if
+     * it is strictly GREATER in the `(t, idPath)` total order (desktop
+     * `ce > matcher.ce`, event_history.rb:139) — so at equal vt a same-or-lower
+     * idPath cue misses (the forked-sibling waiter waits a cycle, #481) while a
+     * higher-idPath cue catches (the inline/main waiter, #481 with_fx/bare_loop).
      */
     waiterVt: number
+    waiterIdPath: number[]
   }>>()
   /** One-shot audio-time-bound callbacks (SV41 — backs scheduleAtVirtualTime). */
   private pendingCallbacks: PendingCallback[] = []
@@ -447,8 +461,14 @@ export class VirtualTimeScheduler {
     // task — fall back to the engine's startup BPM so sync_bpm waiters still
     // get a defined value rather than NaN.
     const cueBpm = task?.bpm ?? DEFAULT_TASK_BPM
+    // GAP A2: the cuer's thread-id path — the equal-vt tiebreak. Synthetic
+    // external sources (no task) cue as main `[0]`.
+    const cueIdPath = task?.idPath ?? [0]
 
-    this.cueMap.set(name, { time: cueVirtualTime, args, bpm: cueBpm })
+    // Record the cue in the (t, idPath)-ordered history so a late or
+    // forked-sibling syncer resolves it correctly (replaces the single-entry
+    // cueMap). Value carries the cuer's BPM for sync_bpm waiters (#236).
+    this.cueHistory.insert(name, cueVirtualTime, cueIdPath, { args, bpm: cueBpm })
 
     // Emit cue event for UI (CueLog panel)
     this.emitEvent({
@@ -465,17 +485,15 @@ export class VirtualTimeScheduler {
     for (const [pattern, waiters] of this.syncWaiters) {
       if (waiters.length === 0) continue
       if (!cueGlobMatch(pattern, name)) continue
-      // Desktop wake-phase semantic (SK15): deliver a cue only to waiters that
-      // began syncing STRICTLY BEFORE the cue fired. A cue at the same virtual
-      // instant a waiter registered (e.g. a cuer's first `cue` at vt=0 vs a
-      // synced loop that registered its sync at vt=0) is NOT delivered — the
-      // synced loop misses it and catches the NEXT cue. This reproduces
-      // desktop's "a freshly-started synced loop waits a cycle" behavior
-      // (#351 note-0, #350 every-other-tick). The 1e-9 epsilon guards against
-      // float noise so genuinely-simultaneous events compare equal.
+      // Wake-phase (cueDelivers, observed desktop #481/#400): deliver iff the cue
+      // is strictly LATER, or — at EQUAL vt — the waiter is a strict ANCESTOR of
+      // the cuer (its thread spawned the cuer, then synced → happens-after). A
+      // forked-SIBLING waiter ([0,1]) misses a driver cue ([0,0]) and waits a
+      // cycle (#481 in_thread / #350 met / #400 player); an inline/main waiter
+      // ([0]) catches a driver cue ([0,0]) at the same vt (#481 with_fx/bare_loop).
       const kept: typeof waiters = []
       for (const waiter of waiters) {
-        if (cueVirtualTime > waiter.waiterVt + 1e-9) {
+        if (cueDelivers(cueVirtualTime, cueIdPath, waiter.waiterVt, waiter.waiterIdPath)) {
           const waiterTask = this.tasks.get(waiter.taskId)
           if (waiterTask) {
             // Inherit cue's virtual time (SV5)
@@ -498,19 +516,36 @@ export class VirtualTimeScheduler {
    * (sync_bpm, #236) can mutate the waiter's task.bpm.
    */
   waitForSync(name: string, taskId: string): Promise<SyncPayload> {
-    // Always wait for a FRESH cue — never resolve from stale cueMap entries.
-    // In Sonic Pi, sync(:name) parks the thread until a NEW cue fires.
-    // get(:name) returns existing values; sync waits for the next one.
-    // Without this, loops synced to met1 start at vt=0 instead of waiting
-    // for met1's first beat (met1's auto-cue fires before synced loops run).
-    // Capture the virtual time at which this waiter starts syncing. fireCue
-    // only delivers cues that fire strictly after this instant, reproducing
-    // desktop's "a freshly-started synced loop misses a simultaneous cue and
-    // waits for the next one" wake-phase (SK15; #351 note-0 / #350).
-    const waiterVt = this.tasks.get(taskId)?.virtualTime ?? 0
+    // GAP A2: desktop `sync` (event_history.rb:215) checks history FIRST —
+    // `get_next` returns the next cue strictly after the sync point if one is
+    // already recorded — and only blocks if none. This is the with_fx
+    // registration-race fix: the driver's vt0 cue fired before this inline
+    // waiter (in __run_once = main `[0]`) registered, but it is in cueHistory,
+    // and `getNext('tick', 0, [0])` finds it (the same-`t` higher-idPath cue is
+    // strictly greater) → deliver now, no missed cycle. A forked-sibling waiter
+    // ([0,1]) gets `null` from getNext (the cue is ≤ it) and blocks for the next
+    // cycle — desktop's "a freshly-started synced loop waits a cycle" (#350/#481).
+    // SV11 is preserved: a genuinely-past cue has lower vt, so it is NOT strictly
+    // greater and is not delivered.
+    const task = this.tasks.get(taskId)
+    const waiterVt = task?.virtualTime ?? 0
+    const waiterIdPath = task?.idPath ?? [0]
+
+    // History-first only for exact cue names; glob patterns (`sync "/midi:*"`,
+    // #150) register and wait for a future matching cue (their cross-key history
+    // scan is GAP M / not needed by #350/#481 which use exact names).
+    if (!name.includes('*') && !name.includes('?')) {
+      const hit = this.cueHistory.getNextDelivered(name, waiterVt, waiterIdPath)
+      if (hit) {
+        if (task) task.virtualTime = hit.t // inherit the cue's vt (SV5)
+        const payload = hit.value as { args: unknown[]; bpm: number }
+        return Promise.resolve({ args: payload.args, bpm: payload.bpm })
+      }
+    }
+
     return new Promise<SyncPayload>((resolve) => {
       const waiters = this.syncWaiters.get(name) ?? []
-      waiters.push({ taskId, resolve, waiterVt })
+      waiters.push({ taskId, resolve, waiterVt, waiterIdPath })
       this.syncWaiters.set(name, waiters)
     })
   }
@@ -615,7 +650,7 @@ export class VirtualTimeScheduler {
     this.tasks.clear()
     this.queue.clear()
     this.eventHandlers.length = 0
-    this.cueMap.clear()
+    this.cueHistory.clear()
     this.syncWaiters.clear()
     this.pendingCallbacks.length = 0
   }

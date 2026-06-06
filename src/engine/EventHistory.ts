@@ -85,6 +85,45 @@ export function compareEvent(
   return compareIdPath(a.idPath, b.idPath)
 }
 
+/** True iff `a` is a STRICT prefix (proper ancestor) of `b`: `[0]` of `[0,0]`. */
+export function isStrictPrefix(a: number[], b: number[]): boolean {
+  if (a.length >= b.length) return false
+  for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return false
+  return true
+}
+
+/**
+ * The cue WAKE-PHASE rule — whether a fired cue is delivered to a waiting `sync`
+ * — derived from OBSERVED desktop behaviour (#481 + #400, real-engine capture
+ * 2026-06-06), NOT from naive idPath-lexicographic ordering.
+ *
+ * Deliver iff the cue is strictly LATER in virtual time, OR — at EQUAL vt — the
+ * waiter is a strict ANCESTOR of the cuer (the waiter's thread SPAWNED the
+ * cuer's thread, then reached its sync, so it happens-AFTER the spawn and sees
+ * the cue). Concurrent SIBLING threads at equal vt MISS each other and wait a
+ * cycle (desktop's "a freshly-started synced loop waits a cycle", #350/#351).
+ *
+ * Why not plain `compareEvent > 0` (lexicographic, which would deliver to a
+ * lesser sibling): observation disproved it — desktop reversed director/player
+ * plays {52,57}, not the {52,55} lexicographic predicts. The five #481/#400 cells
+ * all fit this strict-prefix (happens-before) rule. (The exact desktop
+ * `event_history.rb` mechanism that yields this — priority/delta fields,
+ * matcher construction — is not fully reverse-engineered; the rule is grounded
+ * in the OUTPUT, the project's iron rule.) The set/get visibility side keeps
+ * `compareEvent` — it agrees with this for comparable pairs and the sibling
+ * read-prior is itself correct (#400 verified).
+ */
+export function cueDelivers(
+  cueT: number,
+  cueIdPath: number[],
+  waiterT: number,
+  waiterIdPath: number[],
+): boolean {
+  if (cueT > waiterT) return true
+  if (cueT < waiterT) return false
+  return isStrictPrefix(waiterIdPath, cueIdPath)
+}
+
 export class EventHistory {
   /**
    * Per-key event list, kept in DESCENDING `(t, idPath)` order (greatest first),
@@ -95,17 +134,31 @@ export class EventHistory {
   private readonly store = new Map<string | symbol, CueEvent[]>()
 
   /**
+   * Optional per-key cap on retained events (keep the `maxPerKey` GREATEST). A
+   * safety bound, NOT desktop's full `@history_depth` pruning (GAP L / #402,
+   * deferred) — it exists so the cue side (one auto-cue per loop iteration) does
+   * not grow unbounded the way the old single-entry `cueMap` never did. Old cues
+   * are irrelevant to `sync`/`getNext` (a syncer matches the NEXT cue after its
+   * point), so trimming the oldest is safe. `undefined` ⇒ unbounded (the
+   * set/get TimeState facade keeps its prior append-history behaviour).
+   */
+  private readonly maxPerKey?: number
+
+  constructor(opts?: { maxPerKey?: number }) {
+    this.maxPerKey = opts?.maxPerKey
+  }
+
+  /**
    * Record an event for `key`, keeping the per-key list in descending
    * `(t, idPath)` order. Mirrors `__insert_event!` (event_history.rb:385-418):
    * the common case (monotonically advancing virtual time) prepends; a rare
-   * out-of-order arrival is inserted at its sorted position.
-   *
-   * NB: no `@history_depth` pruning yet (deferred, GAP L / #402) — v1 is bounded
-   * by run length and cleared on dispose, exactly like the TimeState it replaces.
+   * out-of-order arrival is inserted at its sorted position. If `maxPerKey` is
+   * set, the oldest events past the cap are dropped (the tail of the descending
+   * list).
    */
   insert(key: string | symbol, t: number, idPath: number[], value: unknown): void {
     const ce: CueEvent = { t, idPath, value }
-    let events = this.store.get(key)
+    const events = this.store.get(key)
     if (!events) {
       this.store.set(key, [ce])
       return
@@ -116,6 +169,9 @@ export class EventHistory {
     let i = 0
     while (i < events.length && compareEvent(events[i], ce) > 0) i++
     events.splice(i, 0, ce)
+    if (this.maxPerKey !== undefined && events.length > this.maxPerKey) {
+      events.length = this.maxPerKey // drop the oldest (tail of the descending list)
+    }
   }
 
   /**
@@ -135,27 +191,23 @@ export class EventHistory {
   }
 
   /**
-   * The STRICT read backing `sync` / `get_next` — `find_next_event`
-   * (event_history.rb:513-545): the SMALLEST event strictly AFTER `(t, idPath)`
-   * (the "next event after my sync point"). Returns `null` when no event is
-   * strictly greater (the syncer must then block for a future one).
-   *
-   * Ported verbatim from the Ruby index arithmetic:
-   *   idx = first index where events[idx] <= ge   (descending list)
-   *   if idx > 0:        events[idx-1]  (smallest event still > ge)
-   *   else (idx 0 or -1): events.last if events.last > ge
-   * The `idx === -1` branch (NO event <= ge, i.e. ALL events are after ge) is the
-   * with_fx registration-race fix: a same-`t` higher-idPath cue already in
-   * history is delivered (`last > ge`), so a late syncer still catches it.
+   * The wake-phase read backing `sync` — the SMALLEST cue (earliest `t`, then
+   * idPath) that would be DELIVERED to a waiter at `(t, idPath)` under the
+   * {@link cueDelivers} rule (strictly-later, or equal-vt-strict-ancestor). This
+   * is the "next cue after my sync point" with desktop's observed happens-before
+   * wake-phase. Returns `null` when no cue is deliverable (the syncer blocks for a
+   * future one). The list is descending, so scanning from the tail (ascending t)
+   * and returning the first deliverable yields the smallest deliverable cue —
+   * which at equal vt is the ancestor cue (with_fx race fix), and otherwise the
+   * earliest strictly-later cue.
    */
-  getNext(key: string | symbol, t: number, idPath: number[]): CueEvent | null {
+  getNextDelivered(key: string | symbol, t: number, idPath: number[]): CueEvent | null {
     const events = this.store.get(key)
     if (!events || events.length === 0) return null
-    const ge = { t, idPath }
-    const idx = events.findIndex((e) => compareEvent(e, ge) <= 0)
-    if (idx > 0) return events[idx - 1]
-    const last = events[events.length - 1]
-    if (last && compareEvent(last, ge) > 0) return last
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i]
+      if (cueDelivers(e.t, e.idPath, t, idPath)) return e
+    }
     return null
   }
 

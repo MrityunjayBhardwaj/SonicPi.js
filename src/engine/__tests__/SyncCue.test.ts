@@ -137,14 +137,15 @@ describe('sync/cue', () => {
     expect(w2Play!.audioTime).toBe(101)
   })
 
-  it('sync waits for fresh cue, does not resolve from stale cueMap', async () => {
-    // In Sonic Pi, sync always waits for a FRESH cue — never resolves from stale ones.
-    // This prevents synced loops from starting at vt=0 when the sync target's
-    // auto-cue fires before the synced loop calls waitForSync.
-    const scheduler = new VirtualTimeScheduler({
-      getAudioTime: () => 0,
-      schedAheadTime: 100,
-    })
+  it('sync does not resolve from a genuinely-PAST cue (lower vt); waits for a fresh one (SV11)', async () => {
+    // GAP A2: `sync` resolves over the (t, idPath) event history via get_next —
+    // "the next cue strictly AFTER my sync point" (event_history.rb:215). A cue
+    // recorded at a LOWER virtual time than the syncer's point is in its PAST, so
+    // it is NOT "next" and is NOT delivered — the syncer waits for a future cue.
+    // (This is the real SV11 invariant. NB: unlike the pre-A2 web rule, a cue at a
+    // HIGHER vt already in history IS the next cue and DOES deliver — faithful
+    // find_next; see EventHistory.test.ts ":140 contrived".)
+    const scheduler = new VirtualTimeScheduler({ getAudioTime: () => 0, schedAheadTime: 100 })
 
     scheduler.registerLoop('source', async () => {
       await scheduler.scheduleSleep('source', 999999)
@@ -152,12 +153,15 @@ describe('sync/cue', () => {
     scheduler.tick(100)
     await flushMicrotasks()
 
-    scheduler.getTask('source')!.virtualTime = 2.5
+    // A cue fires at vt 0 (in the past relative to the syncer below).
+    scheduler.getTask('source')!.virtualTime = 0
     scheduler.fireCue('ready', 'source')
 
     let syncedTime = -1
     scheduler.registerLoop('late', async () => {
-      const args = await scheduler.waitForSync('ready', 'late')
+      // The syncer is already AHEAD (vt 2.5) when it syncs — the vt-0 cue is past.
+      scheduler.getTask('late')!.virtualTime = 2.5
+      await scheduler.waitForSync('ready', 'late')
       syncedTime = scheduler.getTask('late')!.virtualTime
       await scheduler.scheduleSleep('late', 999999)
     })
@@ -165,10 +169,10 @@ describe('sync/cue', () => {
     scheduler.tick(100)
     await flushMicrotasks()
 
-    // sync should NOT have resolved yet — cue was stale
+    // The vt-0 cue is in the syncer's past → NOT delivered.
     expect(syncedTime).toBe(-1)
 
-    // Now fire a fresh cue — this should wake the synced loop
+    // A fresh cue strictly after the syncer's point (vt 5) — this one wakes it.
     scheduler.getTask('source')!.virtualTime = 5.0
     scheduler.fireCue('ready', 'source')
     await flushMicrotasks()
@@ -371,6 +375,42 @@ describe('sync/cue — SP95(d) build-time payload + wake-phase (#350/#351)', () 
     scheduler.fireCue('beat', 'sender', [{ val: 64 }])
     await flushMicrotasks()
     expect(resolved).toEqual({ args: [{ val: 64 }], bpm: sender.bpm })
+  })
+
+  it('the #481 idPath split: at equal vt0 an inline/main waiter CATCHES the cue; a forked-sibling MISSES', async () => {
+    // GAP A2 — the #481 fix in miniature. Driver `[0,0]` cues at vt0. A waiter
+    // INLINE in main (`[0]`, e.g. with_fx/bare_loop in __run_once) is < the cue's
+    // idPath at equal vt, so the cue is STRICTLY GREATER → delivered now (onset 0).
+    // A forked-sibling waiter (`[0,1]`, e.g. in_thread) is > the cue's idPath, so
+    // the cue is NOT strictly greater → it waits for the next cycle (onset 0.5).
+    const scheduler = new VirtualTimeScheduler({ getAudioTime: () => 0, schedAheadTime: 100 })
+    scheduler.registerLoop('driver', async () => {}, { idPath: [0, 0] })
+    scheduler.registerLoop('mainWaiter', async () => {}, { idPath: [0] })
+    scheduler.registerLoop('forkWaiter', async () => {}, { idPath: [0, 1] })
+    for (const n of ['driver', 'mainWaiter', 'forkWaiter']) scheduler.getTask(n)!.virtualTime = 0
+
+    // Driver fires its vt0 cue FIRST (it is in history before either waiter syncs)
+    // — reproduces the with_fx registration race.
+    scheduler.fireCue('tick', 'driver', [{ beat: 0 }])
+
+    let mainRes: unknown = 'PENDING'
+    let forkRes: unknown = 'PENDING'
+    scheduler.waitForSync('tick', 'mainWaiter').then((p) => { mainRes = p })
+    scheduler.waitForSync('tick', 'forkWaiter').then((p) => { forkRes = p })
+    await flushMicrotasks()
+
+    // main/inline waiter caught the vt0 cue (history-first getNext finds it).
+    expect(mainRes).toEqual({ args: [{ beat: 0 }], bpm: scheduler.getTask('driver')!.bpm })
+    // forked sibling missed it — still pending.
+    expect(forkRes).toBe('PENDING')
+    expect(scheduler.getTask('mainWaiter')!.virtualTime).toBe(0) // inherited the cue's vt0
+
+    // Driver's NEXT cue at vt0.5 — the forked sibling catches this one.
+    scheduler.getTask('driver')!.virtualTime = 0.5
+    scheduler.fireCue('tick', 'driver', [{ beat: 1 }])
+    await flushMicrotasks()
+    expect(forkRes).toEqual({ args: [{ beat: 1 }], bpm: scheduler.getTask('driver')!.bpm })
+    expect(scheduler.getTask('forkWaiter')!.virtualTime).toBe(0.5)
   })
 
   it('manual builder sync (no scheduler) keeps the legacy runtime-step path + returns this', () => {
