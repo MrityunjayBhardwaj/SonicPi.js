@@ -2604,13 +2604,21 @@ function transpileTimeWarp(
     return `/* parse error: time_warp missing block */`
   }
 
-  const offset = argsNode?.namedChildren[0]
-    ? transpileNode(argsNode.namedChildren[0], ctx)
-    : '0'
+  // #357: time_warp is an INLINE time shift (same thread — shared ticks/rng),
+  // NOT a forked thread. The prior `at([offset], …)` mapping forked a thread,
+  // which broke tick-gating (with_swing) and couldn't shift earlier (negative
+  // offsets). Emit `time_warp(times, params, fn)` → ProgramBuilder.time_warp,
+  // which brackets the body in a virtual-time shift and restores after. Positional
+  // args are `times` and (optional) `params`; the builder rings params through
+  // and normalises a scalar time. `__b.` routes through the builder both inside a
+  // loop and in top-level bare code (the __run_once wrap) — same as the old `at`.
+  const posArgs = (argsNode?.namedChildren ?? []).filter((a: any) => a.type !== 'pair')
+  const times = posArgs[0] ? transpileNode(posArgs[0], ctx) : '0'
+  const params = posArgs[1] ? transpileNode(posArgs[1], ctx) : 'null'
   const prefix = ctx.insideLoop ? '__b.' : ''
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
   const bodyStr = transpileBlockBody(blockNode, bodyCtx)
-  return `${prefix}at([${offset}], null, (__b) => {\n${bodyStr}\n${ctx.indent}})`
+  return `${prefix}time_warp(${times}, ${params}, (__b) => {\n${bodyStr}\n${ctx.indent}})`
 }
 
 /**

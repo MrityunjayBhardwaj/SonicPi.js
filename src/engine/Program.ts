@@ -25,6 +25,13 @@ export type Step =
   | { tag: 'sync'; name: string; bpmSync?: true }
   | { tag: 'fx'; name: string; opts: Record<string, number>; body: Program; nodeRef?: number }
   | { tag: 'thread'; body: Program }
+  // #357 / GAP D: time_warp — run `body` INLINE (same thread: shared ticks + rng,
+  // unlike `thread`/`at` which fork) with virtual time shifted by `deltaBeats`
+  // (NOT density-scaled), then RESTORE the pre-warp virtual time (discarding the
+  // shift AND any sleeps inside the body). Desktop `core.rb:1040-1092`
+  // (`__with_preserved_spider_time_and_beat`). Negative deltas shift earlier
+  // (bounded by schedAhead). One step is emitted per time in a `time_warp [..]`.
+  | { tag: 'timeWarp'; deltaBeats: number; body: Program }
   | { tag: 'print'; message: string }
   | { tag: 'liveAudio'; name: string; opts: Record<string, number>; stop?: boolean }
   | { tag: 'set'; key: string | symbol; value: unknown }

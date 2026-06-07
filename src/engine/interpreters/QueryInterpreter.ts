@@ -102,6 +102,16 @@ export function queryProgram(
         break
       }
 
+      case 'timeWarp': {
+        // #357: inline time shift — query the body at the shifted time, then
+        // RESTORE parent time (the shift AND any inner sleeps are discarded,
+        // desktop core.rb:1040-1092). delta NOT density-scaled (core.rb:1108).
+        const warpEvents = queryProgram(step.body, begin, end, currentBpm, time + step.deltaBeats * beatDuration())
+        events.push(...warpEvents)
+        // parent `time` unchanged (restored)
+        break
+      }
+
       case 'stop':
         return events // halt here
 
@@ -126,6 +136,11 @@ function programDurationAndBpm(program: Program, bpm: number): { duration: numbe
       const inner = programDurationAndBpm(step.body, currentBpm)
       dur += inner.duration
       currentBpm = inner.finalBpm
+    }
+    // #357: time_warp restores time (adds 0 duration) but does NOT restore bpm
+    // (desktop core.rb:1040-1092 preserves time+beat only) — propagate body bpm.
+    if (step.tag === 'timeWarp') {
+      currentBpm = programDurationAndBpm(step.body, currentBpm).finalBpm
     }
     // threads are parallel — don't add to parent duration
   }

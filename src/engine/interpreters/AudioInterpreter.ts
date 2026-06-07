@@ -280,6 +280,32 @@ export async function runProgram(
         await ctx.scheduler.scheduleSleep(ctx.taskId, step.beats)
         break
 
+      case 'timeWarp': {
+        // #357: inline (same-thread) time shift. Run the body at
+        // `task.virtualTime + delta` (delta NOT density-scaled — desktop
+        // core.rb:1108), then RESTORE the pre-warp vt — discarding the shift AND
+        // any sleeps inside the body (desktop `__with_preserved_spider_time_and_beat`,
+        // core.rb:1040-1092). Same ctx/taskId → shared ticks/synth/FX scope.
+        const entryVt = task.virtualTime
+        const shiftSec = (step.deltaBeats / task.bpm) * 60
+        let warpedVt = entryVt + shiftSec
+        // Desktop: "you cannot travel backwards beyond the current_sched_ahead_time"
+        // (core.rb:1106). A play schedules at `vt + schedAhead`; for it not to land
+        // in the past, `vt >= audioTime - schedAhead`. Clamp + warn on over-shift.
+        const floorVt = ctx.scheduler.audioTime - ctx.schedAheadTime
+        if (warpedVt < floorVt) {
+          ctx.printHandler?.(
+            `[Warning] time_warp ${step.deltaBeats} shifts further back than the schedule-ahead window allows — clamped.`,
+          )
+          warpedVt = floorVt
+        }
+        task.virtualTime = warpedVt
+        await runProgram(step.body, ctx, fxCounter)
+        // Restore even if the body left the task stopped — a no-op then.
+        task.virtualTime = entryVt
+        break
+      }
+
       case 'useSynth':
         currentSynth = resolveSynthName(step.name)
         if (task) task.currentSynth = currentSynth

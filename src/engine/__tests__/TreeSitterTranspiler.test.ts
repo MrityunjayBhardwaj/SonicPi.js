@@ -1896,7 +1896,7 @@ end`)
       expect(result.code).toContain('assert_error((__b) => {')
     })
 
-    it('time_warp offsets a block without advancing global virtual time (#211)', () => {
+    it('time_warp offsets a block INLINE (same thread) without advancing global virtual time (#211/#357)', () => {
       const result = treeSitterTranspile(`live_loop :t do
   time_warp 0.25 do
     play 60
@@ -1905,9 +1905,31 @@ end`)
   sleep 1
 end`)
       expect(result.ok).toBe(true)
-      // time_warp transpiles to __b.at([0.25], null, ...)
-      expect(result.code).toContain('__b.at([0.25]')
-      expect(result.code).toContain('null')
+      // #357: time_warp is now a real inline time-shift (NOT a forked `at`).
+      expect(result.code).toContain('__b.time_warp(0.25, null')
+      expect(result.code).not.toContain('__b.at([0.25]')
+    })
+
+    it('time_warp emits a `timeWarp` step bracketing the shifted body, parent time unaffected (#357)', () => {
+      const { steps, error } = executeTranspiled(`live_loop :t do
+  play 60
+  time_warp 0.25 do
+    play 67
+  end
+  play 64
+  sleep 1
+end`)
+      expect(error).toBeUndefined()
+      const warp = steps.find((s: any) => s.tag === 'timeWarp')
+      expect(warp).toBeDefined()
+      expect(warp!.deltaBeats).toBe(0.25)
+      // the warped body holds the inner play (67), NOT the outer plays
+      const innerNotes = (warp!.body as any[]).filter((s) => s.tag === 'play').map((s) => s.note)
+      expect(innerNotes).toEqual([67])
+      // the outer plays (60, 64) stay at the top level, around the warp — proof
+      // the warp didn't fork them into a separate thread.
+      const topNotes = steps.filter((s: any) => s.tag === 'play').map((s: any) => s.note)
+      expect(topNotes).toEqual([60, 64])
     })
 
     it('synth + control captures play node ref and emits control step (#211)', () => {

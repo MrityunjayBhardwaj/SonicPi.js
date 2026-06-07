@@ -1397,11 +1397,14 @@ export class SonicPiEngine {
         // ndefine — same call shape as define, but does NOT persist across
         // re-evals (the register call is omitted by the transpiler).
         () => { /* ndefine stub — transpiler handles the real path */ },
-        // time_warp — the transpiler turns `time_warp 0.5 do ... end` into
-        // `__b.at([0.5], null, ...)`. This runtime stub catches the rare regex
-        // fallback path; it forwards to topLevelAt's array-of-times shape. (#211)
-        (offset: number, fn: (b: ProgramBuilder) => void) =>
-          topLevelAt([offset], null, fn),
+        // time_warp — inside a loop the transpiler routes to `__b.time_warp`
+        // (#357: a real inline time-shift). This TOP-LEVEL stub handles bare-code
+        // `time_warp` (insideLoop:false). Top level has no surrounding thread to
+        // share, so a forked one-shot (topLevelAt) is an acceptable shift-forward
+        // approximation; the inline semantics that matter (with_swing, #357) live
+        // inside loops. Accepts the new `(times, params, fn)` shape.
+        (times: number | number[], params: unknown[] | null, fn: (b: ProgramBuilder) => void) =>
+          topLevelAt(Array.isArray(times) ? times : [times], params, fn),
         // Tier B — timing introspection (#226). Top-level forms read engine
         // state directly; inside live_loops the transpiler routes through
         // BUILDER_METHODS so __b.current_* gives per-task reads.
