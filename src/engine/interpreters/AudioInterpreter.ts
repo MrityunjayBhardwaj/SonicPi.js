@@ -345,7 +345,7 @@ export async function runProgram(
 
       case 'sync': {
         ctx.bridge?.flushMessages()
-        const payload = await ctx.scheduler.waitForSync(step.name, ctx.taskId)
+        const payload = await ctx.scheduler.waitForSync(step.name, ctx.taskId, step.argMatcher)
         if (step.bpmSync) {
           // Inherit cuer's BPM (sync_bpm, #236). Mutate both runtime locals
           // so subsequent sleep/play/FX steps in this iteration use the

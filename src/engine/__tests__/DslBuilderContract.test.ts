@@ -149,6 +149,7 @@ const PURE_OR_INTENTIONAL_BUILD_TIME = new Map<string, string>([
   // resolution) and is out of scope for the deferred-step contract.
   ['get',              'Global store read. Stale-read P2 — tracked separately.'],
   ['current_bpm',      'Stale-read P2 — returns build-time bpm snapshot.'],
+  ['current_bpm_mode', 'Pure query (GAP M3) — returns current bpm; no :link without Link.'],
   ['current_synth',    'Stale-read P2 — returns build-time synth snapshot.'],
   ['current_volume',   'Stale-read P2 — returns build-time volume snapshot.'],
   ['get_cc',           'Stale-read P2 — returns MIDI-CC value at build time.'],

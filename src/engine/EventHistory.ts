@@ -39,6 +39,19 @@ import { pathMatch, toWritePath, toReadPath } from './PathMatcher'
 /** Glob tokens that force a read to scan-and-merge across keys (GAP M1b). */
 const GLOB_TOKENS = /[*?{[]/
 
+/**
+ * Apply a value matcher safely — a port of `safe_matcher_call`
+ * (event_history.rb:19-26): a matcher that throws is treated as NON-matching
+ * (`false`), never propagating the error out of the lookup. GAP M2.
+ */
+function safeMatch(matcher: (value: unknown) => boolean, value: unknown): boolean {
+  try {
+    return matcher(value) === true
+  } catch {
+    return false
+  }
+}
+
 /** A coordination event: a value recorded at virtual time `t` by thread `idPath`. */
 export interface CueEvent {
   /** Virtual time (seconds) the event was recorded at. */
@@ -232,37 +245,44 @@ export class EventHistory {
    * set on a RE-sync; a first sync passes `undefined` so the wake-phase is the
    * pure `(t,idPath)` `cueDelivers` rule (#400 unaffected).
    */
-  getNextDelivered(key: string | symbol, t: number, idPath: number[], after?: { t: number; idPath: number[] }): CueEvent | null {
+  getNextDelivered(key: string | symbol, t: number, idPath: number[], after?: { t: number; idPath: number[] }, valMatcher?: (value: unknown) => boolean): CueEvent | null {
     // GAP M1b: a glob sync (`sync :foo` → `/{cue,set,live_loop}/foo`) wakes on the
     // SMALLEST deliverable cue across EVERY matching key — desktop's `get_next`
     // min merge (event_history.rb:303-360). A glob-free key keeps the fast scan.
+    // GAP M2: `valMatcher` (desktop's `arg_matcher`) further constrains a
+    // candidate by its value — the scan must keep looking past a value-rejected
+    // cue to the next deliverable one (event_history.rb:529-534).
     if (typeof key === 'string' && GLOB_TOKENS.test(key)) {
       let best: CueEvent | null = null
       for (const [storedKey, events] of this.store) {
         if (typeof storedKey !== 'string' || !pathMatch(key, storedKey)) continue
-        const cand = this.firstDeliverable(events, t, idPath, after)
+        const cand = this.firstDeliverable(events, t, idPath, after, valMatcher)
         if (cand && (!best || compareEvent(cand, best) < 0)) best = cand
       }
       return best
     }
     const events = this.store.get(key)
     if (!events || events.length === 0) return null
-    return this.firstDeliverable(events, t, idPath, after)
+    return this.firstDeliverable(events, t, idPath, after, valMatcher)
   }
 
   /**
    * Smallest deliverable cue in a descending list — scan from the tail
-   * (ascending t) and return the first that clears `after` and {@link cueDelivers}.
+   * (ascending t) and return the first that clears `after`, {@link cueDelivers},
+   * and (GAP M2) the optional `valMatcher` value predicate. A matcher that throws
+   * is treated as non-matching (desktop `safe_matcher_call`, event_history.rb:19-26).
    */
   private firstDeliverable(
     events: CueEvent[],
     t: number,
     idPath: number[],
     after?: { t: number; idPath: number[] },
+    valMatcher?: (value: unknown) => boolean,
   ): CueEvent | null {
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i]
       if (after && compareEvent(e, after) <= 0) continue
+      if (valMatcher && !safeMatch(valMatcher, e.value)) continue
       if (cueDelivers(e.t, e.idPath, t, idPath)) return e
     }
     return null

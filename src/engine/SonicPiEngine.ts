@@ -1379,6 +1379,12 @@ export class SonicPiEngine {
 
       // Top-level current_bpm — returns the current default BPM
       const current_bpm = (): number => defaultBpm
+      // GAP M3 (#496): current_bpm_mode — desktop returns the tempo MODE, either a
+      // bpm number or `:link` (core.rb:4106). We have no Ableton Link, so the mode
+      // is always the current bpm (never `:link`). This is the `m` field of the
+      // CueEvent tuple surfaced to the DSL; the value channel already carries bpm
+      // for sync_bpm (#236), so no separate per-event `m` field is stored.
+      const current_bpm_mode = (): number => defaultBpm
 
       // Pure math helpers (no engine state needed)
       const quantise = (val: number, step: number): number => Math.round(val / step) * step
@@ -1429,6 +1435,7 @@ export class SonicPiEngine {
         hzToMidi, midiToFreq,
         quantise, quantize, octs,
         current_bpm,
+        current_bpm_mode,
         topLevelPuts, topLevelPrint, topLevelStop, stop_loop,
         // Volume & introspection
         set_volume, current_synth_fn, current_volume_fn,

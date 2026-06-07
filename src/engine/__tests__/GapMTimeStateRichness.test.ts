@@ -79,3 +79,34 @@ describe('GAP M — hierarchical path Time State (set/get)', () => {
     engine.dispose()
   })
 })
+
+describe('GAP M2 — sync arg_matcher (value predicate)', () => {
+  beforeEach(() => {
+    delete (globalThis as Record<string, unknown>).SuperSonic
+  })
+
+  it('a sync with arg_matcher wakes only on a cue whose value passes', async () => {
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const events: SoundEvent[] = []
+    engine.components.streaming!.eventStream.on((e) => events.push(e))
+
+    // driver cues :beat with value 9; listener only wakes when arg[0] == 9.
+    await engine.evaluate(`
+      live_loop :driver do
+        cue :beat, 9
+        sleep 1
+      end
+      live_loop :listener do
+        sync :beat, arg_matcher: ->(a){ a[0] == 9 }
+        play 72
+        sleep 1
+      end
+    `)
+    engine.play()
+    await drive(engine, 4, 4)
+
+    expect(notes(events)).toContain(72)
+    engine.dispose()
+  })
+})

@@ -58,7 +58,7 @@ export class ProgramBuilder {
   // legacy runtime-step path (the QueryInterpreter never wires it, so an
   // S3 sync loop can't register a phantom waiter through the capture pass).
   private _syncScheduler: {
-    waitForSync(name: string, taskId: string): Promise<{ args: unknown[]; bpm: number }>
+    waitForSync(name: string, taskId: string, argMatcher?: (args: unknown) => boolean): Promise<{ args: unknown[]; bpm: number }>
     getTask?(taskId: string): { virtualTime: number } | undefined
   } | null = null
   private _syncTaskId: string | null = null
@@ -272,7 +272,7 @@ export class ProgramBuilder {
    */
   setSyncContext(
     scheduler: {
-      waitForSync(name: string, taskId: string): Promise<{ args: unknown[]; bpm: number }>
+      waitForSync(name: string, taskId: string, argMatcher?: (args: unknown) => boolean): Promise<{ args: unknown[]; bpm: number }>
       getTask?(taskId: string): { virtualTime: number } | undefined
     },
     taskId: string,
@@ -332,8 +332,9 @@ export class ProgramBuilder {
     return this
   }
 
-  sync(name: string, opts?: { bpm_sync?: boolean }): this | Promise<unknown> {
+  sync(name: string, opts?: { bpm_sync?: boolean; arg_matcher?: (args: unknown) => boolean }): this | Promise<unknown> {
     const bpmSync = opts?.bpm_sync === true
+    const argMatcher = typeof opts?.arg_matcher === 'function' ? opts.arg_matcher : undefined
     // SP95(d) #393: build-time await path. The scheduler resolves the cue
     // payload through the SAME channel as sleep (a Promise only tick() can
     // resolve), so the build "blocks" in virtual time exactly like desktop's
@@ -357,7 +358,7 @@ export class ProgramBuilder {
       // current_time() advances across await b.sync ... before wiring" — this
       // closes that gap. (#350 / SV47 slice 2.)
       const taskBefore = scheduler.getTask?.(taskId)?.virtualTime
-      return scheduler.waitForSync(name, taskId).then(
+      return scheduler.waitForSync(name, taskId, argMatcher).then(
         (payload) => {
           const taskAfter = scheduler.getTask?.(taskId)?.virtualTime
           if (typeof taskBefore === 'number' && typeof taskAfter === 'number') {
@@ -372,7 +373,11 @@ export class ProgramBuilder {
         },
       )
     }
-    this.steps.push(bpmSync ? { tag: 'sync', name, bpmSync: true } : { tag: 'sync', name })
+    this.steps.push(
+      bpmSync
+        ? { tag: 'sync', name, bpmSync: true, argMatcher }
+        : { tag: 'sync', name, argMatcher },
+    )
     return this
   }
 

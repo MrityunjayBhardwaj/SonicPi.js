@@ -29,6 +29,7 @@ export const DSL_NAMES = [
   'hz_to_midi', 'midi_to_hz',
   'quantise', 'quantize', 'octs',
   'current_bpm',
+  'current_bpm_mode',
   'puts', 'print', 'stop', 'stop_loop',
   // Volume & introspection
   'set_volume', 'current_synth', 'current_volume',

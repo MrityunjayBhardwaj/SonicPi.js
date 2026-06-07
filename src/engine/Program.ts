@@ -22,7 +22,7 @@ export type Step =
   // bpmSync is `?: true` (not `?: boolean`): ProgramBuilder.sync_bpm pushes
   // the flag only when set, so the field is either absent or `true` — the
   // tighter type makes the discriminator unambiguous.
-  | { tag: 'sync'; name: string; bpmSync?: true }
+  | { tag: 'sync'; name: string; bpmSync?: true; argMatcher?: (args: unknown) => boolean }
   | { tag: 'fx'; name: string; opts: Record<string, number>; body: Program; nodeRef?: number }
   | { tag: 'thread'; body: Program }
   | { tag: 'print'; message: string }

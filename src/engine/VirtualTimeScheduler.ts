@@ -230,6 +230,8 @@ export class VirtualTimeScheduler {
      */
     waiterVt: number
     waiterIdPath: number[]
+    /** GAP M2: desktop's `arg_matcher` — wakes only on a cue whose value passes. */
+    valMatcher?: (value: unknown) => boolean
   }>>()
   /** One-shot audio-time-bound callbacks (SV41 — backs scheduleAtVirtualTime). */
   private pendingCallbacks: PendingCallback[] = []
@@ -526,6 +528,9 @@ export class VirtualTimeScheduler {
         const after = waiterTask?.lastSyncedCue
         const delivers = cueDelivers(cueVirtualTime, cueIdPath, waiter.waiterVt, waiter.waiterIdPath)
           && (!after || compareEvent({ t: cueVirtualTime, idPath: cueIdPath }, after) > 0)
+          // GAP M2: arg_matcher — the waiter only wakes if the cue's value passes.
+          // The stored-value shape is `{ args, bpm }`, the same as history-first.
+          && (!waiter.valMatcher || waiter.valMatcher({ args, bpm: cueBpm }))
         if (delivers) {
           if (waiterTask) {
             // Inherit cue's virtual time (SV5) and advance the re-sync matcher.
@@ -548,7 +553,7 @@ export class VirtualTimeScheduler {
    * payload also carries the cuer's BPM so callers using `bpm_sync: true`
    * (sync_bpm, #236) can mutate the waiter's task.bpm.
    */
-  waitForSync(name: string, taskId: string): Promise<SyncPayload> {
+  waitForSync(name: string, taskId: string, argMatcher?: (args: unknown) => boolean): Promise<SyncPayload> {
     // GAP A2: desktop `sync` (event_history.rb:215) checks history FIRST —
     // `get_next` returns the next cue strictly after the sync point if one is
     // already recorded — and only blocks if none. This is the with_fx
@@ -570,13 +575,27 @@ export class VirtualTimeScheduler {
     // @event_history (the cross-namespace wake).
     const readPath = toReadPath(name)
 
+    // GAP M2: `arg_matcher` filters by the cue's VALUE. A cue's stored value is
+    // `{ args, bpm }`; desktop's matcher receives the cue's `val` (= the args),
+    // so unwrap to `.args`. A `set`-sourced event (cross-namespace) stores a raw
+    // value — pass it through. Both EventHistory's history-first scan and the live
+    // wake loop use this same predicate over the stored value.
+    const valMatcher = argMatcher
+      ? (stored: unknown): boolean => {
+          const v = stored && typeof stored === 'object' && 'args' in (stored as object)
+            ? (stored as { args: unknown }).args
+            : stored
+          return argMatcher(v)
+        }
+      : undefined
+
     // History-first (event_history.rb:215): if a deliverable cue is already
     // recorded, resolve now — this is the with_fx registration-race fix
     // (#350/#481), and via the union glob it also catches a set/cue that fired
     // before this sync registered. getNextDelivered (GAP M1b) scans every key the
     // glob matches. #489: a re-sync excludes the cue this task last consumed.
     const after = task?.lastSyncedCue
-    const hit = this.cueHistory.getNextDelivered(readPath, waiterVt, waiterIdPath, after)
+    const hit = this.cueHistory.getNextDelivered(readPath, waiterVt, waiterIdPath, after, valMatcher)
     if (hit) {
       if (task) {
         task.virtualTime = hit.t // inherit the cue's vt (SV5)
@@ -588,7 +607,7 @@ export class VirtualTimeScheduler {
 
     return new Promise<SyncPayload>((resolve) => {
       const waiters = this.syncWaiters.get(readPath) ?? []
-      waiters.push({ taskId, resolve, waiterVt, waiterIdPath })
+      waiters.push({ taskId, resolve, waiterVt, waiterIdPath, valMatcher })
       this.syncWaiters.set(readPath, waiters)
     })
   }

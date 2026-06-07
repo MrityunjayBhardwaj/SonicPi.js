@@ -58,3 +58,31 @@ describe('EventHistory — glob getNextDelivered (sync across the union)', () =>
     expect(eh.getNextDelivered('/{cue,set,live_loop}/foo', 0, [0])).toBeNull()
   })
 })
+
+describe('EventHistory — getNextDelivered valMatcher (GAP M2 arg_matcher)', () => {
+  it('skips value-rejected cues and returns the next matching deliverable', () => {
+    const eh = new EventHistory()
+    eh.insert('/cue/foo', 1, [0, 0], { args: [3], bpm: 60 })
+    eh.insert('/cue/foo', 2, [0, 0], { args: [9], bpm: 60 })
+    const m = (v: unknown) => (v as { args: number[] }).args[0] > 5
+    // Without the matcher the smallest deliverable is t=1 (args 3); with it,
+    // t=1 is value-rejected so the next deliverable t=2 (args 9) is returned.
+    expect(eh.getNextDelivered('/{cue,set,live_loop}/foo', 0, [0], undefined, m)?.t).toBe(2)
+    expect(eh.getNextDelivered('/{cue,set,live_loop}/foo', 0, [0])?.t).toBe(1)
+  })
+
+  it('returns null when no deliverable cue passes the matcher', () => {
+    const eh = new EventHistory()
+    eh.insert('/cue/foo', 1, [0, 0], { args: [3], bpm: 60 })
+    const m = (v: unknown) => (v as { args: number[] }).args[0] > 5
+    expect(eh.getNextDelivered('/{cue,set,live_loop}/foo', 0, [0], undefined, m)).toBeNull()
+  })
+
+  it('a throwing matcher is treated as non-matching, never propagates', () => {
+    const eh = new EventHistory()
+    eh.insert('/cue/foo', 1, [0, 0], { args: [3], bpm: 60 })
+    const boom = () => { throw new Error('bad matcher') }
+    expect(() => eh.getNextDelivered('/{cue,set,live_loop}/foo', 0, [0], undefined, boom)).not.toThrow()
+    expect(eh.getNextDelivered('/{cue,set,live_loop}/foo', 0, [0], undefined, boom)).toBeNull()
+  })
+})
