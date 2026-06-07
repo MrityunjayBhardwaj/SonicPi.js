@@ -34,7 +34,7 @@
  * history pruning (`@history_depth`, event_history.rb:163) are likewise deferred.
  */
 
-import { pathMatch } from './PathMatcher'
+import { pathMatch, toWritePath, toReadPath } from './PathMatcher'
 
 /** Glob tokens that force a read to scan-and-merge across keys (GAP M1b). */
 const GLOB_TOKENS = /[*?{[]/
@@ -292,5 +292,46 @@ export class EventHistory {
   /** Clear all events. Dispose-only (SK14) — never on stop/run. */
   clear(): void {
     this.store.clear()
+  }
+}
+
+/**
+ * TimeStateView — GAP M1c. Exposes the prior `TimeState` `{set, get}` interface
+ * but backed by a SHARED EventHistory with path namespacing, so `set`/`get` use
+ * the ONE coordination store that `cue`/`sync` use (desktop's single
+ * `@event_history`). The consequence — desktop-faithful — is that a `get :foo`
+ * now sees a `cue :foo` / `live_loop :foo` (the `/{cue,set,live_loop}/foo` read
+ * union), which the separate-store world could not do.
+ *
+ * Writes go to the `/set/` root (`toWritePath(key, 'set')`); reads use the union
+ * glob (`toReadPath`). The leading-`/` heuristic (PathMatcher) routes an explicit
+ * absolute key (`set "/a/b"`) to a verbatim path. Returns value-or-`null`,
+ * matching the prior TimeState vt-aware contract (SonicPiEngine `?? null`).
+ */
+export class TimeStateView {
+  constructor(private readonly eh: EventHistory) {}
+
+  set(key: string | symbol, value: unknown, t: number, writerIdPath: number[] = [0]): void {
+    this.eh.insert(toWritePath(String(key), 'set'), t, writerIdPath, value)
+  }
+
+  get(key: string | symbol, t?: number, readerIdPath: number[] = [0]): unknown {
+    const readPath = toReadPath(String(key))
+    // No-vt facade (the engine's `get(key)` fallback): the absolute latest across
+    // the union — a reader at +∞ with a maximal idPath sees every stored event.
+    const at = t === undefined ? Number.POSITIVE_INFINITY : t
+    const rid = t === undefined ? [Number.MAX_SAFE_INTEGER] : readerIdPath
+    const e = this.eh.getMostRecent(readPath, at, rid)
+    return e ? e.value : null
+  }
+
+  /** Distinct-key count facade (parity with the prior TimeState). */
+  get size(): number {
+    return this.eh.size
+  }
+
+  /** Dispose-only clear (SK14) — delegates to the shared store. */
+  clear(): void {
+    this.eh.clear()
   }
 }

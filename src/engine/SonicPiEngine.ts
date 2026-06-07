@@ -1,6 +1,6 @@
 import { VirtualTimeScheduler, DEFAULT_SCHED_AHEAD_TIME, type TaskState } from './VirtualTimeScheduler'
 import { ProgramBuilder } from './ProgramBuilder'
-import { TimeState } from './TimeState'
+import { EventHistory, TimeStateView } from './EventHistory'
 import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioInterpreter'
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
@@ -227,12 +227,18 @@ export class SonicPiEngine {
    * scheduler-aware and time-stamped correctly.
    */
   readonly midiBridge = new MidiBridge()
-  /** Global key-value store — shared across all loops via get/set.
-   *  SP95(d) #350 slice 2: virtual-time-indexed TimeState (was a plain Map).
-   *  Writes carry the writer's current_time(); reads resolve "last set ≤ reader
-   *  vt". A back-compat facade (.get(key)/.size/.clear) keeps Map-shaped tests
-   *  green. Cleared only on dispose (SK14). */
-  private globalStore = new TimeState()
+  /**
+   * GAP M1c — the single coordination store (desktop's `@event_history`). ONE
+   * `(t, idPath)`-ordered EventHistory backs BOTH cue/sync (the scheduler is
+   * injected with it below) AND set/get (via the `globalStore` TimeStateView
+   * adapter). Because they share it, a `get :foo` sees a `cue :foo` and a
+   * `sync :foo` wakes on a `set :foo` — the `/{cue,set,live_loop}/foo` read union.
+   */
+  private readonly eventHistory = new EventHistory({ maxPerKey: 256 })
+  /** set/get facade over {@link eventHistory} with `/set/` write namespacing.
+   *  Keeps the prior TimeState `{set,get,size,clear}` shape so the builder,
+   *  closures and tests are unchanged. Cleared only on dispose (SK14). */
+  private globalStore = new TimeStateView(this.eventHistory)
   /** User-defined functions — `define`/`ndefine` register here. Seeded back into the
    *  next eval's scopeBase so removing a `define` line from the buffer does not
    *  break a still-running live_loop that calls it. (#215) */
@@ -474,6 +480,8 @@ export class SonicPiEngine {
         this.scheduler = new VirtualTimeScheduler({
           getAudioTime: () => audioCtx?.currentTime ?? 0,
           schedAheadTime: this.schedAheadTime,
+          // GAP M1c: cue/sync and set/get share this ONE store.
+          eventHistory: this.eventHistory,
         })
 
         this.scheduler.onLoopError((loopName, err) => {
@@ -992,7 +1000,9 @@ export class SonicPiEngine {
           // Auto-cue the loop name after each iteration.
           // In Sonic Pi, `live_loop :foo` auto-cues `:foo` on each iteration
           // so that `live_loop :bar, sync: :foo` can synchronize to it.
-          scheduler.fireCue(name, name)
+          // GAP M1c: heartbeat writes the `/live_loop/foo` root; a `sync :foo`
+          // reads the `/{cue,set,live_loop}/foo` union and still matches.
+          scheduler.fireCue(name, name, [], 'live_loop')
         }
 
         // SP72: when this registration fires from inside a parent builderFn

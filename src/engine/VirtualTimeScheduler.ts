@@ -1,28 +1,11 @@
 import { MinHeap } from './MinHeap'
 import { EventHistory, cueDelivers, compareEvent } from './EventHistory'
+import { pathMatch, toWritePath, toReadPath } from './PathMatcher'
 
-// ---------------------------------------------------------------------------
-// Cue glob matching (#150) — supports * and ? wildcards in sync targets
-// ---------------------------------------------------------------------------
-
-/**
- * Match a sync pattern against a fired cue name.
- * Exact match is the fast path; glob matching activates only when the
- * pattern contains `*` or `?`.
- *
- * `*` matches any sequence of characters (including empty).
- * `?` matches exactly one character.
- *
- * Used by fireCue to wake sync waiters whose patterns glob-match the cue.
- */
-function cueGlobMatch(pattern: string, name: string): boolean {
-  if (pattern === name) return true
-  if (!pattern.includes('*') && !pattern.includes('?')) return false
-  // Convert glob to regex: escape special regex chars, then replace glob tokens
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  const re = new RegExp('^' + escaped.replace(/\*/g, '.*').replace(/\?/g, '.') + '$')
-  return re.test(name)
-}
+// Cue/sync matching (#150 glob, GAP M1c path semantics) is now the shared
+// `pathMatch` from PathMatcher — the registered read glob is matched against the
+// concrete fired path. The old `cueGlobMatch` (`*`/`?`-only on the raw name) was
+// subsumed by it. `pathMatch` keeps the exact-string fast path for glob-free keys.
 
 // ---------------------------------------------------------------------------
 // Scheduling constants
@@ -171,6 +154,14 @@ export interface SchedulerOptions {
   schedAheadTime?: number
   /** Tick interval in ms (default: 25) */
   tickInterval?: number
+  /**
+   * GAP M1c — the shared coordination store. When the engine injects its
+   * EventHistory, `set`/`get` (engine side) and `cue`/`sync` (scheduler side)
+   * use the SAME store, so a `get :foo` sees a `cue :foo` (desktop's single
+   * `@event_history`). Omitted ⇒ the scheduler owns a private store (raw
+   * scheduler usage / unit tests, behaviour unchanged).
+   */
+  eventHistory?: EventHistory
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +207,16 @@ export class VirtualTimeScheduler {
    * forward-looking `sync`) so it does not grow unbounded the way cueMap never
    * did. Value = `{ args, bpm }` (the cuer's BPM at fire time, for sync_bpm).
    */
-  private cueHistory = new EventHistory({ maxPerKey: 256 })
+  private cueHistory: EventHistory
+  /**
+   * GAP M1c: true only when this scheduler created its OWN cueHistory. When the
+   * engine injects the shared store, the scheduler must NOT clear it on dispose —
+   * the engine owns its lifecycle (cleared only on engine dispose, SK14). Without
+   * this guard, re-evaluating (which disposes the prior scheduler) would wipe
+   * set/get state, breaking #336 (set persists across Stop; desktop's
+   * @event_history persists until quit).
+   */
+  private readonly ownsCueHistory: boolean
   /** Tasks waiting for a cue */
   private syncWaiters = new Map<string, Array<{
     taskId: string
@@ -238,6 +238,9 @@ export class VirtualTimeScheduler {
     this.getAudioTime = options.getAudioTime ?? (() => 0)
     this.schedAheadTime = options.schedAheadTime ?? DEFAULT_SCHED_AHEAD_TIME
     this.tickInterval = options.tickInterval ?? DEFAULT_TICK_INTERVAL_MS
+    // GAP M1c: share the engine's coordination store if injected, else own one.
+    this.ownsCueHistory = !options.eventHistory
+    this.cueHistory = options.eventHistory ?? new EventHistory({ maxPerKey: 256 })
 
     // Priority: by time, then by insertion order for determinism (SP1)
     // Uses entry.order directly — no Map lookup or string allocation (#75)
@@ -469,7 +472,7 @@ export class VirtualTimeScheduler {
    * not exist, fall back to the current audio time so external sources still
    * wake sync waiters instead of silently returning.
    */
-  fireCue(name: string, taskId: string, args: unknown[] = []): void {
+  fireCue(name: string, taskId: string, args: unknown[] = [], op: 'cue' | 'live_loop' = 'cue'): void {
     const task = this.tasks.get(taskId)
     const cueVirtualTime = task?.virtualTime ?? this.getAudioTime()
     // Synthetic external sources ('__midi__', '__osc__', #151) have no real
@@ -480,10 +483,16 @@ export class VirtualTimeScheduler {
     // external sources (no task) cue as main `[0]`.
     const cueIdPath = task?.idPath ?? [0]
 
+    // GAP M1c: namespace the write by op — `cue :foo`→/cue/foo, a live_loop
+    // heartbeat→/live_loop/foo. An absolute key (external `/midi:*`) is kept
+    // verbatim (toWritePath's leading-`/` rule). A `sync :foo` reads the union
+    // `/{cue,set,live_loop}/foo`, so it matches whichever root the writer used.
+    const firedPath = toWritePath(name, op)
+
     // Record the cue in the (t, idPath)-ordered history so a late or
     // forked-sibling syncer resolves it correctly (replaces the single-entry
     // cueMap). Value carries the cuer's BPM for sync_bpm waiters (#236).
-    this.cueHistory.insert(name, cueVirtualTime, cueIdPath, { args, bpm: cueBpm })
+    this.cueHistory.insert(firedPath, cueVirtualTime, cueIdPath, { args, bpm: cueBpm })
 
     // Emit cue event for UI (CueLog panel)
     this.emitEvent({
@@ -499,7 +508,9 @@ export class VirtualTimeScheduler {
     // Example: `sync "/midi:*:*/note_on"` matches a cue named `/midi:*:1/note_on`.
     for (const [pattern, waiters] of this.syncWaiters) {
       if (waiters.length === 0) continue
-      if (!cueGlobMatch(pattern, name)) continue
+      // GAP M1c: a waiter is registered under its READ path (a glob like
+      // `/{cue,set,live_loop}/foo`); match it against the concrete fired path.
+      if (!pathMatch(pattern, firedPath)) continue
       // Wake-phase (cueDelivers, observed desktop #481/#400): deliver iff the cue
       // is strictly LATER, or — at EQUAL vt — the waiter is a strict ANCESTOR of
       // the cuer (its thread spawned the cuer, then synced → happens-after). A
@@ -553,29 +564,32 @@ export class VirtualTimeScheduler {
     const waiterVt = task?.virtualTime ?? 0
     const waiterIdPath = task?.idPath ?? [0]
 
-    // History-first only for exact cue names; glob patterns (`sync "/midi:*"`,
-    // #150) register and wait for a future matching cue (their cross-key history
-    // scan is GAP M / not needed by #350/#481 which use exact names).
-    // #489: a re-sync excludes the cue this task last consumed (and anything
-    // before it) so an inline/main waiter doesn't re-catch the same equal-vt
-    // ancestor cue forever. First sync ⇒ `after` undefined ⇒ pure cueDelivers.
+    // GAP M1c: read via the union path (`sync :foo` → `/{cue,set,live_loop}/foo`,
+    // an explicit/external `/midi:*` kept verbatim). The store is shared with
+    // set/get, so this glob also sees a `set :foo` — desktop's single
+    // @event_history (the cross-namespace wake).
+    const readPath = toReadPath(name)
+
+    // History-first (event_history.rb:215): if a deliverable cue is already
+    // recorded, resolve now — this is the with_fx registration-race fix
+    // (#350/#481), and via the union glob it also catches a set/cue that fired
+    // before this sync registered. getNextDelivered (GAP M1b) scans every key the
+    // glob matches. #489: a re-sync excludes the cue this task last consumed.
     const after = task?.lastSyncedCue
-    if (!name.includes('*') && !name.includes('?')) {
-      const hit = this.cueHistory.getNextDelivered(name, waiterVt, waiterIdPath, after)
-      if (hit) {
-        if (task) {
-          task.virtualTime = hit.t // inherit the cue's vt (SV5)
-          task.lastSyncedCue = { t: hit.t, idPath: hit.idPath } // #489: advance matcher
-        }
-        const payload = hit.value as { args: unknown[]; bpm: number }
-        return Promise.resolve({ args: payload.args, bpm: payload.bpm })
+    const hit = this.cueHistory.getNextDelivered(readPath, waiterVt, waiterIdPath, after)
+    if (hit) {
+      if (task) {
+        task.virtualTime = hit.t // inherit the cue's vt (SV5)
+        task.lastSyncedCue = { t: hit.t, idPath: hit.idPath } // #489: advance matcher
       }
+      const payload = hit.value as { args: unknown[]; bpm: number }
+      return Promise.resolve({ args: payload.args, bpm: payload.bpm })
     }
 
     return new Promise<SyncPayload>((resolve) => {
-      const waiters = this.syncWaiters.get(name) ?? []
+      const waiters = this.syncWaiters.get(readPath) ?? []
       waiters.push({ taskId, resolve, waiterVt, waiterIdPath })
-      this.syncWaiters.set(name, waiters)
+      this.syncWaiters.set(readPath, waiters)
     })
   }
 
@@ -679,7 +693,10 @@ export class VirtualTimeScheduler {
     this.tasks.clear()
     this.queue.clear()
     this.eventHandlers.length = 0
-    this.cueHistory.clear()
+    // GAP M1c: only clear a store we OWN. An injected (shared) store is the
+    // engine's — clearing it here would wipe set/get + cue state on every
+    // re-evaluate (which disposes the prior scheduler). #336 / SK14.
+    if (this.ownsCueHistory) this.cueHistory.clear()
     this.syncWaiters.clear()
     this.pendingCallbacks.length = 0
   }
@@ -704,7 +721,7 @@ export class VirtualTimeScheduler {
       // This is how sync: :name works on other live_loops.
       // Note: SonicPiEngine also fires a cue after each iteration (line ~290).
       // Having it here ensures it works for raw scheduler usage too.
-      this.fireCue(task.id, task.id)
+      this.fireCue(task.id, task.id, [], 'live_loop')
       const vtBefore = task.virtualTime
       try {
         await task.asyncFn()

@@ -179,6 +179,28 @@ export function pathMatch(pattern: string, path: string): boolean {
   return re.test(path)
 }
 
+/**
+ * Symbol-erasure adaptation (the GAP M faithfulness boundary). Our transpiler
+ * lowers BOTH `:foo` and `"foo"` to the same JS string `"foo"`
+ * (TreeSitterTranspiler.ts:509) — Ruby symbol-ness does not survive to the
+ * engine. Desktop's namespacing split keys on symbol-vs-string, which we cannot
+ * observe. We use the distinction that DOES survive: a leading `/` marks an
+ * explicit absolute path (string semantics); everything else is treated as a
+ * symbol key (op-namespaced write + `/{cue,set,live_loop}/` union read).
+ *
+ * This is exact for the two cases users actually write — a bare `:foo` and an
+ * absolute `"/a/b"` — and collapses only the rare relative-string `set "foo"`
+ * into symbol behaviour (a documented, more-permissive divergence).
+ */
+export function toWritePath(key: string, op: string): string {
+  return normalizeWritePath(key, op, !key.startsWith('/'))
+}
+
+/** Read-side companion of {@link toWritePath} (same leading-`/` heuristic). */
+export function toReadPath(key: string): string {
+  return normalizeReadPath(key, !key.startsWith('/'))
+}
+
 function stripSlashes(s: string): string {
   let a = 0
   let b = s.length
