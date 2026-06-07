@@ -888,7 +888,11 @@ function transpileNode(node: any, ctx: TranspileContext): string {
       // form (no implicit return — a pre-existing limitation, rare for lambdas).
       if (body && (body.type === 'block' || body.type === 'do_block')) {
         const stmts = body.namedChildren.filter((c: any) => c.type !== 'block_parameters' && c.type !== 'comment')
-        if (stmts.length === 1) {
+        // Only a single EXPRESSION statement can become an expression-bodied
+        // arrow. A statement node (return/break/next/control flow) would produce
+        // invalid JS like `() => (return 5)`, so keep the block form for those.
+        const STMT_NODES = new Set(['return', 'break', 'next', 'redo', 'retry', 'if', 'unless', 'while', 'until', 'case', 'for', 'begin'])
+        if (stmts.length === 1 && !STMT_NODES.has(stmts[0].type)) {
           return `(${paramStr}) => (${transpileNode(stmts[0], ctx)})`
         }
       }
