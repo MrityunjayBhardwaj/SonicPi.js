@@ -119,6 +119,14 @@ const COMMON_SYNTHDEFS = [
 /** Max stereo track outputs (beyond master). Channels 0-1 = master, 2-3 = track 0, etc. */
 const NUM_OUTPUT_CHANNELS = 2 + AUDIO_IO.MAX_TRACK_OUTPUTS * 2 // 14 channels total
 
+/** Stop-declick fade (GAP E, #493). Master-gain ramp-to-0 duration before the
+ *  /g_freeAll node-kill, and the extra margin before the deferred free fires.
+ *  30ms is imperceptible as Stop latency yet ample to cover the node-free
+ *  instant (a few ms suffices). Desktop uses ~1s, but that also drains
+ *  sched-ahead events via sleep — we purge() those instead. */
+const STOP_FADE_SEC = 0.03
+const STOP_FADE_MARGIN_MS = 10
+
 // Gain staging, I/O, and safety parameters are centralized in config.ts.
 // See config.ts SECTION 1 (MIXER) for the full A/B calibration history.
 import { MIXER, AUDIO_IO } from './config'
@@ -172,6 +180,10 @@ export class SuperSonicBridge {
   private splitter: ChannelSplitterNode | null = null
   private masterMerger: ChannelMergerNode | null = null
   private masterGainNode: GainNode | null = null
+  /** Stop-declick (GAP E, #493): deferred /g_freeAll timer + the mixer amp to
+   *  restore after the fade completes. See fadeOutAndFreeAllNodes. */
+  private pendingStopFade: ReturnType<typeof setTimeout> | null = null
+  private stopFadeBaseline = 1
   /** Per-loop monitor state: loopBus (internal routing) + monitorNodeId (scsynth node) */
   private loopMonitors = new Map<string, { loopBus: number; monitorNodeId: number }>()
   /** Whether the track-monitor SynthDef has been loaded via /d_recv */
@@ -1388,6 +1400,78 @@ export class SuperSonicBridge {
   }
 
   /**
+   * Declick teardown for Stop (GAP E, #493). Ramp the scsynth mixer amp to 0
+   * over a short fade, THEN hard-free all nodes — so the /g_freeAll node-kill
+   * lands while bus 0 is already silent and can never produce a click.
+   *
+   * Direct port of desktop's `shutdown_job_mixer` (`sound.rb:3965-3971`):
+   * `ctl amp_slide: t; ctl amp: 0; sleep t; kill`. We fade the MIXER (not the
+   * Web Audio masterGainNode) deliberately: the mixer sits on bus 0 upstream of
+   * the splitter → analyser → masterGain fan-out, so fading it declicks EVERY
+   * downstream tap — the speakers AND the analyser-tapped in-app Rec
+   * (App.ts records `audio.analyser`, which is BEFORE masterGain; a masterGain
+   * fade would miss it). amp_slide is verified to ramp in WASM scsynth.
+   *
+   * The fade is ~30ms, not desktop's ~1s: desktop's long fade also drains
+   * sched-ahead events via `Kernel.sleep`; we purge() future bundles instead,
+   * so we only need to cover the node-free instant (~-40dB residual by the
+   * deferred free — inaudible).
+   *
+   * Today the WASM output path already smooths the /g_freeAll cut (observed:
+   * no click on Stop pre-fix). This makes that guarantee EXPLICIT rather than
+   * reliant on an incidental property — a future change to the free path
+   * cannot reintroduce a click.
+   *
+   * The free is DEFERRED until after the fade. A Run within the fade window
+   * MUST flush it first — flushPendingStopFade() is called at evaluate() entry
+   * so old nodes are torn down before new /s_new bundles ship (verified: a
+   * fast Stop→Run does not silence the new run).
+   */
+  fadeOutAndFreeAllNodes(fadeSec: number = STOP_FADE_SEC): void {
+    // Fade the scsynth MIXER amp (not the Web Audio masterGainNode): the mixer
+    // sits on bus 0 upstream of the splitter → analyser → masterGain fan-out,
+    // so fading it declicks EVERY downstream tap — the speakers AND the
+    // analyser-tapped Rec (App.ts records audio.analyser, which is pre-gain).
+    // This is the direct port of desktop's shutdown_job_mixer (sound.rb:3965).
+    if (!this.sonic || !this.mixerNodeId) { this.freeAllNodes(); return }
+    this.flushPendingStopFade()  // collapse any prior pending fade (no stacking)
+    this.stopFadeBaseline = this.currentMixerAmp
+    // amp_slide is the Lag time on the mixer synthdef's amp param; set it then
+    // drive amp to 0 so scsynth ramps bus 0 to silence over fadeSec.
+    this.sonic.send('/n_set', this.mixerNodeId, 'amp_slide', fadeSec)
+    this.sonic.send('/n_set', this.mixerNodeId, 'amp', 0)
+    this.pendingStopFade = setTimeout(() => {
+      this.pendingStopFade = null
+      this.completeStopFade()
+    }, fadeSec * 1000 + STOP_FADE_MARGIN_MS)
+  }
+
+  /**
+   * Run any pending Stop-fade teardown immediately (cancel timer, free now,
+   * restore gain). Idempotent no-op when nothing is pending. Called at
+   * evaluate() entry so a Run during the fade window tears the old nodes down
+   * before new bundles ship, and on dispose so the deferred callback never
+   * fires against a torn-down context.
+   */
+  flushPendingStopFade(): void {
+    if (this.pendingStopFade === null) return
+    clearTimeout(this.pendingStopFade)
+    this.pendingStopFade = null
+    this.completeStopFade()
+  }
+
+  /** Free all nodes then restore the mixer amp to its pre-fade value (bus 0 is
+   *  silent now, so the restore is inaudible — it readies the mixer for the
+   *  next Run). amp_slide is reset to 0 so the restore is instant. */
+  private completeStopFade(): void {
+    this.freeAllNodes()
+    if (this.sonic && this.mixerNodeId) {
+      this.sonic.send('/n_set', this.mixerNodeId, 'amp_slide', 0)
+      this.sonic.send('/n_set', this.mixerNodeId, 'amp', this.stopFadeBaseline)
+    }
+  }
+
+  /**
    * Drain future-scheduled bundles from the WASM scheduler queue WITHOUT
    * killing currently-rendering synths.
    *
@@ -1439,6 +1523,9 @@ export class SuperSonicBridge {
   }
 
   dispose(): void {
+    // Run any deferred Stop-fade free NOW so its timer can't fire against the
+    // torn-down context/nodes below (GAP E, #493).
+    this.flushPendingStopFade()
     // Stop all live audio streams
     this.stopAllLiveAudio()
     if (this.masterGainNode) {

@@ -28,6 +28,7 @@ function createMockSuperSonic() {
     loadSynthDefs: vi.fn().mockResolvedValue(undefined),
     loadSample: vi.fn().mockResolvedValue(undefined),
     sync: vi.fn().mockResolvedValue(undefined),
+    purge: vi.fn().mockResolvedValue(undefined),
     nextNodeId: vi.fn(() => nodeIdCounter++),
     destroy: vi.fn(),
     node: { connect: vi.fn() },
@@ -369,5 +370,63 @@ describe('SuperSonicBridge', () => {
     bridge.dispose()
 
     expect(mockSonic.destroy).toHaveBeenCalled()
+  })
+
+  // GAP E (#493): Stop declick — fade the mixer amp, defer /g_freeAll until the
+  // fade completes, and let a Run within the fade window flush it first.
+  describe('fadeOutAndFreeAllNodes — Stop declick (GAP E, #493)', () => {
+    it('fades the mixer amp to 0 and DEFERS the /g_freeAll until after the fade', async () => {
+      vi.useFakeTimers()
+      try {
+        const { mockSonic, sent } = createMockSuperSonic()
+        ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+        const bridge = new SuperSonicBridge()
+        await bridge.init()
+        sent.length = 0
+
+        bridge.fadeOutAndFreeAllNodes()
+
+        // Mixer amp ramped to 0 immediately (amp_slide set, then amp 0).
+        const sets = sent.filter(m => m.address === '/n_set')
+        expect(sets.some(m => m.args[1] === 'amp_slide')).toBe(true)
+        const ampSet = sets.find(m => m.args[1] === 'amp')
+        expect(ampSet?.args[2]).toBe(0)
+        // The hard node-free is NOT sent yet — it's deferred behind the fade.
+        expect(sent.some(m => m.address === '/g_freeAll')).toBe(false)
+
+        // After the fade window, /g_freeAll fires and the amp is restored.
+        vi.runAllTimers()
+        const frees = sent.filter(m => m.address === '/g_freeAll').map(m => m.args[0])
+        expect(frees).toEqual([100, 101, 102])
+        const restore = sent.filter(m => m.address === '/n_set' && m.args[1] === 'amp').pop()
+        expect(restore?.args[2]).not.toBe(0)  // restored to the pre-fade baseline
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('flushPendingStopFade completes the deferred free immediately (Run during fade)', async () => {
+      vi.useFakeTimers()
+      try {
+        const { mockSonic, sent } = createMockSuperSonic()
+        ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+        const bridge = new SuperSonicBridge()
+        await bridge.init()
+        sent.length = 0
+
+        bridge.fadeOutAndFreeAllNodes()
+        expect(sent.some(m => m.address === '/g_freeAll')).toBe(false)  // still deferred
+
+        bridge.flushPendingStopFade()  // simulate a Run inside the fade window
+        expect(sent.filter(m => m.address === '/g_freeAll').map(m => m.args[0])).toEqual([100, 101, 102])
+
+        // The deferred timer must not double-fire after the flush.
+        sent.length = 0
+        vi.runAllTimers()
+        expect(sent.some(m => m.address === '/g_freeAll')).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 })

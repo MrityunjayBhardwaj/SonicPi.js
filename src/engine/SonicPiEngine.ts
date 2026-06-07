@@ -343,6 +343,12 @@ export class SonicPiEngine {
     }
 
     try {
+      // GAP E (#493): if a previous Stop is still inside its declick fade
+      // window, complete its deferred /g_freeAll NOW — before this Run ships
+      // any /s_new — so the old nodes are gone and the mixer amp is restored
+      // to baseline. Idempotent no-op when nothing is pending.
+      this.bridge?.flushPendingStopFade()
+
       // No-op Update short-circuit: if the user clicks Update without
       // changing a single character, hot-swap is pure churn — it would kill
       // every running synth, recreate FX, and restart loop iterations even
@@ -1930,9 +1936,15 @@ export class SonicPiEngine {
       this.recorder = null
     }
 
-    // Free all scsynth nodes for clean silence
+    // Free all scsynth nodes for clean silence — but declick first (GAP E,
+    // #493): ramp the scsynth mixer amp to 0 over a short fade, THEN /g_freeAll,
+    // so the node-kill can never click. The free is deferred behind the fade; a
+    // Run within the fade window flushes it (evaluate() calls
+    // flushPendingStopFade at entry). The JS-side bus-pool frees below run
+    // synchronously — that's safe because the only thing that could reuse a
+    // returned bus is a new Run, which flushes the deferred free first.
     if (this.bridge) {
-      this.bridge.freeAllNodes()
+      this.bridge.fadeOutAndFreeAllNodes()
       // Release mic / line-in tracks so the browser's recording indicator
       // clears and nothing keeps feeding scsynth's input channel (#152).
       this.bridge.stopAllLiveAudio()
