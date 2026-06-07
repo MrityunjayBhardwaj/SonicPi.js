@@ -34,6 +34,11 @@
  * history pruning (`@history_depth`, event_history.rb:163) are likewise deferred.
  */
 
+import { pathMatch } from './PathMatcher'
+
+/** Glob tokens that force a read to scan-and-merge across keys (GAP M1b). */
+const GLOB_TOKENS = /[*?{[]/
+
 /** A coordination event: a value recorded at virtual time `t` by thread `idPath`. */
 export interface CueEvent {
   /** Virtual time (seconds) the event was recorded at. */
@@ -181,9 +186,27 @@ export class EventHistory {
    * `null` when nothing is at or before the reader's point.
    */
   getMostRecent(key: string | symbol, t: number, idPath: number[]): CueEvent | null {
+    const ge = { t, idPath }
+    // GAP M1b: a glob read scans every key whose stored path the pattern matches
+    // and returns the GREATEST `e <= ge` across all of them — desktop's `__get`
+    // min/max merge over matching tree nodes (event_history.rb:299-380), here
+    // over a flat key set. A glob-free key keeps the O(1) exact Map lookup.
+    if (typeof key === 'string' && GLOB_TOKENS.test(key)) {
+      let best: CueEvent | null = null
+      for (const [storedKey, events] of this.store) {
+        if (typeof storedKey !== 'string' || !pathMatch(key, storedKey)) continue
+        const cand = this.firstAtOrBefore(events, ge)
+        if (cand && (!best || compareEvent(cand, best) > 0)) best = cand
+      }
+      return best
+    }
     const events = this.store.get(key)
     if (!events || events.length === 0) return null
-    const ge = { t, idPath }
+    return this.firstAtOrBefore(events, ge)
+  }
+
+  /** First (greatest) event `<= ge` in a descending list, or null. */
+  private firstAtOrBefore(events: CueEvent[], ge: { t: number; idPath: number[] }): CueEvent | null {
     for (let i = 0; i < events.length; i++) {
       if (compareEvent(events[i], ge) <= 0) return events[i]
     }
@@ -210,8 +233,33 @@ export class EventHistory {
    * pure `(t,idPath)` `cueDelivers` rule (#400 unaffected).
    */
   getNextDelivered(key: string | symbol, t: number, idPath: number[], after?: { t: number; idPath: number[] }): CueEvent | null {
+    // GAP M1b: a glob sync (`sync :foo` → `/{cue,set,live_loop}/foo`) wakes on the
+    // SMALLEST deliverable cue across EVERY matching key — desktop's `get_next`
+    // min merge (event_history.rb:303-360). A glob-free key keeps the fast scan.
+    if (typeof key === 'string' && GLOB_TOKENS.test(key)) {
+      let best: CueEvent | null = null
+      for (const [storedKey, events] of this.store) {
+        if (typeof storedKey !== 'string' || !pathMatch(key, storedKey)) continue
+        const cand = this.firstDeliverable(events, t, idPath, after)
+        if (cand && (!best || compareEvent(cand, best) < 0)) best = cand
+      }
+      return best
+    }
     const events = this.store.get(key)
     if (!events || events.length === 0) return null
+    return this.firstDeliverable(events, t, idPath, after)
+  }
+
+  /**
+   * Smallest deliverable cue in a descending list — scan from the tail
+   * (ascending t) and return the first that clears `after` and {@link cueDelivers}.
+   */
+  private firstDeliverable(
+    events: CueEvent[],
+    t: number,
+    idPath: number[],
+    after?: { t: number; idPath: number[] },
+  ): CueEvent | null {
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i]
       if (after && compareEvent(e, after) <= 0) continue
