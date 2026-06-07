@@ -111,3 +111,16 @@ describe('Sp95Lint — all SP95 idioms supported, lint retired (NO warnings)', (
     expect(detectSp95Limitations('')).toEqual([])
   })
 })
+
+describe('Sp95Lint — deprecation warnings (loud-not-silent, SV50/SV60 channel)', () => {
+  it('warns on with_tempo (deprecated since v2.0 — aliased to with_bpm) — #495 / GAP D', () => {
+    const w = detectSp95Limitations('with_tempo 120 do\n  play 60\nend')
+    expect(w).toHaveLength(1)
+    expect(w[0].pattern).toBe('with_tempo')
+    expect(w[0].message).toMatch(/with_bpm/)
+  })
+
+  it('does NOT warn when with_tempo only appears in a comment', () => {
+    expect(detectSp95Limitations('play 60 # with_tempo is the old name')).toEqual([])
+  })
+})

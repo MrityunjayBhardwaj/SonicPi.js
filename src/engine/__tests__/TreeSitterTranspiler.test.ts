@@ -74,6 +74,17 @@ end`
       expect(result.code).toContain('b.sleep(0.5)')
     })
 
+    it('aliases the deprecated with_tempo to with_bpm (#495 / GAP D)', () => {
+      const result = treeSitterTranspile(`with_tempo 120 do
+  play 60
+end`)
+      expect(result.ok).toBe(true)
+      // Emitted as with_bpm (desktop deprecated with_tempo since v2.0); the user's
+      // code still runs, and Sp95Lint surfaces the deprecation warning separately.
+      expect(result.code).toContain('with_bpm(120')
+      expect(result.code).not.toContain('with_tempo')
+    })
+
     it('output is valid JS (can be parsed by new Function)', () => {
       const ruby = `live_loop :drums do
   sample :bd_haus

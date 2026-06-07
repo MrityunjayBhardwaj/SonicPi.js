@@ -1336,6 +1336,15 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
       return transpileDefonce(node, argsNode, blockNode, ctx)
     }
 
+    // with_tempo is the deprecated v1.0 name for with_bpm — desktop RAISES a
+    // DeprecationError since v2.0 (core.rb:3641-3642). We keep the user's code
+    // running by aliasing it to with_bpm and emit a build-time deprecation
+    // warning (Sp95Lint) — loud-not-silent, mirroring the with_density
+    // precedent (#379/SV60). #495 / GAP D.
+    if (methodName === 'with_tempo') {
+      return transpileWithBlock('with_bpm', argsNode, blockNode, ctx)
+    }
+
     // with_fx :name, opts do ... end
     if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose' || methodName === 'with_arg_bpm_scaling' || methodName === 'with_synth_defaults' || methodName === 'with_sample_defaults' || methodName === 'with_random_seed' || methodName === 'with_octave' || methodName === 'with_arg_checks' || methodName === 'with_debug' || methodName === 'with_timing_guarantees' || methodName === 'with_merged_synth_defaults' || methodName === 'with_merged_sample_defaults') {
       return transpileWithBlock(methodName, argsNode, blockNode, ctx)

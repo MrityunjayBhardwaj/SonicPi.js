@@ -61,5 +61,20 @@ export function detectSp95Limitations(src: string): Sp95Warning[] {
     })
   }
 
+  // `with_tempo` is deprecated since Sonic Pi v2.0 — desktop RAISES a
+  // DeprecationError (core.rb:3641-3642). We keep the user's code running by
+  // aliasing it to `with_bpm` (transpiler) and surface this warning so the
+  // divergence-from-desktop is visible and the user migrates. The `^[^#\n]*`
+  // guard matches a call position only (skips comments).
+  if (/^[^#\n]*\bwith_tempo\b/m.test(src)) {
+    warnings.push({
+      pattern: 'with_tempo',
+      title: 'with_tempo is deprecated',
+      message:
+        '`with_tempo` is deprecated since Sonic Pi v2.0 — use `use_bpm` or `with_bpm`. ' +
+        'Running it as `with_bpm`. Desktop Sonic Pi raises an error on `with_tempo`.',
+    })
+  }
+
   return warnings
 }
