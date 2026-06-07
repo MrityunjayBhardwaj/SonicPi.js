@@ -4,6 +4,8 @@ import {
   normalizeWritePath,
   normalizeReadPath,
   cuePathSegment,
+  toReadPath,
+  unionReadKeys,
   SYNC_PATH_ROOTS,
 } from '../PathMatcher'
 
@@ -109,5 +111,35 @@ describe('PathMatcher — glob vocabulary (event_history.rb:69-91)', () => {
   it('regex metacharacters in literal segments are escaped, not interpreted', () => {
     expect(pathMatch('/a.b', '/a.b')).toBe(true)
     expect(pathMatch('/a.b', '/axb')).toBe(false) // '.' is literal, not "any char"
+  })
+})
+
+describe('PathMatcher — unionReadKeys fast-path detection (#498 task 2)', () => {
+  it('recognises the canonical symbol union and returns the 3 exact keys', () => {
+    expect(unionReadKeys('/{cue,set,live_loop}/foo')).toEqual([
+      '/cue/foo',
+      '/set/foo',
+      '/live_loop/foo',
+    ])
+  })
+
+  it('the 3 keys it returns are EXACTLY what the glob matches', () => {
+    const pattern = toReadPath('foo') // what `sync :foo` / `get :foo` emit
+    const keys = unionReadKeys(pattern)!
+    expect(keys).not.toBeNull()
+    // Every returned key matches the glob ...
+    for (const k of keys) expect(pathMatch(pattern, k)).toBe(true)
+    // ... and the glob matches nothing the 3-key set would miss (segment-anchored).
+    expect(pathMatch(pattern, '/cue/foobar')).toBe(false)
+    expect(pathMatch(pattern, '/cue/foo/bar')).toBe(false)
+    expect(pathMatch(pattern, '/midi/foo')).toBe(false)
+  })
+
+  it('returns null for a general glob (keeps the full store scan)', () => {
+    expect(unionReadKeys('/x/*')).toBeNull()
+    expect(unionReadKeys('/cue/foo')).toBeNull() // an exact key never hits the glob branch
+    expect(unionReadKeys('/{cue,set,live_loop}/foo/*')).toBeNull() // residual glob in SEG
+    expect(unionReadKeys('/{cue,set,live_loop}/a/b')).toBeNull() // multi-segment SEG
+    expect(unionReadKeys('/{cue,set}/foo')).toBeNull() // a different brace set
   })
 })

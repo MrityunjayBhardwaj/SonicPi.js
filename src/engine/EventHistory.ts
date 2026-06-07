@@ -34,7 +34,7 @@
  * history pruning (`@history_depth`, event_history.rb:163) are likewise deferred.
  */
 
-import { pathMatch, toWritePath, toReadPath } from './PathMatcher'
+import { pathMatch, toWritePath, toReadPath, unionReadKeys } from './PathMatcher'
 
 /** Glob tokens that force a read to scan-and-merge across keys (GAP M1b). */
 const GLOB_TOKENS = /[*?{[]/
@@ -206,8 +206,7 @@ export class EventHistory {
     // over a flat key set. A glob-free key keeps the O(1) exact Map lookup.
     if (typeof key === 'string' && GLOB_TOKENS.test(key)) {
       let best: CueEvent | null = null
-      for (const [storedKey, events] of this.store) {
-        if (typeof storedKey !== 'string' || !pathMatch(key, storedKey)) continue
+      for (const events of this.globCandidateLists(key)) {
         const cand = this.firstAtOrBefore(events, ge)
         if (cand && (!best || compareEvent(cand, best) > 0)) best = cand
       }
@@ -216,6 +215,32 @@ export class EventHistory {
     const events = this.store.get(key)
     if (!events || events.length === 0) return null
     return this.firstAtOrBefore(events, ge)
+  }
+
+  /**
+   * The event lists a glob read must merge over. The canonical symbol union
+   * (`/{cue,set,live_loop}/SEG`, what `get`/`sync :foo` emit) resolves to its
+   * three exact keys by direct lookup ({@link unionReadKeys}, #498 task 2); any
+   * general glob (`/a/*`) scans the store. Both yield the SAME lists — the union
+   * brace is segment-anchored so its only matches ARE those three keys — so this
+   * is a fast path on the read hot path, not a semantic change.
+   */
+  private globCandidateLists(globKey: string): CueEvent[][] {
+    const lists: CueEvent[][] = []
+    const union = unionReadKeys(globKey)
+    if (union) {
+      for (const k of union) {
+        const events = this.store.get(k)
+        if (events && events.length > 0) lists.push(events)
+      }
+      return lists
+    }
+    for (const [storedKey, events] of this.store) {
+      if (typeof storedKey === 'string' && pathMatch(globKey, storedKey) && events.length > 0) {
+        lists.push(events)
+      }
+    }
+    return lists
   }
 
   /** First (greatest) event `<= ge` in a descending list, or null. */
@@ -254,8 +279,7 @@ export class EventHistory {
     // cue to the next deliverable one (event_history.rb:529-534).
     if (typeof key === 'string' && GLOB_TOKENS.test(key)) {
       let best: CueEvent | null = null
-      for (const [storedKey, events] of this.store) {
-        if (typeof storedKey !== 'string' || !pathMatch(key, storedKey)) continue
+      for (const events of this.globCandidateLists(key)) {
         const cand = this.firstDeliverable(events, t, idPath, after, valMatcher)
         if (cand && (!best || compareEvent(cand, best) < 0)) best = cand
       }

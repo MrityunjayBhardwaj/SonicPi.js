@@ -201,6 +201,31 @@ export function toReadPath(key: string): string {
   return normalizeReadPath(key, !key.startsWith('/'))
 }
 
+/** The literal prefix of the canonical symbol union read (`/{cue,set,live_loop}/`). */
+const UNION_READ_PREFIX = `/{${SYNC_PATH_ROOTS.join(',')}}/`
+
+/**
+ * If `pattern` is the canonical symbol union read ({@link toReadPath} of a
+ * symbol: `/{cue,set,live_loop}/SEG` with SEG one glob-free segment), return the
+ * three exact keys it matches — `/cue/SEG`, `/set/SEG`, `/live_loop/SEG` — so a
+ * caller can resolve them by direct lookup instead of scanning the whole store
+ * (#498 task 2). Returns `null` for any general glob (`/a/*`), which keeps the
+ * full scan.
+ *
+ * Safe because the brace glob compiles to `^/?(cue|set|live_loop)/SEG/?$`
+ * ({@link compileGlob}) — segment-anchored, so those three literals are EXACTLY
+ * its match set. The direct lookup is therefore identical to filtering the store
+ * by {@link pathMatch}, just O(3) instead of O(keys).
+ */
+export function unionReadKeys(pattern: string): string[] | null {
+  if (!pattern.startsWith(UNION_READ_PREFIX)) return null
+  const seg = pattern.slice(UNION_READ_PREFIX.length)
+  // SEG must be a single literal segment: no nested path, no residual glob token
+  // (a genuine union SEG is cuePathSegment output, which strips all of these).
+  if (seg.length === 0 || /[*?{}[\]/]/.test(seg)) return null
+  return SYNC_PATH_ROOTS.map((root) => `/${root}/${seg}`)
+}
+
 function stripSlashes(s: string): string {
   let a = 0
   let b = s.length

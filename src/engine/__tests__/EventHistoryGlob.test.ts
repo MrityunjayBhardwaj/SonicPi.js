@@ -86,3 +86,26 @@ describe('EventHistory — getNextDelivered valMatcher (GAP M2 arg_matcher)', ()
     expect(eh.getNextDelivered('/{cue,set,live_loop}/foo', 0, [0], undefined, boom)).toBeNull()
   })
 })
+
+describe('EventHistory — #498 task 2 union read fast path is semantically identical', () => {
+  it('the canonical union resolves ONLY the 3 exact keys (no prefix / multi-segment bleed)', () => {
+    const eh = new EventHistory()
+    eh.insert('/cue/foo', 1, [0], 'exact')
+    eh.insert('/cue/foobar', 2, [0], 'prefix-only') // same root, longer segment
+    eh.insert('/cue/foo/bar', 3, [0], 'sub-path') // same root, extra segment
+    // The brace glob is segment-anchored (^(cue|set|live_loop)/foo$), so the
+    // direct-3-key fast path must see ONLY /cue/foo, never the t=2/t=3 imposters.
+    expect(eh.getMostRecent('/{cue,set,live_loop}/foo', 5, [0])?.value).toBe('exact')
+    expect(eh.getNextDelivered('/{cue,set,live_loop}/foo', 0, [0])?.value).toBe('exact')
+  })
+
+  it('a general (non-union) glob still scans the whole store', () => {
+    const eh = new EventHistory()
+    eh.insert('/x/a', 1, [0], 'a@1')
+    eh.insert('/x/b', 2, [0], 'b@2')
+    eh.insert('/y/c', 3, [0], 'c@3') // does not match /x/*
+    // unionReadKeys('/x/*') is null → the scan branch merges across /x/a,/x/b.
+    expect(eh.getMostRecent('/x/*', 5, [0])?.value).toBe('b@2')
+    expect(eh.getNextDelivered('/x/*', 0, [0])?.value).toBe('a@1') // smallest deliverable
+  })
+})
