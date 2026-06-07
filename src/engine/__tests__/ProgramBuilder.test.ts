@@ -880,4 +880,45 @@ describe('ProgramBuilder', () => {
       expect(seenBeat).toBe(3)
     })
   })
+
+  describe('time_warp + with_swing (#357 / #356)', () => {
+    it('time_warp emits a timeWarp step; outer plays stay inline (not forked)', () => {
+      const b = new ProgramBuilder()
+      b.play(60).time_warp(0.25, null, (inner) => { inner.play(67) }).play(64)
+      const steps = b.build()
+      const warp = steps.find((s) => s.tag === 'timeWarp')
+      expect(warp).toBeDefined()
+      expect((warp as { deltaBeats: number }).deltaBeats).toBe(0.25)
+      const innerNotes = (warp as unknown as { body: { tag: string; note?: number }[] }).body
+        .filter((s) => s.tag === 'play').map((s) => s.note)
+      expect(innerNotes).toEqual([67])
+      // outer 60 + 64 remain at the top level around the warp (proof: no fork)
+      const topNotes = steps.filter((s) => s.tag === 'play').map((s) => (s as { note: number }).note)
+      expect(topNotes).toEqual([60, 64])
+    })
+
+    it('time_warp SHARES the tick stream (same-thread), unlike at (forked, resets)', () => {
+      const b = new ProgramBuilder()
+      let warpTick = -1
+      let atTick = -1
+      b.tick('t') // → 0 on the parent
+      b.time_warp(0.1, null, (inner) => { warpTick = inner.tick('t') })
+      expect(warpTick).toBe(1) // continues the SAME stream (0 → 1)
+      b.at([0], null, (inner) => { atTick = inner.tick('t') })
+      expect(atTick).toBe(0) // forked → fresh tick map, restarts at 0
+    })
+
+    it('with_swing time_warps every pulse-th call (tick%pulse==0), inline otherwise', () => {
+      const b = new ProgramBuilder()
+      const warped: number[] = []
+      for (let i = 0; i < 5; i++) {
+        const before = b.build().filter((s) => s.tag === 'timeWarp').length
+        b.with_swing({ shift: 0.1, pulse: 4 }, (inner) => { inner.play(60 + i) })
+        const after = b.build().filter((s) => s.tag === 'timeWarp').length
+        if (after > before) warped.push(i)
+      }
+      // ticks 0 and 4 satisfy tick%4==0 → swung; 1,2,3 run inline
+      expect(warped).toEqual([0, 4])
+    })
+  })
 })

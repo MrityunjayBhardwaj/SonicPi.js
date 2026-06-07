@@ -295,7 +295,7 @@ const BUILDER_METHODS = new Set([
   'factor_q', 'bools', 'play_pattern_timed', 'sample_duration', 'stretch', 'ramp',
   'hz_to_midi', 'midi_to_hz', 'quantise', 'quantize', 'octs',
   'kill', 'play_chord', 'play_pattern', 'tuplets',
-  'with_octave', 'with_random_seed', 'with_density',
+  'with_octave', 'with_random_seed', 'with_density', 'with_swing',
   'noteToMidi', 'midiToFreq', 'noteToFreq', 'note_info',
   // Data constructors
   'ring', 'knit', 'range', 'line', 'spread',
@@ -1354,6 +1354,11 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     // time_warp offset do ... end
     if (methodName === 'time_warp') {
       return transpileTimeWarp(argsNode, blockNode, ctx)
+    }
+
+    // with_swing shift, pulse, tick:, offset: do ... end  (#356)
+    if (methodName === 'with_swing') {
+      return transpileWithSwing(argsNode, blockNode, ctx)
     }
 
     // tuplets [list], opts do |x| ... end  (#233)
@@ -2619,6 +2624,41 @@ function transpileTimeWarp(
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
   const bodyStr = transpileBlockBody(blockNode, bodyCtx)
   return `${prefix}time_warp(${times}, ${params}, (__b) => {\n${bodyStr}\n${ctx.indent}})`
+}
+
+/**
+ * `with_swing shift, pulse, tick:, offset: do ... end`  (#356)
+ *
+ * Desktop `core.rb:382-404`: every `pulse`-th call runs the block through
+ * `time_warp(shift)`, the rest inline — a swing feel. Positional args are
+ * [shift, pulse, tick, offset]; keyword opts override. We fold both into one
+ * opts object and emit `__b.with_swing({ … }, fn)` → ProgramBuilder.with_swing.
+ */
+function transpileWithSwing(
+  argsNode: any, blockNode: any, ctx: TranspileContext
+): string {
+  if (!blockNode) {
+    const line = argsNode?.startPosition?.row != null ? argsNode.startPosition.row + 1 : '?'
+    ctx.errors.push(`Parse error at line ${line}: with_swing is missing 'do ... end' block`)
+    return `/* parse error: with_swing missing block */`
+  }
+  const args = argsNode?.namedChildren ?? []
+  const positional = args.filter((a: any) => a.type !== 'pair')
+  const pairs = args.filter((a: any) => a.type === 'pair')
+  const posKeys = ['shift', 'pulse', 'tick', 'offset']
+  const parts: string[] = []
+  positional.forEach((a: any, i: number) => {
+    if (posKeys[i]) parts.push(`${posKeys[i]}: ${transpileNode(a, ctx)}`)
+  })
+  for (const p of pairs) {
+    const key = p.namedChildren[0]?.text?.replace(/:$/, '')
+    if (key) parts.push(`${key}: ${transpileNode(p.namedChildren[1], ctx)}`)
+  }
+  const optsObj = `{ ${parts.join(', ')} }`
+  const prefix = ctx.insideLoop ? '__b.' : ''
+  const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
+  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
+  return `${prefix}with_swing(${optsObj}, (__b) => {\n${bodyStr}\n${ctx.indent}})`
 }
 
 /**

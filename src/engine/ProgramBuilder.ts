@@ -1189,6 +1189,31 @@ export class ProgramBuilder {
     return this
   }
 
+  /**
+   * with_swing — run the block through `time_warp(shift)` on every `pulse`-th
+   * call, inline otherwise, producing a swing feel (#356). Desktop
+   * `core.rb:382-404`: `use_shift = ((tick(key) + offset) % pulse) == 0`. The
+   * tick uses a SEPARATE key (`:swing` by default) so it never clashes with the
+   * loop's own `tick`; it persists across iterations (the loop's tick map), so
+   * call N swings iff `(N + offset) % pulse == 0`. Args come as an opts object
+   * from the transpiler: `{ shift, pulse, tick, offset }` (positional shift/pulse/
+   * tick/offset folded into it). Defaults: shift 0.1, pulse 4, tick :swing,
+   * offset 0.
+   */
+  with_swing(opts: Record<string, unknown>, buildFn: (b: ProgramBuilder) => void): this {
+    const shift = typeof opts.shift === 'number' ? opts.shift : 0.1
+    const pulse = typeof opts.pulse === 'number' ? opts.pulse : 4
+    const key = opts.tick != null ? String(opts.tick) : 'swing'
+    const offset = typeof opts.offset === 'number' ? opts.offset : 0
+    const useShift = ((this.tick(key) + offset) % pulse) === 0
+    if (useShift) {
+      this.time_warp(shift, null, buildFn)
+    } else {
+      buildFn(this)
+    }
+    return this
+  }
+
   /** Enable/disable debug output. In browser, this is a no-op flag. */
   use_debug(enabled: boolean): this {
     this._debug = enabled
