@@ -60,6 +60,9 @@ export class ProgramBuilder {
   private _syncScheduler: {
     waitForSync(name: string, taskId: string, argMatcher?: (args: unknown) => boolean): Promise<{ args: unknown[]; bpm: number }>
     getTask?(taskId: string): { virtualTime: number } | undefined
+    // #498: a live `set` wakes an already-parked `sync` (desktop EventHistory.set
+    // → @event_matchers.match). Optional — only the audio scheduler provides it.
+    notifySet?(name: string, vt: number, idPath: number[], value: unknown): void
   } | null = null
   private _syncTaskId: string | null = null
   // SP95(d) #350 slice 2: the virtual-time-indexed Time State the engine wires
@@ -274,6 +277,7 @@ export class ProgramBuilder {
     scheduler: {
       waitForSync(name: string, taskId: string, argMatcher?: (args: unknown) => boolean): Promise<{ args: unknown[]; bpm: number }>
       getTask?(taskId: string): { virtualTime: number } | undefined
+      notifySet?(name: string, vt: number, idPath: number[], value: unknown): void
     },
     taskId: string,
   ): void {
@@ -881,6 +885,13 @@ export class ProgramBuilder {
     // GAP A2: tag the write with the owning task's idPath so a same-vt reader
     // resolves it by the (t, idPath) total order (#400).
     this._timeState?.set(key, value, this.current_time(), this._ownerIdPath)
+    // #498: desktop's EventHistory.set runs @event_matchers.match after the
+    // insert (event_history.rb:204), so a `set` wakes an already-parked `sync`,
+    // not just the set-before-sync case the history-first scan covers. The eager
+    // write above already landed `value` in the shared store; notifySet only runs
+    // the match. Audio path only (the scheduler is the sole waiter holder); the
+    // capture / query builders never wire it, so an S3 sync there can't be woken.
+    this._syncScheduler?.notifySet?.(String(key), this.current_time(), this._ownerIdPath, value)
     this.steps.push({ tag: 'set', key, value })
     return this
   }

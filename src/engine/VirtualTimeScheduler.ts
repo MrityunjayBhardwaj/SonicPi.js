@@ -494,7 +494,8 @@ export class VirtualTimeScheduler {
     // Record the cue in the (t, idPath)-ordered history so a late or
     // forked-sibling syncer resolves it correctly (replaces the single-entry
     // cueMap). Value carries the cuer's BPM for sync_bpm waiters (#236).
-    this.cueHistory.insert(firedPath, cueVirtualTime, cueIdPath, { args, bpm: cueBpm })
+    const value = { args, bpm: cueBpm }
+    this.cueHistory.insert(firedPath, cueVirtualTime, cueIdPath, value)
 
     // Emit cue event for UI (CueLog panel)
     this.emitEvent({
@@ -505,39 +506,64 @@ export class VirtualTimeScheduler {
       params: { name, args },
     })
 
-    // Wake any tasks waiting for this cue.
-    // Supports exact match AND glob patterns (*, ?) in sync targets (#150).
-    // Example: `sync "/midi:*:*/note_on"` matches a cue named `/midi:*:1/note_on`.
+    // Wake any parked sync waiters. Desktop runs `@event_matchers.match(ce)` from
+    // the SAME EventHistory.set both `cue` and `set` flow through (event_history.rb
+    // :204) — so the wake loop is shared via notifyWaiters and also reachable from
+    // the `set` path (#498, notifySet below).
+    this.notifyWaiters(firedPath, cueVirtualTime, cueIdPath, value)
+  }
+
+  /**
+   * Wake the parked sync waiters a just-recorded event satisfies. Desktop's
+   * `EventHistory.set` calls `@event_matchers.match(ce)` after every insert
+   * (event_history.rb:204) — for cues (via {@link fireCue}) AND for `set`s (via
+   * {@link notifySet}, #498). The store insert is the CALLER's responsibility;
+   * this runs only the match, so it never double-records.
+   *
+   * `storedValue` is the value exactly as it sits in the history: `{ args, bpm }`
+   * for a cue, a raw value for a `set`. Both the live wake (here) and the
+   * history-first scan ({@link waitForSync}) pass that same stored value to the
+   * waiter's `valMatcher` and resolve from it, so a set-before-park and a
+   * park-before-set deliver identically.
+   *
+   * Supports exact match AND glob patterns (asterisk, ?) in sync targets (#150):
+   * a `sync` glob like `/midi:_:_/note_on` matches a concrete fired midi path.
+   */
+  notifyWaiters(firedPath: string, vt: number, idPath: number[], storedValue: unknown): void {
     for (const [pattern, waiters] of this.syncWaiters) {
       if (waiters.length === 0) continue
       // GAP M1c: a waiter is registered under its READ path (a glob like
       // `/{cue,set,live_loop}/foo`); match it against the concrete fired path.
       if (!pathMatch(pattern, firedPath)) continue
-      // Wake-phase (cueDelivers, observed desktop #481/#400): deliver iff the cue
+      // Wake-phase (cueDelivers, observed desktop #481/#400): deliver iff the event
       // is strictly LATER, or — at EQUAL vt — the waiter is a strict ANCESTOR of
-      // the cuer (its thread spawned the cuer, then synced → happens-after). A
+      // the firer (its thread spawned the firer, then synced → happens-after). A
       // forked-SIBLING waiter ([0,1]) misses a driver cue ([0,0]) and waits a
       // cycle (#481 in_thread / #350 met / #400 player); an inline/main waiter
       // ([0]) catches a driver cue ([0,0]) at the same vt (#481 with_fx/bare_loop).
       const kept: typeof waiters = []
       for (const waiter of waiters) {
         const waiterTask = this.tasks.get(waiter.taskId)
-        // #489: don't re-deliver a cue at or before the one this waiter already
+        // #489: don't re-deliver an event at or before the one this waiter already
         // consumed (desktop's last-sync matcher). The wake-phase (cueDelivers) is
-        // unchanged; this only excludes an already-seen cue on a re-sync.
+        // unchanged; this only excludes an already-seen event on a re-sync.
         const after = waiterTask?.lastSyncedCue
-        const delivers = cueDelivers(cueVirtualTime, cueIdPath, waiter.waiterVt, waiter.waiterIdPath)
-          && (!after || compareEvent({ t: cueVirtualTime, idPath: cueIdPath }, after) > 0)
-          // GAP M2: arg_matcher — the waiter only wakes if the cue's value passes.
-          // The stored-value shape is `{ args, bpm }`, the same as history-first.
-          && (!waiter.valMatcher || waiter.valMatcher({ args, bpm: cueBpm }))
+        const delivers = cueDelivers(vt, idPath, waiter.waiterVt, waiter.waiterIdPath)
+          && (!after || compareEvent({ t: vt, idPath }, after) > 0)
+          // GAP M2: arg_matcher — the waiter only wakes if the event's value passes.
+          && (!waiter.valMatcher || waiter.valMatcher(storedValue))
         if (delivers) {
           if (waiterTask) {
-            // Inherit cue's virtual time (SV5) and advance the re-sync matcher.
-            waiterTask.virtualTime = cueVirtualTime
-            waiterTask.lastSyncedCue = { t: cueVirtualTime, idPath: cueIdPath }
+            // Inherit the event's virtual time (SV5) and advance the re-sync matcher.
+            waiterTask.virtualTime = vt
+            waiterTask.lastSyncedCue = { t: vt, idPath }
           }
-          waiter.resolve({ args, bpm: cueBpm })
+          // Resolve from the stored value the same way history-first does
+          // (waitForSync): a cue's `{ args, bpm }` round-trips; a raw set value
+          // yields `{ args: undefined, bpm: undefined }` (set→sync value retrieval
+          // is a separate, pre-existing limitation, not this fix's concern).
+          const payload = storedValue as { args: unknown[]; bpm: number }
+          waiter.resolve({ args: payload.args, bpm: payload.bpm })
         } else {
           kept.push(waiter)
         }
@@ -545,6 +571,19 @@ export class VirtualTimeScheduler {
       if (kept.length > 0) this.syncWaiters.set(pattern, kept)
       else this.syncWaiters.delete(pattern)
     }
+  }
+
+  /**
+   * Wake parked syncs for a live `set` (#498). The eager build-time write already
+   * landed `value` in the shared store ({@link ProgramBuilder.set} → TimeStateView);
+   * this runs the match desktop's `EventHistory.set` does afterwards
+   * (event_history.rb:204), so a `set` that fires while a `sync` is already parked
+   * wakes it — not just the set-before-sync case the history-first scan covers.
+   * The `set` write namespaces the key under `/set/` (toWritePath), matching the
+   * union read `sync :foo` registers (`/{cue,set,live_loop}/foo`).
+   */
+  notifySet(name: string, vt: number, idPath: number[], value: unknown): void {
+    this.notifyWaiters(toWritePath(name, 'set'), vt, idPath, value)
   }
 
   /**
