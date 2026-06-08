@@ -19,12 +19,43 @@
 import { chromium, firefox, type Browser } from '@playwright/test'
 import { writeFileSync, readFileSync, mkdirSync, statSync, readdirSync } from 'fs'
 import { resolve, dirname, basename, extname, relative } from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CAPTURES_DIR = resolve(__dirname, '../.captures')
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:5173'
 const DEFAULT_DURATION = 8000
+
+/**
+ * Is `code` async-by-construction at the PROGRAM level — i.e. does it register
+ * its sound sources and RETURN IMMEDIATELY, leaving the main thread free?
+ *
+ * Used by the `--wrap-recording` path to decide whether to push user code into
+ * `in_thread` (which bounds the recording window to `--duration`). Async code
+ * must NOT be wrapped — the nested `__b.with_fx` builder path doesn't wire the
+ * FX bus the way top-level `topLevelWithFx` does, so wrapping a top-level
+ * `with_fx { live_loop }` (e.g. `crushed.rb`) silences its FX (SV30, #426).
+ *
+ * Only `live_loop` / `loop` qualify: after the #426/SP111 transpiler fix a
+ * top-level `loop do` (bare OR inside `with_fx`) registers an auto-named
+ * live_loop and returns immediately, exactly like an explicit `live_loop`.
+ *
+ * `in_thread` is DELIBERATELY EXCLUDED (#501). It detaches ONE thread but does
+ * NOT make the program return immediately — code after/around it on the main
+ * thread still blocks. `sorcerer/bach.rb` is bare-sequential at top level
+ * (`2.times do … play_pattern_timed … end`) with `in_thread` nested INSIDE it;
+ * treating that nested `in_thread` as async made bach skip the wrap, block the
+ * main thread for the whole ~95s piece, and fire `recording_save` far past
+ * `--duration` → unbounded render (sweep timeout #429) + window-misaligned,
+ * ungradeable capture (#406). Measured blast radius across all 34 official
+ * fixtures: only bach flips (skip→wrap). `crushed.rb` stays async (via `loop`);
+ * `orchard_improv.rb` stays wrapped (top-level `with_fx` over a blocking
+ * `100.times`, no loop). Leading whitespace is allowed so an indented `loop`
+ * inside `with_fx` (crushed) still matches.
+ */
+export function isAsyncByConstruction(code: string): boolean {
+  return /^[ \t]*(?:live_loop|loop)\b/m.test(code)
+}
 
 // ---------------------------------------------------------------------------
 // Capture everything the browser produces
@@ -91,29 +122,12 @@ async function captureRun(
     // recording_stop/save INSIDE in_thread broke: recording state isn't
     // visible across thread boundaries — issue #266.)
     const dur = opts.wrapRecordingSec
-    // Only wrap in `in_thread` when user code might block the main thread
-    // long enough that recording_stop never fires. Code containing top-level
-    // `live_loop` or `in_thread` is already async-by-construction (registration
-    // returns immediately, scheduler runs the body), so wrapping it adds no
-    // benefit AND breaks `with_fx` semantics: when the transpiler sees
-    // `with_fx ... do live_loop ... end end` inside `in_thread`, it emits
-    // `__b.with_fx` and `__b.live_loop` (builder-method path), which doesn't
-    // wire the FX bus to the loop's outBus the way the top-level
-    // `topLevelWithFx` / `fxAwareWrappedLiveLoop` path does. Result: dry
-    // signal in the capture even though desktop hears the FX.
-    //
-    // Heuristic: regex-detect `live_loop`, `in_thread`, or a bare `loop do`
-    // as standalone identifiers at column-zero-ish positions. After the
-    // #426/SP111 transpiler fix, a top-level `loop do` (bare OR wrapped in
-    // `with_fx`) is async-by-construction — it registers an auto-named
-    // live_loop and returns immediately, exactly like an explicit live_loop.
-    // Pushing it into `in_thread` would (a) be unnecessary and (b) break the
-    // with_fx FX-routing parity (the nested `__b.with_fx` builder path doesn't
-    // wire the FX bus the way top-level `topLevelWithFx` does — `crushed.rb`).
-    // So treat a top-level `loop do` like live_loop/in_thread and skip the wrap.
-    // Strings/comments containing these words are rare in test snippets; a false
-    // positive just degrades to "skipped wrap", safe for short snippets too.
-    const alreadyAsync = /^[ \t]*(?:live_loop|in_thread|loop)\b/m.test(code)
+    // Only wrap in `in_thread` when user code would BLOCK the main thread long
+    // enough that the trailing `recording_stop`/`recording_save` never fires
+    // within `--duration`. Async-by-construction code (top-level live_loop /
+    // loop) returns immediately and must run at top level so its with_fx FX bus
+    // wires correctly — see isAsyncByConstruction's contract (SV30, #426, #501).
+    const alreadyAsync = isAsyncByConstruction(code)
     // with_bpm 60 around the sleep so a user's `use_bpm 120` (or any other
     // tempo set inside <code>) doesn't shrink/expand the recording window.
     // At 60 BPM, sleep N == N real seconds.
@@ -959,7 +973,15 @@ end`
   await browser.close()
 }
 
-main().catch((err) => {
-  console.error('Capture failed:', err)
-  process.exit(1)
-})
+// Only run the CLI when executed directly (`tsx tools/capture.ts …`), NOT when
+// imported (e.g. by tools/__tests__/capture-async-heuristic.test.ts) — importing
+// must not launch Playwright.
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error('Capture failed:', err)
+    process.exit(1)
+  })
+}
