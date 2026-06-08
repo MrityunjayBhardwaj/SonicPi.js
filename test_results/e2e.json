@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-03T11:52:10.498599+00:00",
+  "generatedAt": "2026-06-08T20:08:59.059454+00:00",
   "pool": "e2e",
   "scheme": "consistency-score",
   "schemeNote": "Tier-2/3 timbre+level (HIGH/MID/LOW/INCONCLUSIVE) \u2014 NOT Tier-1 pitch; blind to wrong melody per SV46.",
@@ -7,100 +7,100 @@
   "total": 10,
   "counts": {
     "HIGH": 0,
-    "MID": 9,
-    "LOW": 1,
+    "MID": 10,
+    "LOW": 0,
     "INCONCLUSIVE": 0
   },
   "entries": [
     {
       "name": "01_minimal_techno",
       "verdict": "MID",
-      "score": 53.02314140406895,
-      "rms_ratio": 0.4900105152471083,
-      "peak_ratio": 0.4885948905109489,
-      "mfcc_distance": 219.818603515625,
-      "l2_mel_db": 21.33254623413086
+      "score": 54.47663548280438,
+      "rms_ratio": 0.49106203995793896,
+      "peak_ratio": 0.5370885489105238,
+      "mfcc_distance": 216.44277954101562,
+      "l2_mel_db": 20.975204467773438
     },
     {
       "name": "02_fx_chain",
       "verdict": "MID",
-      "score": 66.64642921955607,
-      "rms_ratio": 0.49585308056872035,
-      "peak_ratio": 0.5886838868388684,
-      "mfcc_distance": 103.90521240234375,
-      "l2_mel_db": 12.074695587158203
+      "score": 65.97937129291319,
+      "rms_ratio": 0.4973451327433628,
+      "peak_ratio": 0.552080768283674,
+      "mfcc_distance": 104.16857147216797,
+      "l2_mel_db": 12.115205764770508
     },
     {
       "name": "03_multi_layer",
       "verdict": "MID",
-      "score": 55.89449322374689,
-      "rms_ratio": 0.5,
-      "peak_ratio": 0.4909859781882929,
-      "mfcc_distance": 189.039306640625,
-      "l2_mel_db": 19.927824020385742
+      "score": 55.49949842240066,
+      "rms_ratio": 0.4993646759847522,
+      "peak_ratio": 0.47335924994283096,
+      "mfcc_distance": 188.23370361328125,
+      "l2_mel_db": 19.948095321655273
     },
     {
       "name": "04_sync_cue",
       "verdict": "MID",
-      "score": 50.32631711498974,
-      "rms_ratio": 0.48516129032258065,
-      "peak_ratio": 0.5690579525146796,
-      "mfcc_distance": 258.76324462890625,
-      "l2_mel_db": 24.972370147705078
+      "score": 51.861687211874234,
+      "rms_ratio": 0.49032258064516127,
+      "peak_ratio": 0.6382435537401072,
+      "mfcc_distance": 258.31561279296875,
+      "l2_mel_db": 24.901535034179688
     },
     {
       "name": "05_dj_dave_full",
       "verdict": "MID",
-      "score": 56.56017845797697,
-      "rms_ratio": 0.49876543209876545,
-      "peak_ratio": 0.42557993730407523,
-      "mfcc_distance": 174.8409881591797,
-      "l2_mel_db": 17.334230422973633
+      "score": 56.6470149166441,
+      "rms_ratio": 0.5020576131687243,
+      "peak_ratio": 0.42187695777471496,
+      "mfcc_distance": 173.45054626464844,
+      "l2_mel_db": 17.385061264038086
     },
     {
       "name": "06_euclidean",
-      "verdict": "LOW",
-      "score": 47.989062308244826,
-      "rms_ratio": 0.4192364170337739,
-      "peak_ratio": 0.3315,
-      "mfcc_distance": 182.7759552001953,
-      "l2_mel_db": 20.18797492980957
+      "verdict": "MID",
+      "score": 55.22649192230692,
+      "rms_ratio": 0.4805743243243243,
+      "peak_ratio": 0.47643000862316764,
+      "mfcc_distance": 187.1262664794922,
+      "l2_mel_db": 19.228647232055664
     },
     {
       "name": "07_ambient",
       "verdict": "MID",
-      "score": 66.14607760843265,
-      "rms_ratio": 1.736842105263158,
-      "peak_ratio": 1.7594799566630552,
-      "mfcc_distance": 121.17415618896484,
-      "l2_mel_db": 16.224328994750977
+      "score": 62.67472238129499,
+      "rms_ratio": 1.9166666666666665,
+      "peak_ratio": 1.9186893203883493,
+      "mfcc_distance": 128.05844116210938,
+      "l2_mel_db": 16.320758819580078
     },
     {
       "name": "08_full_composition",
       "verdict": "MID",
-      "score": 62.014610961542,
-      "rms_ratio": 0.488697524219591,
-      "peak_ratio": 0.5863556165457753,
-      "mfcc_distance": 154.7410125732422,
-      "l2_mel_db": 14.962337493896484
+      "score": 62.648363760354755,
+      "rms_ratio": 0.48331539289558667,
+      "peak_ratio": 0.587139776514409,
+      "mfcc_distance": 146.57899475097656,
+      "l2_mel_db": 14.210930824279785
     },
     {
       "name": "09_dnb",
       "verdict": "MID",
-      "score": 56.71126444929552,
-      "rms_ratio": 0.4793926247288503,
-      "peak_ratio": 0.4853615520282187,
-      "mfcc_distance": 178.56350708007812,
-      "l2_mel_db": 17.71373748779297
+      "score": 55.2391946212745,
+      "rms_ratio": 0.48011569052783803,
+      "peak_ratio": 0.4905926622765757,
+      "mfcc_distance": 195.8893585205078,
+      "l2_mel_db": 18.97104835510254
     },
     {
       "name": "10_house",
       "verdict": "MID",
-      "score": 52.9545060276714,
+      "score": 52.88786975142628,
       "rms_ratio": 0.4898678414096916,
       "peak_ratio": 0.48563060589419726,
-      "mfcc_distance": 214.44656372070312,
-      "l2_mel_db": 21.774362564086914
+      "mfcc_distance": 214.7262725830078,
+      "l2_mel_db": 21.86211395263672
     }
   ]
 }
