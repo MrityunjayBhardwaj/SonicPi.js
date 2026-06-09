@@ -8,7 +8,7 @@
 
 ### Criterion 2 — Differential matrix ✅ (#469 · dharana §36)
 
-52/52 cells structure-match · 0 diverge/timing/empty/error. _(captured 2026-06-09T02:09:58.265Z, 8000ms window)_
+52/52 cells structure-match · 0 diverge/timing/empty/error. _(captured 2026-06-09T22:20:28.460Z, 8000ms window)_
 
 > Pass = MATCH or PRNG-VARIANT. Rows the pitch-trackers cannot grade are graded via an instrument-friendly projection that exercises the same engine logic (see `tools/gate-reproducers/`). The raw sweep keeps the unvarnished verdicts; this is the launch-gate computation.
 

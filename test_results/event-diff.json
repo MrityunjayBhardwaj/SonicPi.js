@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-06-09T02:09:58.922Z",
+  "generatedAt": "2026-06-09T22:20:29.129Z",
   "counts": {
-    "match": 57,
+    "match": 62,
     "diverge": 0,
     "empty": 1,
-    "total": 58
+    "total": 63
   },
   "fixtures": [
     {
@@ -168,6 +168,14 @@
       "totalRatio": 1
     },
     {
+      "name": "dnb_det",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": true,
+      "desktopTotal": 20,
+      "webTotal": 28,
+      "totalRatio": 1.4
+    },
+    {
       "name": "e2e_03_fx",
       "verdict": "STRUCTURE-MATCH",
       "isPrng": false,
@@ -205,6 +213,22 @@
       "isPrng": true,
       "desktopTotal": 17,
       "webTotal": 15,
+      "totalRatio": 0.88
+    },
+    {
+      "name": "filtered_dnb_det",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": true,
+      "desktopTotal": 16,
+      "webTotal": 16,
+      "totalRatio": 1
+    },
+    {
+      "name": "filtered_dnb_norand",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": true,
+      "desktopTotal": 16,
+      "webTotal": 14,
       "totalRatio": 0.88
     },
     {
@@ -336,6 +360,14 @@
       "totalRatio": 0.97
     },
     {
+      "name": "numbeats",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 8,
+      "webTotal": 8,
+      "totalRatio": 1
+    },
+    {
       "name": "r1_director_section",
       "verdict": "STRUCTURE-MATCH",
       "isPrng": false,
@@ -424,6 +456,14 @@
       "totalRatio": 1
     },
     {
+      "name": "snippet",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": true,
+      "desktopTotal": 16,
+      "webTotal": 14,
+      "totalRatio": 0.88
+    },
+    {
       "name": "sonic_dreams",
       "verdict": "STRUCTURE-MATCH",
       "isPrng": true,
@@ -451,8 +491,8 @@
       "name": "warmup",
       "verdict": "STRUCTURE-MATCH",
       "isPrng": false,
-      "desktopTotal": 4,
-      "webTotal": 4,
+      "desktopTotal": 2,
+      "webTotal": 2,
       "totalRatio": 1
     },
     {

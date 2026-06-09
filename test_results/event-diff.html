@@ -80,12 +80,12 @@
 <script src="nav.js"></script>
 <div class="wrap">
   <h1>Event Diff — /s_new structure: count · order · onset</h1>
-  <p class="sub">Desktop Sonic Pi ↔ browser engine, the literal <b>/s_new</b> event streams (not audio). Built <b>2026-06-09 02:09 UTC</b>. Desktop via scsynth <code>/dumpOSC</code>; web via the engine's OSC trace.</p>
+  <p class="sub">Desktop Sonic Pi ↔ browser engine, the literal <b>/s_new</b> event streams (not audio). Built <b>2026-06-09 22:20 UTC</b>. Desktop via scsynth <code>/dumpOSC</code>; web via the engine's OSC trace.</p>
   <div class="hero">
-    <span class="stat pass">STRUCTURE-MATCH <b>57</b></span>
+    <span class="stat pass">STRUCTURE-MATCH <b>62</b></span>
     <span class="stat fail">STRUCTURE-DIVERGE <b>0</b></span>
     <span class="stat incon">EMPTY <b>1</b></span>
-    <span class="stat">fixtures <b>58</b></span>
+    <span class="stat">fixtures <b>63</b></span>
   </div>
   <div class="caveat">
     <b>How to read this.</b> This diffs the literal /s_new streams desktop and web send to scsynth — it is the event-level companion to the audio comparator (which is opaque past desktop's audio). <b>PRNG param VALUES are not diffed</b> (SV49 — desktop reads a frozen rand-stream, we use MT19937). The robust divergence signal is a <b>DROPPED significant layer</b> (a synthdef desktop produces that web never does). A fixed wall-clock window counts more events on the faster-progressing engine, so raw counts mislead for PRNG/multi-thread pieces — the verdict keys on dropped layers + <b>first-onset gaps</b> (highlighted), which catch gating/timing divergence (e.g. <code>live_loop delay:</code>).
@@ -1099,6 +1099,53 @@ end
 end</pre>
   </details>
 </section>
+<section class="fx-card" id="dnb_det">
+  <div class="fx-head">
+    <div class="fx-title">dnb_det <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
+    <div class="fx-meta"><span class="tag prng">PRNG · SV49</span>
+      <span class="tag">window 15s</span>
+      <span class="stamp">2026-06-09 14:55 UTC</span></div>
+  </div>
+  <ul class="reasons"><li>Significant layers present on both sides (PRNG piece — counts/choices vary by SV49).</li></ul>
+  <div class="totals">Voice /s_new — desktop <b>20</b>, web <b>28</b> · web <b>1.4×</b> desktop</div>
+  <table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">basic_stereo_player</td>
+    <td class="num">20</td>
+    <td class="num">28</td>
+    <td class="num">1.40</td>
+    <td class="num">0s</td>
+    <td class="num">0s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  <div class="tbl-h">FX</div><table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">fx_rlpf</td>
+    <td class="num">1</td>
+    <td class="num">1</td>
+    <td class="num">1.00</td>
+    <td class="num gap">0s</td>
+    <td class="num gap">-6.167s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  <details class="raw"><summary>raw /s_new streams + source (22 desktop · 29 web)</summary>
+    <div class="streams">
+      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 190, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">fx_rlpf</span><span class="evp">cutoff: 10, cutoff_slide: 7.0132, reps: 1, in_bus: 188, out_bus: 190</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div><div class="ev"><span class="evt">14.026s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">14.026s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div><div class="ev"><span class="evt">15.78s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 188</span></div><div class="ev"><span class="evt">15.78s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 188</span></div></div>
+      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">-6.167s</span><span class="evn">fx_rlpf</span><span class="evp">in_bus: 18, out_bus: 0, cutoff: 10, cutoff_slide: 4</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">1s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">1s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">2s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">2s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">3s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">3s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">4s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">4s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">5s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">5s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">6s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">6s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">7s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">7s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">8s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">8s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">9s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">9s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">10s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">10s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">11s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">11s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">12s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">12s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">13s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">13s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div></div>
+    </div>
+    <div class="src-h">source</div><pre class="src"># Coded by Sam Aaron — deterministic (rrand removed) for filter-parity A/B
+
+use_sample_bpm :loop_amen
+
+with_fx :rlpf, cutoff: 10, cutoff_slide: 4 do |c|
+  live_loop :dnb do
+    sample :bass_dnb_f, amp: 5
+    sample :loop_amen, amp: 5
+    sleep 1
+    control c, cutoff: 80, cutoff_slide: 2.5
+  end
+end
+</pre>
+  </details>
+</section>
 <section class="fx-card" id="e2e_03_fx">
   <div class="fx-head">
     <div class="fx-title">e2e_03_fx <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
@@ -1659,6 +1706,98 @@ with_fx :reverb do
       play chord([:b1, :b2, :e1, :e2, :b3, :e3].choose, :minor).choose, cutoff: rrand(40, 100), amp: 0.5, attack: 0, release: rrand(1, 2), cutoff_max: 110
       sleep [0.25, 0.5, 0.5, 0.5, 1, 1].choose
     end
+  end
+end
+</pre>
+  </details>
+</section>
+<section class="fx-card" id="filtered_dnb_det">
+  <div class="fx-head">
+    <div class="fx-title">filtered_dnb_det <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
+    <div class="fx-meta"><span class="tag prng">PRNG · SV49</span>
+      <span class="tag">window 12s</span>
+      <span class="stamp">2026-06-09 16:52 UTC</span></div>
+  </div>
+  <ul class="reasons"><li>Significant layers present on both sides (PRNG piece — counts/choices vary by SV49).</li></ul>
+  <div class="totals">Voice /s_new — desktop <b>16</b>, web <b>16</b> · web <b>1×</b> desktop</div>
+  <table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">basic_stereo_player</td>
+    <td class="num">16</td>
+    <td class="num">16</td>
+    <td class="num">1.00</td>
+    <td class="num">0s</td>
+    <td class="num">0s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  <div class="tbl-h">FX</div><table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">fx_rlpf</td>
+    <td class="num">1</td>
+    <td class="num">1</td>
+    <td class="num">1.00</td>
+    <td class="num">0s</td>
+    <td class="num">-2.199s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  <details class="raw"><summary>raw /s_new streams + source (18 desktop · 17 web)</summary>
+    <div class="streams">
+      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 198, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">fx_rlpf</span><span class="evp">cutoff: 80, reps: 1, in_bus: 196, out_bus: 198</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 196</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 196</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 196</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 196</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 196</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 196</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 196</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 196</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 196</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 196</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 196</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 196</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 196</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 196</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 196</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 196</span></div></div>
+      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">-2.199s</span><span class="evn">fx_rlpf</span><span class="evp">in_bus: 18, out_bus: 0, cutoff: 80</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">8.766s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">8.766s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div></div>
+    </div>
+    <div class="src-h">source</div><pre class="src"># deterministic filtered_dnb (rrand removed) — grounding #513 tempo
+use_sample_bpm :loop_amen
+
+with_fx :rlpf, cutoff: 80 do |c|
+  live_loop :dnb do
+    sample :bass_dnb_f, amp: 5
+    sample :loop_amen, amp: 5
+    sleep 1
+    control c, cutoff: 80
+  end
+end
+</pre>
+  </details>
+</section>
+<section class="fx-card" id="filtered_dnb_norand">
+  <div class="fx-head">
+    <div class="fx-title">filtered_dnb_norand <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
+    <div class="fx-meta"><span class="tag prng">PRNG · SV49</span>
+      <span class="tag">window 12s</span>
+      <span class="stamp">2026-06-09 18:06 UTC</span></div>
+  </div>
+  <ul class="reasons"><li>Significant layers present on both sides (PRNG piece — counts/choices vary by SV49).</li></ul>
+  <div class="totals">Voice /s_new — desktop <b>16</b>, web <b>14</b> · web <b>0.88×</b> desktop</div>
+  <table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">basic_stereo_player</td>
+    <td class="num">16</td>
+    <td class="num">14</td>
+    <td class="num">0.88</td>
+    <td class="num">0s</td>
+    <td class="num">0s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  <div class="tbl-h">FX</div><table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">fx_rlpf</td>
+    <td class="num">1</td>
+    <td class="num">1</td>
+    <td class="num">1.00</td>
+    <td class="num gap">0s</td>
+    <td class="num gap">-17.969s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  <details class="raw"><summary>raw /s_new streams + source (18 desktop · 15 web)</summary>
+    <div class="streams">
+      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 208, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">fx_rlpf</span><span class="evp">cutoff: 10, cutoff_slide: 7.0132, reps: 1, in_bus: 206, out_bus: 208</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 206</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 206</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 206</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 206</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 206</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 206</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 206</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 206</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 206</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 206</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 206</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 206</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 206</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 206</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 206</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 206</span></div></div>
+      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">-17.969s</span><span class="evn">fx_rlpf</span><span class="evp">in_bus: 18, out_bus: 0, cutoff: 10, cutoff_slide: 7.0132</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div></div>
+    </div>
+    <div class="src-h">source</div><pre class="src"># faithful filtered_dnb, rrand removed (deterministic) — control sweep kept
+use_sample_bpm :loop_amen
+
+with_fx :rlpf, cutoff: 10, cutoff_slide: 4 do |c|
+  live_loop :dnb do
+    sample :bass_dnb_f, amp: 5
+    sample :loop_amen, amp: 5
+    sleep 1
+    control c, cutoff: 80, cutoff_slide: 2
   end
 end
 </pre>
@@ -2366,6 +2505,39 @@ end
 </pre>
   </details>
 </section>
+<section class="fx-card" id="numbeats">
+  <div class="fx-head">
+    <div class="fx-title">numbeats <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
+    <div class="fx-meta"><span class="tag det">deterministic</span>
+      <span class="tag">window 12s</span>
+      <span class="stamp">2026-06-09 16:54 UTC</span></div>
+  </div>
+  <ul class="reasons"><li>Significant synthdef multiset matches.</li></ul>
+  <div class="totals">Voice /s_new — desktop <b>8</b>, web <b>8</b> · web <b>1×</b> desktop</div>
+  <table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">basic_stereo_player</td>
+    <td class="num">8</td>
+    <td class="num">8</td>
+    <td class="num">1.00</td>
+    <td class="num">0s</td>
+    <td class="num">0s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  
+  <details class="raw"><summary>raw /s_new streams + source (9 desktop · 8 web)</summary>
+    <div class="streams">
+      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 204, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 3, buf: 10, out_bus: 204</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 3, buf: 10, out_bus: 204</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 3, buf: 10, out_bus: 204</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 3, buf: 10, out_bus: 204</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 3, buf: 10, out_bus: 204</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 3, buf: 10, out_bus: 204</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 3, buf: 10, out_bus: 204</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 3, buf: 10, out_bus: 204</span></div></div>
+      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 3, out_bus: 16</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 3, out_bus: 16</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 3, out_bus: 16</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 3, out_bus: 16</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 3, out_bus: 16</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 3, out_bus: 16</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 3, out_bus: 16</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 3, out_bus: 16</span></div></div>
+    </div>
+    <div class="src-h">source</div><pre class="src"># num_beats path — loop_amen spans 4 beats
+use_sample_bpm :loop_amen, num_beats: 4
+live_loop :x do
+  sample :loop_amen, amp: 3
+  sleep 4
+end
+</pre>
+  </details>
+</section>
 <section class="fx-card" id="r1_director_section">
   <div class="fx-head">
     <div class="fx-title">r1_director_section <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
@@ -2756,6 +2928,53 @@ end
     synth :blade, note: :cs1, release: 4, amp: 1
   end
   sleep 4
+end
+</pre>
+  </details>
+</section>
+<section class="fx-card" id="snippet">
+  <div class="fx-head">
+    <div class="fx-title">snippet <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
+    <div class="fx-meta"><span class="tag prng">PRNG · SV49</span>
+      <span class="tag">window 12s</span>
+      <span class="stamp">2026-06-09 18:53 UTC</span></div>
+  </div>
+  <ul class="reasons"><li>Significant layers present on both sides (PRNG piece — counts/choices vary by SV49).</li></ul>
+  <div class="totals">Voice /s_new — desktop <b>16</b>, web <b>14</b> · web <b>0.88×</b> desktop</div>
+  <table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">basic_stereo_player</td>
+    <td class="num">16</td>
+    <td class="num">14</td>
+    <td class="num">0.88</td>
+    <td class="num">0s</td>
+    <td class="num">0s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  <div class="tbl-h">FX</div><table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
+    <td class="syn">fx_rlpf</td>
+    <td class="num">1</td>
+    <td class="num">1</td>
+    <td class="num">1.00</td>
+    <td class="num gap">0s</td>
+    <td class="num gap">-4.703s</td>
+    <td><span class="st pass">✓</span></td>
+  </tr></tbody></table>
+  <details class="raw"><summary>raw /s_new streams + source (18 desktop · 15 web)</summary>
+    <div class="streams">
+      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 226, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">fx_rlpf</span><span class="evp">cutoff: 10, cutoff_slide: 7.0132, reps: 1, in_bus: 224, out_bus: 226</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 224</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 224</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 224</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 224</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 224</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 224</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 224</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 224</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 224</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 224</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 224</span></div><div class="ev"><span class="evt">8.767s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 224</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 224</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 224</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 11, out_bus: 224</span></div><div class="ev"><span class="evt">12.273s</span><span class="evn">basic_stereo_player</span><span class="evp">amp: 5, buf: 10, out_bus: 224</span></div></div>
+      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">-4.703s</span><span class="evn">fx_rlpf</span><span class="evp">in_bus: 18, out_bus: 0, cutoff: 10, cutoff_slide: 7.0132</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">1.753s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">3.507s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">5.26s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">7.013s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">8.766s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">8.766s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 0, amp: 5, out_bus: 18</span></div><div class="ev"><span class="evt">10.52s</span><span class="evn">basic_stereo_player</span><span class="evp">buf: 1, amp: 5, out_bus: 18</span></div></div>
+    </div>
+    <div class="src-h">source</div><pre class="src"># Coded by Sam Aaron
+
+use_sample_bpm :loop_amen
+
+with_fx :rlpf, cutoff: 10, cutoff_slide: 4 do |c|
+  live_loop :dnb do
+    sample :bass_dnb_f, amp: 5
+    sample :loop_amen, amp: 5
+    sleep 1
+    control c, cutoff: rrand(40, 120), cutoff_slide: rrand(1, 4)
+  end
 end
 </pre>
   </details>
@@ -3189,33 +3408,29 @@ end
   <div class="fx-head">
     <div class="fx-title">warmup <span class="verdict pass">✓ STRUCTURE-MATCH</span></div>
     <div class="fx-meta"><span class="tag det">deterministic</span>
-      <span class="tag">window 6s</span>
-      <span class="stamp">2026-06-04 06:57 UTC</span></div>
+      <span class="tag">window 4s</span>
+      <span class="stamp">2026-06-09 20:10 UTC</span></div>
   </div>
   <ul class="reasons"><li>Significant synthdef multiset matches.</li></ul>
-  <div class="totals">Voice /s_new — desktop <b>4</b>, web <b>4</b> · web <b>1×</b> desktop</div>
+  <div class="totals">Voice /s_new — desktop <b>2</b>, web <b>2</b> · web <b>1×</b> desktop</div>
   <table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody><tr>
     <td class="syn">beep</td>
-    <td class="num">4</td>
-    <td class="num">4</td>
+    <td class="num">2</td>
+    <td class="num">2</td>
     <td class="num">1.00</td>
     <td class="num">0s</td>
     <td class="num">0s</td>
     <td><span class="st pass">✓</span></td>
   </tr></tbody></table>
   
-  <details class="raw"><summary>raw /s_new streams + source (5 desktop · 4 web)</summary>
+  <details class="raw"><summary>raw /s_new streams + source (3 desktop · 2 web)</summary>
     <div class="streams">
-      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 282, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">beep</span><span class="evp">note: 60, out_bus: 282</span></div><div class="ev"><span class="evt">0.999s</span><span class="evn">beep</span><span class="evp">note: 60, out_bus: 282</span></div><div class="ev"><span class="evt">1.999s</span><span class="evn">beep</span><span class="evp">note: 60, out_bus: 282</span></div><div class="ev"><span class="evt">2.999s</span><span class="evn">beep</span><span class="evp">note: 60, out_bus: 282</span></div></div>
-      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">0s</span><span class="evn">beep</span><span class="evp">note: 60, release: 1, out_bus: 16</span></div><div class="ev"><span class="evt">1s</span><span class="evn">beep</span><span class="evp">note: 60, release: 1, out_bus: 16</span></div><div class="ev"><span class="evt">2s</span><span class="evn">beep</span><span class="evp">note: 60, release: 1, out_bus: 16</span></div><div class="ev"><span class="evt">3s</span><span class="evn">beep</span><span class="evp">note: 60, release: 1, out_bus: 16</span></div></div>
+      <div class="stream"><div class="stream-h">desktop /s_new</div><div class="ev"><span class="evt">—</span><span class="evn">basic_mixer</span><span class="evp">amp: 0.3, amp_slide: 0.1, amp_slide_shape: 1, amp_slide_curve: 0, in_bus: 20, out_bus: 18</span></div><div class="ev"><span class="evt">0s</span><span class="evn">beep</span><span class="evp">note: 60, out_bus: 20</span></div><div class="ev"><span class="evt">1s</span><span class="evn">beep</span><span class="evp">note: 67, out_bus: 20</span></div></div>
+      <div class="stream"><div class="stream-h">web /s_new</div><div class="ev"><span class="evt">0s</span><span class="evn">beep</span><span class="evp">note: 60, release: 1, out_bus: 16</span></div><div class="ev"><span class="evt">1s</span><span class="evn">beep</span><span class="evp">note: 67, release: 1, out_bus: 16</span></div></div>
     </div>
     <div class="src-h">source</div><pre class="src">play 60
 sleep 1
-play 60
-sleep 1
-play 60
-sleep 1
-play 60
+play 67
 </pre>
   </details>
 </section>
