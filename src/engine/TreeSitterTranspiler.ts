@@ -1058,7 +1058,15 @@ function subtreeHasBareDslCall(node: any): boolean {
 // set once and not interleaved with plays. `use_synth` is deliberately NOT here:
 // it is flow-sensitive (users change it between plays), so hoisting it would
 // collapse all plays to the last use_synth value (#164).
-const TOP_LEVEL_SETTINGS = new Set(['use_bpm', 'use_random_seed', 'use_debug', 'use_arg_bpm_scaling'])
+// use_sample_bpm is a bpm setting (use_bpm derived from a sample's length) — it
+// must be emitted eagerly at top level so it sets the engine defaultBpm BEFORE
+// any loop-registering block reads it. Without this it falls into bareCode and,
+// when trailing bare top-level code defers that into `__run_once`, runs as
+// `__b.use_sample_bpm` (builder-local bpm only) → the separately-registered
+// live_loop reads the unchanged defaultBpm and the tempo is a no-op. Same
+// flow-sensitive class as use_bpm (SV55/#420; surfaced by the --wrap-recording
+// capture path reintroducing the #513 no-op).
+const TOP_LEVEL_SETTINGS = new Set(['use_bpm', 'use_sample_bpm', 'use_random_seed', 'use_debug', 'use_arg_bpm_scaling'])
 
 // #419/SV55: extract a literal synth name from a `use_synth :X` / `use_synth "X"`
 // call. Returns the bare name for a literal symbol/string arg, or null for a

@@ -150,6 +150,61 @@ end`)
     // source position in sequential order (runtime.rb:1067). The transpiler
     // restores this by emitting an EAGER top-level use_synth("X") (routes to
     // topLevelUseSynth → defaultSynth) immediately before the loop registers.
+    describe('#513: top-level use_sample_bpm survives trailing bare code (must NOT defer into __run_once)', () => {
+      // use_sample_bpm sets the engine defaultBpm from a sample's length. Like
+      // use_bpm it MUST be emitted as an eager top-level call so a following
+      // live_loop registers at the derived tempo. When it falls into bareCode
+      // and trailing bare top-level code defers that into `__run_once`, it runs
+      // as `__b.use_sample_bpm` (builder-local bpm only) and the separately-
+      // registered live_loop reads the unchanged defaultBpm — the #513 no-op.
+      // Surfaced by the --wrap-recording capture path (recording_start +
+      // trailing `with_bpm 60 { sleep N }`) reintroducing the no-op.
+      it('emits a TOP-LEVEL use_sample_bpm (not __b.) when bare code trails the loop', () => {
+        const result = treeSitterTranspile(`use_sample_bpm :loop_amen
+live_loop :dnb do
+  sample :loop_amen
+  sleep 1
+end
+with_bpm 60 do
+  sleep 5
+end`)
+        expect(result.ok).toBe(true)
+        // Top-level call (no `__b.`/`b.` prefix) must be present...
+        expect(result.code).toMatch(/(^|[^.\w])use_sample_bpm\("loop_amen"\)/m)
+        // ...and the builder-deferred form must NOT be how the top-level call is emitted.
+        expect(result.code).not.toContain('__b.use_sample_bpm("loop_amen")')
+        // The eager top-level use_sample_bpm must precede the loop registration.
+        const topIdx = result.code.search(/(^|[^.\w])use_sample_bpm\("loop_amen"\)/m)
+        const loopIdx = result.code.indexOf('live_loop("dnb"')
+        expect(topIdx).toBeGreaterThanOrEqual(0)
+        expect(loopIdx).toBeGreaterThanOrEqual(0)
+        expect(topIdx).toBeLessThan(loopIdx)
+      })
+
+      it('honors num_beats in the eager top-level emission', () => {
+        const result = treeSitterTranspile(`use_sample_bpm :loop_amen, num_beats: 4
+live_loop :x do
+  sample :loop_amen
+  sleep 4
+end
+sleep 5`)
+        expect(result.ok).toBe(true)
+        expect(result.code).toContain('num_beats')
+        expect(result.code).not.toContain('__b.use_sample_bpm')
+      })
+
+      it('use_sample_bpm INSIDE a live_loop body stays on the builder path', () => {
+        const result = treeSitterTranspile(`live_loop :x do
+  use_sample_bpm :loop_amen
+  sample :loop_amen
+  sleep 1
+end`)
+        expect(result.ok).toBe(true)
+        // Inside a loop body it must remain builder-scoped, not hoisted to top level.
+        expect(result.code).toContain('__b.use_sample_bpm("loop_amen")')
+      })
+    })
+
     describe('#419 / SV55: top-level use_synth honored by live_loop with trailing bare code', () => {
       // Helper: index of an eager (no `__b.`/`b.` prefix) top-level call.
       const eagerIdx = (code: string, call: string) => {
