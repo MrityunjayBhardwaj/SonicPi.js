@@ -710,10 +710,19 @@ function transpileNode(node: any, ctx: TranspileContext): string {
       const from = transpileNode(node.namedChildren[0], ctx)
       const to = transpileNode(node.namedChildren[1], ctx)
       const exclusive = node.text.includes('...')
-      if (exclusive) {
-        return `Array.from({length: ${to} - ${from}}, (_, _i) => ${from} + _i)`
-      }
-      return `Array.from({length: ${to} - ${from} + 1}, (_, _i) => ${from} + _i)`
+      // Materialize to an integer array (back-compat: .tick/.each/[i]/.length/.map
+      // all keep working) BUT annotate the TRUE numeric endpoints so rand()/
+      // rand_i() can treat a range as a continuous interval — desktop's
+      // `rand(6..8)` is a random float in [6,8), and integer materialization
+      // loses float endpoints (0.01..2 → [0.01,1.01]) and produced NaN when the
+      // array was fed to rand. The IIFE binds from/to once (no double-eval of a
+      // possibly side-effecting expression). #508 / SP136.
+      const len = exclusive ? '__t - __f' : '__t - __f + 1'
+      // Math.max(0, …) guards reversed ranges (5..1) — Array.from throws
+      // RangeError on a negative length (latent in the prior emit too).
+      return `((__f, __t) => Object.assign(`
+        + `Array.from({length: Math.max(0, ${len})}, (_, __i) => __f + __i), `
+        + `{__rangeFrom: __f, __rangeTo: __t, __rangeExcl: ${exclusive}}))(${from}, ${to})`
     }
 
     // ---- Method calls — the heart of the DSL ----

@@ -921,4 +921,70 @@ describe('ProgramBuilder', () => {
       expect(warped).toEqual([0, 4])
     })
   })
+
+  describe('rand / rand_i with a range (#508 — SP136)', () => {
+    // The transpiler materializes a Ruby range to an array annotated with its
+    // TRUE endpoints (TreeSitterTranspiler.ts `case 'range'`). rand/rand_i must
+    // read those endpoints and return a value WITHIN the range — desktop's
+    // `rand(6..8)` is a random float in [6,8). Before the fix, rand([6,7,8])
+    // did rrand(0, [array]) → NaN, which poisoned synth params (cloud_beat).
+    const mkRange = (from: number, to: number, excl = false) =>
+      Object.assign(
+        Array.from({ length: Math.max(0, excl ? to - from : to - from + 1) }, (_, i) => from + i),
+        { __rangeFrom: from, __rangeTo: to, __rangeExcl: excl },
+      ) as unknown as number[]
+
+    it('rand(int range) returns a finite float within [from, to)', () => {
+      const b = new ProgramBuilder()
+      for (let i = 0; i < 100; i++) {
+        const v = b.rand(mkRange(6, 8))
+        expect(Number.isFinite(v)).toBe(true)
+        expect(v).toBeGreaterThanOrEqual(6)
+        expect(v).toBeLessThan(8)
+      }
+    })
+
+    it('rand(float range) preserves the true max — NOT the materialized [0.01,1.01]', () => {
+      const b = new ProgramBuilder()
+      let max = -Infinity
+      for (let i = 0; i < 200; i++) {
+        const v = b.rand(mkRange(0.01, 2))
+        expect(Number.isFinite(v)).toBe(true)
+        expect(v).toBeGreaterThanOrEqual(0.01)
+        expect(v).toBeLessThan(2)
+        max = Math.max(max, v)
+      }
+      // If the array endpoints were used (bug), max would cap near 1.01.
+      // Reading __rangeTo=2 lets draws exceed it.
+      expect(max).toBeGreaterThan(1.5)
+    })
+
+    it('rand_i(range) returns an integer within [from, to] inclusive', () => {
+      const b = new ProgramBuilder()
+      for (let i = 0; i < 100; i++) {
+        const v = b.rand_i(mkRange(2, 5))
+        expect(Number.isInteger(v)).toBe(true)
+        expect(v).toBeGreaterThanOrEqual(2)
+        expect(v).toBeLessThanOrEqual(5)
+      }
+    })
+
+    it('plain numeric rand(max) / rand() still work (no regression)', () => {
+      const b = new ProgramBuilder()
+      const v1 = b.rand(4)
+      expect(v1).toBeGreaterThanOrEqual(0)
+      expect(v1).toBeLessThan(4)
+      const v2 = b.rand()
+      expect(v2).toBeGreaterThanOrEqual(0)
+      expect(v2).toBeLessThan(1)
+    })
+
+    it('a bare (un-annotated) array degrades to [first,last], never NaN', () => {
+      const b = new ProgramBuilder()
+      const v = b.rand([3, 4, 5, 6] as number[])
+      expect(Number.isFinite(v)).toBe(true)
+      expect(v).toBeGreaterThanOrEqual(3)
+      expect(v).toBeLessThan(6)
+    })
+  })
 })

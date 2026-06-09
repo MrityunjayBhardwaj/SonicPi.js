@@ -18,6 +18,26 @@ import { chord, scale, chord_invert, note, note_range, chord_degree, degree, cho
 /** Default maximum iterations before a loop is considered infinite. */
 export const DEFAULT_LOOP_BUDGET = 100_000
 
+/**
+ * A range materialized by the transpiler (`case 'range'`, #508) is a plain array
+ * annotated with its TRUE numeric endpoints. `rangeSpan` recovers `{from, to}`
+ * from such a value so `rand`/`rand_i` can treat `a..b` as a continuous interval
+ * (desktop semantics) rather than reading the array (which corrupts float ranges
+ * and produced NaN). A non-range arg returns null → numeric fast-path. A bare
+ * array (no annotation) falls back to [first, last] so it degrades to a sane
+ * interval instead of NaN.
+ */
+interface RangeAnnotated extends Array<number> { __rangeFrom?: number; __rangeTo?: number }
+function rangeSpan(arg: number | number[] | undefined): { from: number; to: number } | null {
+  if (!Array.isArray(arg)) return null
+  const a = arg as RangeAnnotated
+  if (typeof a.__rangeFrom === 'number' && typeof a.__rangeTo === 'number') {
+    return { from: a.__rangeFrom, to: a.__rangeTo }
+  }
+  if (a.length > 0) return { from: a[0], to: a[a.length - 1] }
+  return null
+}
+
 export class InfiniteLoopError extends Error {
   constructor(message = 'Infinite loop detected — did you forget a sleep?') {
     super(message)
@@ -981,25 +1001,33 @@ export class ProgramBuilder {
     return this.rng.rrand_i(min, max)
   }
 
-  rand(...args: number[]): number {
+  rand(...args: (number | number[])[]): number {
     if (args.length > 1) {
       throw new Error(
         `wrong number of arguments to rand (given ${args.length}, expected 0..1). ` +
         `For a [min, max] range, use rrand(min, max) instead.`
       )
     }
-    const max = args[0] ?? 1
+    // rand(a..b) — desktop returns a random float WITHIN the range. The
+    // transpiler materializes a Ruby range to an array annotated with its true
+    // endpoints (#508); read them so float ranges (0.01..2) keep their real max.
+    const span = rangeSpan(args[0])
+    if (span) return this.rng.rrand(span.from, span.to)
+    const max = (args[0] as number) ?? 1
     return this.rng.rrand(0, max)
   }
 
-  rand_i(...args: number[]): number {
+  rand_i(...args: (number | number[])[]): number {
     if (args.length > 1) {
       throw new Error(
         `wrong number of arguments to rand_i (given ${args.length}, expected 0..1). ` +
         `For a [min, max] integer range, use rrand_i(min, max) instead.`
       )
     }
-    const max = args[0] ?? 2
+    // rand_i(a..b) — desktop returns a random INTEGER within the range (inclusive).
+    const span = rangeSpan(args[0])
+    if (span) return this.rng.rrand_i(span.from, span.to)
+    const max = (args[0] as number) ?? 2
     return this.rng.rrand_i(0, max - 1)
   }
 
