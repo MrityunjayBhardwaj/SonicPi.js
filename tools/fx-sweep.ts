@@ -178,9 +178,11 @@ sleep 1" --duration 4000 --name sp60-gate`,
   }
 }
 
+const DEV_SERVER_URL = process.env.BASE_URL ?? 'http://localhost:5173'
+
 function devServerUp(): boolean {
   try {
-    execSync('curl -s -o /dev/null -w "%{http_code}" http://localhost:5173', { encoding: 'utf8', timeout: 3000 })
+    execSync(`curl -s -o /dev/null -w "%{http_code}" ${DEV_SERVER_URL}`, { encoding: 'utf8', timeout: 3000 })
     return true
   } catch {
     return false
@@ -650,9 +652,9 @@ async function main(): Promise<void> {
   }
 
   // Preconditions
-  console.log('[precondition] checking dev server on :5173...')
+  console.log(`[precondition] checking dev server on ${DEV_SERVER_URL}...`)
   if (!devServerUp()) {
-    console.error('✗ dev server not responding on :5173. Run `npm run dev` and retry.')
+    console.error(`✗ dev server not responding on ${DEV_SERVER_URL}. Run \`npm run dev\` and retry.`)
     process.exit(1)
   }
   console.log('  ✓ dev server up')
