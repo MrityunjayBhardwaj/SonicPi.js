@@ -217,6 +217,23 @@ export class SonicPiEngine {
   private loopFxScope = new Map<string, string>()
   /** Maps FX scope ID → FX chain definition. */
   private fxScopeChains = new Map<string, Array<{ name: string; opts: Record<string, number> }>>()
+  /**
+   * Maps FX scope ID → the build-time node refs of each FX in the chain (#511).
+   * Parallel to `fxScopeChains` (same index = same FX). When the persistent FX
+   * nodes are created, these refs are written into `nodeRefMap` so that
+   * `control c, …` inside the loop — where `c` is the `with_fx` block param —
+   * resolves to the real scsynth node and is actually sent. Refs are NEGATIVE
+   * (see `nextTopFxRef`) so they can never collide with the positive lockstep
+   * refs that synth `control` relies on.
+   */
+  private fxScopeRefs = new Map<string, number[]>()
+  /**
+   * Monotonic NEGATIVE counter for top-level `with_fx` node refs (#511). The
+   * synth-`control` path aligns ProgramBuilder's positive `nextRef` with the
+   * interpreter's positive `nextNodeRef` by lockstep; a top-level FX ref must
+   * live in a disjoint space, so we count down from -1.
+   */
+  private nextTopFxRef = -1
   /** Compile-once cache: source code → transpiled JS. Reused on hot-swap with unchanged code (#8). */
   private transpileCache = new Map<string, string>()
   /**
@@ -871,6 +888,7 @@ export class SonicPiEngine {
               }
 
               this.persistentFx.set(scopeId, { buses, groups, nodeIds, outBus: currentOutBus })
+              this.bindFxScopeRefs(scopeId, nodeIds) // #511: make `control c` resolvable
             }
           }
 
@@ -1103,6 +1121,9 @@ export class SonicPiEngine {
       // Stack of top-level FX — nested with_fx accumulates, innermost is last.
       // When a live_loop is registered, ALL stacked FX wrap its builder.
       const topFxStack: Array<{ name: string; opts: Record<string, number> }> = []
+      // #511: build-time node refs parallel to topFxStack — handed to the
+      // `with_fx` block param (`|c|`) so `control c` can target the FX node.
+      const topFxRefStack: number[] = []
       /** Current FX scope ID — set when entering a with_fx block, used by live_loops inside. */
       let currentFxScopeId: string | null = null
       let fxScopeCounter = 0
@@ -1122,15 +1143,22 @@ export class SonicPiEngine {
           fn = maybeFn!
         }
         topFxStack.push({ name: fxName, opts })
+        // #511: mint a negative node ref for THIS with_fx and hand it to the
+        // block as `|c|`. The real scsynth node id is bound to this ref in
+        // nodeRefMap when the persistent FX is created (see the two creation
+        // sites below), so `control c, …` inside the loop resolves and fires.
+        const fxRef = this.nextTopFxRef--
+        topFxRefStack.push(fxRef)
         // Generate scope ID for the outermost with_fx (nested ones reuse it)
         const isOutermost = currentFxScopeId === null
         if (isOutermost) {
           currentFxScopeId = `__fxscope_${fxScopeCounter++}`
         }
         try {
-          fn(null) // execute callback to register live_loops
+          fn(fxRef) // execute callback to register live_loops; `|c|` = fxRef
         } finally {
           topFxStack.pop()
+          topFxRefStack.pop()
           if (isOutermost) {
             currentFxScopeId = null
           }
@@ -1162,6 +1190,10 @@ export class SonicPiEngine {
           this.loopFxScope.set(name, scopeId)
           if (!this.fxScopeChains.has(scopeId)) {
             this.fxScopeChains.set(scopeId, [...topFxStack])
+            // #511: snapshot the block-param refs for this chain alongside it,
+            // so the persistent-FX creation sites can bind each FX node id to
+            // the ref `control c` was given.
+            this.fxScopeRefs.set(scopeId, [...topFxRefStack])
           }
           // Register with ORIGINAL builder (no FX wrapping)
           if (opts) {
@@ -1788,6 +1820,7 @@ export class SonicPiEngine {
         if (isReEvaluate) {
           this.loopFxScope.clear()
           this.fxScopeChains.clear()
+          this.fxScopeRefs.clear() // #511: rebuilt by the new program's with_fx blocks
         }
         await sandbox.execute(...dslValues)
       } finally {
@@ -1971,11 +2004,33 @@ export class SonicPiEngine {
    *
    * Idempotent: scopes already in `persistentFx` are skipped.
    */
+  /**
+   * #511: bind each persistent FX node id to the build-time ref that the
+   * `with_fx` block param (`|c|`) carries, so `control c, …` resolves to the
+   * real scsynth node via `nodeRefMap`. `fxScopeRefs[i]` is parallel to the
+   * `fxScopeChains[i]` / `nodeIds[i]` ordering (all outermost-first). Idempotent
+   * and cheap — called from both persistent-FX creation sites.
+   */
+  private bindFxScopeRefs(scopeId: string, nodeIds: number[]): void {
+    const refs = this.fxScopeRefs.get(scopeId)
+    if (!refs) return
+    for (let i = 0; i < nodeIds.length && i < refs.length; i++) {
+      if (refs[i] !== undefined) this.nodeRefMap.set(refs[i], nodeIds[i])
+    }
+  }
+
   private async preCreatePersistentFx(bpm: number): Promise<void> {
     if (!this.bridge) return
     for (const [scopeId, fxChain] of this.fxScopeChains) {
       if (!fxChain || fxChain.length === 0) continue
-      if (this.persistentFx.has(scopeId)) continue
+      if (this.persistentFx.has(scopeId)) {
+        // #511: scope survived a hot-swap (node reused, not re-created) but
+        // nodeRefMap was cleared in the reconcile step. Re-bind THIS program's
+        // freshly-minted refs to the existing node ids so `control c` still
+        // resolves — otherwise modulation silently dies after an Update.
+        this.bindFxScopeRefs(scopeId, this.persistentFx.get(scopeId)!.nodeIds)
+        continue
+      }
       let currentOutBus = 0  // FX-wrapped loops route to master through chain
       const buses: number[] = []
       const groups: number[] = []
@@ -2001,6 +2056,7 @@ export class SonicPiEngine {
         currentOutBus = bus
       }
       this.persistentFx.set(scopeId, { buses, groups, nodeIds, outBus: currentOutBus })
+      this.bindFxScopeRefs(scopeId, nodeIds) // #511: make `control c` resolvable
     }
   }
 
@@ -2096,6 +2152,7 @@ export class SonicPiEngine {
     this.reusableFx.clear()
     this.loopFxScope.clear()
     this.fxScopeChains.clear()
+    this.fxScopeRefs.clear() // #511
     // Nested live_loop bookkeeping (issue #198). Defensive reset of depth
     // counter — should be 0 already, but stop() may be called mid-build
     // on error paths.
