@@ -64,22 +64,7 @@
       }
     }
   ],
-  "limitations": [
-    {
-      "example": "bach",
-      "verdict": "inconcl",
-      "reason": "Sustained :beep polyphony — desktop onset detector finds ~3 onsets in 9s (#368); the web capture renders the full ~95s composition vs the windowed desktop capture (#406). No faithful gradeable projection: a monophonic literal-note list would test almost nothing (bach's substance is timing + concurrent in_thread alignment, exactly what's not onset-gradeable).",
-      "engineEvidence": "Engine verified correct via the deterministic event-log timeline (#404/#405): web spans 95.2s ≈ the 95.5s score, section-2 RH (note 83) lands at t=48.0/72.0 — exact score anchors. For a no-PRNG piece the event log IS ground truth for scheduling.",
-      "countsAsPass": false
-    },
-    {
-      "example": "dark_neon",
-      "verdict": "inconcl",
-      "reason": "One sustained note (:cs1) + a sample texture, not a melody — Tier-1 pitch comparison is the wrong lens entirely. A reproducer would test a single note, which is not meaningful musical-correctness coverage.",
-      "engineEvidence": "No pitch-sequence to verify; the relevant engine paths (FX chain routing, sample playback) are covered by the FX-sweep / sample tooling, not Tier-1 pitch.",
-      "countsAsPass": false
-    }
-  ],
+  "limitations": [],
   "refreshed": [
     {
       "example": "mod_303_phade",

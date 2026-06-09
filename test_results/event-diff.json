@@ -1,19 +1,139 @@
 {
-  "generatedAt": "2026-06-03T10:22:51.018Z",
+  "generatedAt": "2026-06-09T02:09:58.922Z",
   "counts": {
-    "match": 7,
-    "diverge": 1,
-    "empty": 0,
-    "total": 8
+    "match": 57,
+    "diverge": 0,
+    "empty": 1,
+    "total": 58
   },
   "fixtures": [
     {
-      "name": "syncer",
-      "verdict": "STRUCTURE-DIVERGE",
-      "isPrng": true,
-      "desktopTotal": 26,
-      "webTotal": 2048,
-      "totalRatio": 78.77
+      "name": "iso_density",
+      "verdict": "DESKTOP-EMPTY",
+      "isPrng": false,
+      "desktopTotal": 0,
+      "webTotal": 3,
+      "totalRatio": null
+    },
+    {
+      "name": "cell_a",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
+      "name": "cell_bare_loop__nothing__nested",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
+      "name": "cell_bare_loop__sync__top_level",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 18,
+      "webTotal": 17,
+      "totalRatio": 0.94
+    },
+    {
+      "name": "cell_data_ll",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
+      "name": "cell_in_thread__nothing__nested",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 9,
+      "webTotal": 9,
+      "totalRatio": 1
+    },
+    {
+      "name": "cell_in_thread__sync__top_level",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 9,
+      "webTotal": 9,
+      "totalRatio": 1
+    },
+    {
+      "name": "cell_live_loop__delay__nested",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 12,
+      "webTotal": 11,
+      "totalRatio": 0.92
+    },
+    {
+      "name": "cell_live_loop__nothing__nested",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
+      "name": "cell_live_loop__use_synth__nested",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
+      "name": "cell_live_loop__var_read__nested",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
+      "name": "cell_nested",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 9,
+      "webTotal": 9,
+      "totalRatio": 1
+    },
+    {
+      "name": "cell_with_fx__sync__top_level",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 9,
+      "webTotal": 9,
+      "totalRatio": 1
+    },
+    {
+      "name": "cell_withfx",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 9,
+      "webTotal": 9,
+      "totalRatio": 1
+    },
+    {
+      "name": "ch6_binary_bizet",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 208,
+      "webTotal": 195,
+      "totalRatio": 0.94
+    },
+    {
+      "name": "ch6_bizet",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 208,
+      "webTotal": 181,
+      "totalRatio": 0.87
     },
     {
       "name": "dark_neon",
@@ -24,12 +144,60 @@
       "totalRatio": 0.96
     },
     {
+      "name": "data_bare",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
+      "name": "data_ll",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
       "name": "det_tb303",
       "verdict": "STRUCTURE-MATCH",
       "isPrng": false,
       "desktopTotal": 8,
       "webTotal": 8,
       "totalRatio": 1
+    },
+    {
+      "name": "e2e_03_fx",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 9,
+      "webTotal": 9,
+      "totalRatio": 1
+    },
+    {
+      "name": "e2e_07_fixed",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 21,
+      "webTotal": 21,
+      "totalRatio": 1
+    },
+    {
+      "name": "e2e_07_scoping",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 14,
+      "webTotal": 19,
+      "totalRatio": 1.36
+    },
+    {
+      "name": "e2e_07_scoping_long",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 14,
+      "webTotal": 19,
+      "totalRatio": 1.36
     },
     {
       "name": "echo_drama",
@@ -40,12 +208,124 @@
       "totalRatio": 0.88
     },
     {
+      "name": "fix460data",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
+      "name": "fix460ll",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 20,
+      "webTotal": 19,
+      "totalRatio": 0.95
+    },
+    {
+      "name": "fix461",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 9,
+      "webTotal": 9,
+      "totalRatio": 1
+    },
+    {
       "name": "fm_noise",
       "verdict": "STRUCTURE-MATCH",
       "isPrng": true,
       "desktopTotal": 10,
       "webTotal": 13,
       "totalRatio": 1.3
+    },
+    {
+      "name": "gapA_481_inthread",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 12,
+      "webTotal": 11,
+      "totalRatio": 0.92
+    },
+    {
+      "name": "gapA_481_withfx",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 12,
+      "webTotal": 11,
+      "totalRatio": 0.92
+    },
+    {
+      "name": "gapA_reversed",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 7,
+      "webTotal": 7,
+      "totalRatio": 1
+    },
+    {
+      "name": "inline",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 1,
+      "webTotal": 1,
+      "totalRatio": 1
+    },
+    {
+      "name": "inthread_sleep_hoist",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 15,
+      "webTotal": 14,
+      "totalRatio": 0.93
+    },
+    {
+      "name": "iso_control",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 3,
+      "webTotal": 3,
+      "totalRatio": 1
+    },
+    {
+      "name": "iso_density_fix",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 6,
+      "webTotal": 6,
+      "totalRatio": 1
+    },
+    {
+      "name": "iso_density_real",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 6,
+      "webTotal": 4,
+      "totalRatio": 0.67
+    },
+    {
+      "name": "iso_density2",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 1,
+      "webTotal": 4,
+      "totalRatio": 4
+    },
+    {
+      "name": "iso_density3",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 1,
+      "webTotal": 4,
+      "totalRatio": 4
+    },
+    {
+      "name": "mod_303_phade",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 1,
+      "webTotal": 1,
+      "totalRatio": 1
     },
     {
       "name": "monday_blues",
@@ -56,6 +336,54 @@
       "totalRatio": 0.97
     },
     {
+      "name": "r1_director_section",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 7,
+      "webTotal": 7,
+      "totalRatio": 1
+    },
+    {
+      "name": "r1_director_section_reversed",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 7,
+      "webTotal": 7,
+      "totalRatio": 1
+    },
+    {
+      "name": "r1_time_warp",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 58,
+      "webTotal": 56,
+      "totalRatio": 0.97
+    },
+    {
+      "name": "r430",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 2,
+      "webTotal": 2,
+      "totalRatio": 1
+    },
+    {
+      "name": "r432",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 2,
+      "webTotal": 2,
+      "totalRatio": 1
+    },
+    {
+      "name": "r436",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 2,
+      "webTotal": 2,
+      "totalRatio": 1
+    },
+    {
       "name": "reich_phase",
       "verdict": "STRUCTURE-MATCH",
       "isPrng": false,
@@ -64,12 +392,84 @@
       "totalRatio": 0.98
     },
     {
+      "name": "repro_square",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 11,
+      "webTotal": 10,
+      "totalRatio": 0.91
+    },
+    {
+      "name": "repro417",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 11,
+      "webTotal": 10,
+      "totalRatio": 0.91
+    },
+    {
+      "name": "repro418_wrapped",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 11,
+      "webTotal": 10,
+      "totalRatio": 0.91
+    },
+    {
+      "name": "reverb_long",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 5,
+      "webTotal": 5,
+      "totalRatio": 1
+    },
+    {
       "name": "sonic_dreams",
       "verdict": "STRUCTURE-MATCH",
       "isPrng": true,
-      "desktopTotal": 16,
-      "webTotal": 15,
-      "totalRatio": 0.94
+      "desktopTotal": 32,
+      "webTotal": 31,
+      "totalRatio": 0.97
+    },
+    {
+      "name": "syncer",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": true,
+      "desktopTotal": 26,
+      "webTotal": 24,
+      "totalRatio": 0.92
+    },
+    {
+      "name": "timing",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 12,
+      "webTotal": 11,
+      "totalRatio": 0.92
+    },
+    {
+      "name": "warmup",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 4,
+      "webTotal": 4,
+      "totalRatio": 1
+    },
+    {
+      "name": "with_swing_loop",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 58,
+      "webTotal": 56,
+      "totalRatio": 0.97
+    },
+    {
+      "name": "wobble_short",
+      "verdict": "STRUCTURE-MATCH",
+      "isPrng": false,
+      "desktopTotal": 5,
+      "webTotal": 5,
+      "totalRatio": 1
     }
   ]
 }

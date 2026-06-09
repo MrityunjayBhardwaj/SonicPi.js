@@ -3,15 +3,15 @@
   "passed": true,
   "roster": {
     "denominator": 7,
-    "passCount": 5,
-    "pct": 71.4,
+    "passCount": 7,
+    "pct": 100,
     "thresholdPct": 70,
     "passed": true
   },
   "differentialMatrix": {
     "present": true,
     "green": true,
-    "generatedAt": "2026-06-04T14:30:35.208Z",
+    "generatedAt": "2026-06-09T02:09:58.265Z",
     "window": 8000,
     "counts": {
       "match": 52,
@@ -29,13 +29,13 @@
     "note": "52/52 cells structure-match · 0 diverge/timing/empty/error."
   },
   "denominator": 7,
-  "passCount": 5,
-  "pct": 71.4,
+  "passCount": 7,
+  "pct": 100,
   "thresholdPct": 70,
   "rows": [
     {
       "example": "chord_inversions",
-      "rawVerdict": "inconcl",
+      "rawVerdict": "event-match",
       "gateVerdict": "match",
       "pass": true,
       "gradedVia": "projection",
@@ -43,7 +43,7 @@
     },
     {
       "example": "reich_phase",
-      "rawVerdict": "inconcl",
+      "rawVerdict": "event-match",
       "gateVerdict": "match",
       "pass": true,
       "gradedVia": "projection",
@@ -51,11 +51,11 @@
     },
     {
       "example": "dark_neon",
-      "rawVerdict": "inconcl",
-      "gateVerdict": "inconcl",
-      "pass": false,
-      "gradedVia": "documented-limitation",
-      "detail": "One sustained note (:cs1) + a sample texture, not a melody — Tier-1 pitch comparison is the wrong lens entirely. A reproducer would test a single note, which is not meaningful musical-correctness coverage."
+      "rawVerdict": "event-match",
+      "gateVerdict": "event-match",
+      "pass": true,
+      "gradedVia": "raw-sweep",
+      "detail": ""
     },
     {
       "example": "mod_303_phade",
@@ -67,15 +67,15 @@
     },
     {
       "example": "bach",
-      "rawVerdict": "inconcl",
-      "gateVerdict": "inconcl",
-      "pass": false,
-      "gradedVia": "documented-limitation",
-      "detail": "Sustained :beep polyphony — desktop onset detector finds ~3 onsets in 9s (#368); the web capture renders the full ~95s composition vs the windowed desktop capture (#406). No faithful gradeable projection: a monophonic literal-note list would test almost nothing (bach's substance is timing + concurrent in_thread alignment, exactly what's not onset-gradeable)."
+      "rawVerdict": "event-match",
+      "gateVerdict": "event-match",
+      "pass": true,
+      "gradedVia": "raw-sweep",
+      "detail": ""
     },
     {
       "example": "driving_pulse",
-      "rawVerdict": "inconcl",
+      "rawVerdict": "event-match",
       "gateVerdict": "match",
       "pass": true,
       "gradedVia": "projection",
@@ -83,7 +83,7 @@
     },
     {
       "example": "monday_blues",
-      "rawVerdict": "inconcl",
+      "rawVerdict": "event-match",
       "gateVerdict": "match",
       "pass": true,
       "gradedVia": "projection",
