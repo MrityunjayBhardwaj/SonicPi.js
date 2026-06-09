@@ -109,6 +109,29 @@ describe('SuperSonicBridge', () => {
     expect(bundleStr).toContain('sonic-pi-beep')
   })
 
+  it('drops non-finite numeric params before /s_new (#509 — NaN must not reach scsynth)', async () => {
+    const { mockSonic, bundles } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+    const warnings: string[] = []
+    bridge.warnHandler = (m) => warnings.push(m)
+
+    // cutoff NaN (e.g. from rand(50..85) before #508), vibrato_rate Inf; amp finite.
+    await bridge.triggerSynth('blade', 1.0, { note: 60, amp: 0.55, cutoff: NaN, vibrato_rate: Infinity })
+    bridge.flushMessages()
+
+    const bundleStr = new TextDecoder().decode(bundles[0])
+    expect(bundleStr).toContain('sonic-pi-blade')
+    // Finite params survive; the non-finite ones are dropped (scsynth uses defaults).
+    expect(bundleStr).toContain('amp')
+    expect(bundleStr).not.toContain('cutoff')
+    expect(bundleStr).not.toContain('vibrato_rate')
+    // Loud, not silent (SV50).
+    expect(warnings.some((w) => /non-finite/.test(w) && /cutoff/.test(w) && /vibrato_rate/.test(w))).toBe(true)
+  })
+
   it('multiple events between flushes share one bundle', async () => {
     const { mockSonic, bundles } = createMockSuperSonic()
     ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)

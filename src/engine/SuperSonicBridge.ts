@@ -772,9 +772,7 @@ export class SuperSonicBridge {
   ): number {
     const nodeId = this.sonic!.nextNodeId()
     const paramList: (string | number)[] = []
-    for (const key in params) {
-      paramList.push(key, params[key])
-    }
+    this.pushFiniteParams(paramList, params, `synth ${fullName.replace('sonic-pi-', ':')}`)
     this.queueMessage(audioTime, '/s_new', [fullName, nodeId, 0, 100, ...paramList])
 
     // Schedule node free after expected duration (#73).
@@ -786,6 +784,39 @@ export class SuperSonicBridge {
     }
 
     return nodeId
+  }
+
+  /**
+   * Push key/value pairs onto an /s_new param list, DROPPING any non-finite
+   * numeric value (NaN / ±Infinity) so scsynth falls back to the synthdef's
+   * compiled default. Extends the SV51 note/freq finiteness guard to ALL numeric
+   * params (#509): a single non-finite value (e.g. `cutoff: NaN` from a bad
+   * `rand`) on a synth that USES it (filter/LFO) poisons the persistent FX/mixer
+   * node it routes through and permanently silences the WHOLE mix — once a
+   * UGen integrator goes NaN it stays NaN every control block. Dropping the bad
+   * param contains the blast radius to (at worst) one off-timbre voice. Loud,
+   * not silent: warns once per dispatch listing the dropped params (SV50).
+   */
+  private pushFiniteParams(
+    paramList: (string | number)[],
+    params: Record<string, number>,
+    label: string,
+  ): void {
+    let dropped: string[] | undefined
+    for (const key in params) {
+      const v = params[key]
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        ;(dropped ??= []).push(key)
+        continue
+      }
+      paramList.push(key, v)
+    }
+    if (dropped) {
+      this.warnHandler?.(
+        `[Warning] ${label} — dropped non-finite param(s) ${dropped.join(', ')} ` +
+        `(NaN/Infinity); using synthdef default. Check for rand/division producing NaN.`,
+      )
+    }
   }
 
   /**
@@ -864,9 +895,7 @@ export class SuperSonicBridge {
     const params = normalizeSampleParams(translated, bpm ?? 60, sampleWarn)
 
     const paramList: (string | number)[] = ['buf', bufNum]
-    for (const key in params) {
-      paramList.push(key, params[key])
-    }
+    this.pushFiniteParams(paramList, params, `sample :${sampleName}`)
 
     this.queueMessage(audioTime, '/s_new', [playerName, nodeId, 0, 100, ...paramList])
 
@@ -994,9 +1023,7 @@ export class SuperSonicBridge {
       }
       paramList.push('rand_buf', this.randBufId)
     }
-    for (const key in params) {
-      paramList.push(key, params[key])
-    }
+    this.pushFiniteParams(paramList, params, `with_fx ${fullName.replace('sonic-pi-fx_', ':')}`)
     return { nodeId, args: [fullName, nodeId, 0, 101, ...paramList] }
   }
 
