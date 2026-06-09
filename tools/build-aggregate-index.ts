@@ -343,6 +343,7 @@ ${navBlock('desktop ↔ web parity · #446 event diff')}
     <a href="launch-gate.html">🚦 launch gate →</a>
     <a href="fx-inspector.html">fx a/b inspector →</a>
     <a href="event-diff.html">event diff (/s_new) →</a>
+    <a href="experiments.html">🧪 experiments (#513 use_sample_bpm tempo) →</a>
     <a href="mono-sample-sp107.html">SP107 mono-sample investigation →</a>
     <a href="raw-lpf.html">raw-lpf investigation →</a>
   </div>
