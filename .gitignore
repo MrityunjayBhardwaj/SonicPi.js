@@ -41,6 +41,10 @@ test_results/raw-lpf/
 # mono-sample-sp107.html is checked in; the recordings regenerate via
 # tools/compare-desktop-vs-web.ts. See the page footer for the commands.
 test_results/sp107/
+# Launch-gate detail page assets (≈44 MB desktop+web WAVs + spectrograms for the
+# 7 gate rows). The viewer gate-detail.html is checked in; assets regenerate via
+# tools/build-gate-detail.ts after a sweep.
+test_results/gate-detail/
 
 # Playwright
 playwright-report/

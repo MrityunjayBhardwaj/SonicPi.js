@@ -2,7 +2,7 @@
 // Single source of truth for the dashboard tab bar — edit TABS in
 // tools/lib/dashboard-nav.ts, then re-run build-aggregate-index.ts. Do not edit.
 (function () {
-  var TABS = [{"href":"index.html","label":"overview"},{"href":"examples-sweep.html","label":"official","count":34},{"href":"book-examples-sweep.html","label":"book","count":18},{"href":"e2e.html","label":"e2e","count":10},{"href":"community.html","label":"community + forum","count":48},{"href":"launch-gate.html","label":"🚦 launch gate"},{"href":"fx-inspector.html","label":"fx a/b","count":40},{"href":"event-diff.html","label":"event diff"},{"href":"diff-matrix.html","label":"diff matrix"}];
+  var TABS = [{"href":"index.html","label":"overview"},{"href":"examples-sweep.html","label":"official","count":34},{"href":"book-examples-sweep.html","label":"book","count":18},{"href":"e2e.html","label":"e2e","count":10},{"href":"community.html","label":"community + forum","count":48},{"href":"launch-gate.html","label":"🚦 launch gate"},{"href":"gate-detail.html","label":"🔬 gate detail","count":7},{"href":"fx-inspector.html","label":"fx a/b","count":40},{"href":"event-diff.html","label":"event diff"},{"href":"diff-matrix.html","label":"diff matrix"}];
   var nav = document.getElementById('topnav') || document.querySelector('nav.tab-bar');
   if (!nav) return;
   // Inject a self-contained style once so the bar looks identical on every page.
