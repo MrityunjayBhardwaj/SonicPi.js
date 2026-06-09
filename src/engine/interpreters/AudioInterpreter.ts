@@ -240,19 +240,25 @@ export async function runProgram(
               ctx.printHandler?.(`Sample '${step.name}' failed: ${err.message}`)
             })
 
-          // Extend enclosing FX scopes' aliveUntil — same rationale as `case 'play'`.
-          // Samples don't go through normalizePlayParams, so we read opts directly.
-          // Without per-sample duration info the estimate is best-effort: env opts
-          // if present, fallback release=1.0 (matches prior behaviour). A long-loop
-          // sample inside with_fx could still be truncated; a richer estimate is a
-          // follow-up.
+          // Extend enclosing FX scopes' aliveUntil so the FX bus outlives this
+          // sample. SP135/#506: a sample's audible end is its BUFFER PLAYOUT
+          // (bufferFrames/sampleRate, rate/start/finish/stretch-scaled, + release
+          // tail), NOT its amp-envelope sum. The old `attack+decay+sustain+
+          // release` estimate froze a rate-stretched / long one-shot (e.g.
+          // dark_neon's `bass_trance_c, rate:0.5, release:0.2`) at vt+0.2 while the
+          // buffer played for seconds → the FX bus was freed mid-buffer → silence.
+          // Use the SAME horizon the bridge schedules the sample node's own
+          // /n_free with, so bus and node die together. Mirrors desktop
+          // `tracker.block_until_finished` (sound.rb:1821). The bridge decodes the
+          // buffer on first use, so even the first iteration inside with_fx is
+          // correct (vs the cached-only path that would truncate iteration 1).
           if (ctx.currentFxStack && ctx.currentFxStack.length > 0) {
-            const o = step.opts as Record<string, number> | undefined
-            const a = (o?.attack as number | undefined) ?? 0
-            const d = (o?.decay as number | undefined) ?? 0
-            const s = (o?.sustain as number | undefined) ?? 0
-            const r = (o?.release as number | undefined) ?? 1
-            const playEnd = task.virtualTime + a + d + s + r
+            const playDur = await ctx.bridge.ensureSamplePlaybackDuration(
+              step.name,
+              step.opts as Record<string, number> | undefined,
+              currentBpm,
+            )
+            const playEnd = task.virtualTime + playDur
             for (const key of ctx.currentFxStack) {
               const fx = ctx.reusableFx.get(key)
               if (fx && playEnd > fx.aliveUntil) fx.aliveUntil = playEnd

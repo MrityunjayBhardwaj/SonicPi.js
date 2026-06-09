@@ -47,6 +47,13 @@ function createMockBridge(): SuperSonicBridge & { calls: string[] } {
     async playSample(_name: string, _time: number, _opts?: Record<string, number>, _bpm?: number) {
       return nextNode++
     },
+    // SP135/#506: the bridge reports a sample's real BUFFER PLAYOUT length so the
+    // with_fx aliveUntil bump outlives it (a sample's audible end is its buffer,
+    // not its amp release). The fixture sample below plays out for 6s.
+    async ensureSamplePlaybackDuration(_name: string, _opts?: Record<string, number>, _bpm?: number) {
+      calls.push(`sampleDur:${_name}`)
+      return 6
+    },
     get audioContext() { return null as unknown as AudioContext },
     send(_addr: string, ..._args: (string | number)[]) {},
     sendTimedControl(_time: number, _nodeId: number, _params: (string | number)[]) {},
@@ -152,6 +159,56 @@ describe('with_fx', () => {
     expect(bridge.calls.find(c => c === 'free:16')).toBeUndefined()
 
     // cbHorizon=100 — well past the 6s correct horizon. FX should be freed now.
+    scheduler.tick(200); await flushMicrotasks()
+    expect(bridge.calls).toContain('freeGroup:5000')
+    expect(bridge.calls).toContain('free:16')
+  })
+
+  it('with_fx kill_delay waits for a SAMPLE\'s buffer playout, not its amp release (SP135/#506)', async () => {
+    // Regression test for the SAMPLE sibling of the SP104 truncation class.
+    // A sample's audible end is its BUFFER PLAYOUT (bufferFrames/sampleRate,
+    // rate/start/finish-scaled), NOT its amp `release`. The old aliveUntil bump
+    // summed `attack+decay+sustain+release` (release fallback 1.0), so a
+    // short-release sample whose buffer plays for seconds (e.g. dark_neon's
+    // `bass_trance_c, rate:0.5, release:0.2`) had aliveUntil≈vt+0.2 → the FX bus
+    // was freed at killAt≈1.2 while the buffer was still playing → silence.
+    // Fix: bump aliveUntil by the bridge's real playback duration
+    // (ensureSamplePlaybackDuration). The mock reports 6s of buffer playout.
+    //
+    // Program: with_fx :reverb { sample :loop, release: 0.2 }
+    // Pre-fix: aliveUntil = 0 + 0+0+0+0.2 = 0.2, killAt = max(0,0.2)+1 = 1.2.
+    // Post-fix: aliveUntil = 0 + 6 = 6, killAt = max(0,6)+1 = 7.
+    // cbHorizon=3 distinguishes the two (past buggy 1.2, before correct 7).
+    const scheduler = new VirtualTimeScheduler({
+      getAudioTime: () => 0,
+      schedAheadTime: 100,
+    })
+    const eventStream = new SoundEventStream()
+    const nodeRefMap = new Map<number, number>()
+    const bridge = createMockBridge()
+
+    const program = new ProgramBuilder(0)
+      .with_fx('reverb', (b) => b.sample('loop', { release: 0.2 }))
+      .build()
+
+    scheduler.registerLoop('test', async () => {
+      await runProgram(program, makeAudioCtx(scheduler, 'test', eventStream, nodeRefMap, bridge))
+    })
+
+    scheduler.tick(100); await flushMicrotasks()
+    scheduler.tick(100); await flushMicrotasks()
+    expect(bridge.calls).toContain('fx:reverb:in16:out0')
+    // The aliveUntil bump must have consulted the bridge for the real duration.
+    expect(bridge.calls).toContain('sampleDur:loop')
+
+    // cbHorizon=3 — past the BUGGY 1.2s kill horizon, before the CORRECT 7s one.
+    // Pre-fix this frees the FX bus mid-buffer; post-fix it does NOT.
+    scheduler.tick(103); await flushMicrotasks()
+    expect(bridge.calls.find(c => c.startsWith('freeNode:'))).toBeUndefined()
+    expect(bridge.calls.find(c => c.startsWith('freeGroup:'))).toBeUndefined()
+    expect(bridge.calls.find(c => c === 'free:16')).toBeUndefined()
+
+    // cbHorizon=100 — well past the 7s correct horizon. FX should be freed now.
     scheduler.tick(200); await flushMicrotasks()
     expect(bridge.calls).toContain('freeGroup:5000')
     expect(bridge.calls).toContain('free:16')

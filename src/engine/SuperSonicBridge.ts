@@ -880,6 +880,30 @@ export class SuperSonicBridge {
   }
 
   /**
+   * Expected audible playback length of a sample in seconds, given its decoded
+   * buffer duration and NORMALIZED sample params. A sample's audible end is its
+   * BUFFER PLAYOUT scaled by rate/start/finish (+ amp release tail) — or the amp
+   * envelope when sustain is set — NOT the amp release alone. Returns the 2.0s
+   * fallback when the buffer duration is unknown (decode not yet done/failed).
+   *
+   * Shared by the sample-node /n_free scheduler (scheduleSampleNodeFree) AND the
+   * with_fx aliveUntil bump (ensureSamplePlaybackDuration → SP135/#506), so an
+   * FX bus and the sample routed through it are torn down on the same horizon.
+   */
+  private samplePlaybackDuration(sampleDur: number | null, params: Record<string, number>): number {
+    const rate = Math.abs(params.rate ?? 1)
+    const finish = params.finish ?? 1
+    const start = params.start ?? 0
+    const release = params.release ?? 0
+    const attack = params.attack ?? 0
+    const sustain = params.sustain ?? 0
+
+    if (sustain > 0 && sustain < 100) return attack + sustain + release
+    if (sampleDur !== null && rate > 0) return (sampleDur * (finish - start)) / rate + release
+    return 2.0
+  }
+
+  /**
    * Schedule /n_free for a sample node after its expected playback duration.
    * Uses setTimeout + sonic.send() (same as scheduleNodeFree).
    */
@@ -890,21 +914,7 @@ export class SuperSonicBridge {
     params: Record<string, number>,
   ): void {
     const sampleDur = this.sampleDurations.get(sampleName) ?? null
-    const rate = Math.abs(params.rate ?? 1)
-    const finish = params.finish ?? 1
-    const start = params.start ?? 0
-    const release = params.release ?? 0
-    const attack = params.attack ?? 0
-    const sustain = params.sustain ?? 0
-
-    let playDuration: number
-    if (sustain > 0 && sustain < 100) {
-      playDuration = attack + sustain + release
-    } else if (sampleDur !== null && rate > 0) {
-      playDuration = (sampleDur * (finish - start)) / rate + release
-    } else {
-      playDuration = 2.0
-    }
+    const playDuration = this.samplePlaybackDuration(sampleDur, params)
 
     const freeTime = audioTime + playDuration + 0.1
     const audioCtx = this.sonic?.audioContext
@@ -939,6 +949,36 @@ export class SuperSonicBridge {
       await this.ensureSynthDefLoaded(playerName)
     }
     return this.playSampleImmediate(sampleName, bufNum, playerName, audioTime, opts, bpm)
+  }
+
+  /**
+   * Ensure the sample's buffer is decoded, then return its expected audible
+   * playback duration in seconds (SP135/#506). The with_fx aliveUntil bump calls
+   * this so the FX bus outlives a sample's BUFFER PLAYOUT — which, for a
+   * rate-stretched (`rate:`<1) or long one-shot sample, far exceeds the amp
+   * `release` the old envelope-sum estimate used (it froze a `bass_trance_c,
+   * rate:0.5` to ~1.2s while the buffer played several seconds → truncated to
+   * silence inside with_fx). Mirrors desktop `tracker.block_until_finished`
+   * (sound.rb:1821), which waits for the sample node's REAL end, not an estimate.
+   *
+   * Decodes on first use so even the first play inside with_fx is correct; on a
+   * decode failure the buffer duration stays unknown → the 2.0s fallback applies
+   * (never silence — degrades to the prior best-effort grace).
+   */
+  async ensureSamplePlaybackDuration(
+    sampleName: string,
+    opts?: Record<string, number>,
+    bpm?: number,
+  ): Promise<number> {
+    if (!this.sampleDurations.has(sampleName)) {
+      await this.fetchSampleDuration(sampleName).catch(() => {})
+    }
+    const sampleDur = this.sampleDurations.get(sampleName) ?? null
+    // Fold beat_stretch/pitch_stretch into rate (needs the buffer duration) and
+    // resolve the same normalized params the node-free scheduler uses.
+    const translated = translateSampleOpts(opts, bpm ?? 60, sampleDur)
+    const params = normalizeSampleParams(translated, bpm ?? 60)
+    return this.samplePlaybackDuration(sampleDur, params)
   }
 
   /** Apply an FX. Fast path when synthdef already loaded. */
