@@ -632,6 +632,50 @@ export function translateSampleOpts(
   return result
 }
 
+/**
+ * Raw playback length of a sample in SECONDS, given its decoded buffer
+ * duration and the user opts. Mirrors Desktop SP `sample_duration` BEFORE the
+ * bpm-scaling divide (`sound.rb:2236-2277`):
+ *
+ *   real_dur = dur * (1/|rate|) * |finish - start|
+ *   if sustain != -1: real_dur = min(attack + decay + sustain + release, real_dur)
+ *
+ * The bpm→beats conversion (`/ __get_spider_sleep_mul`, `sound.rb:2276`) is the
+ * CALLER's job: `use_sample_bpm` wants RAW seconds (it disables bpm-scaling,
+ * `sound.rb:546`), while the `sample_duration` DSL wants beats (seconds * bpm/60).
+ *
+ * Returns `undefined` when the buffer duration is unknown (not yet decoded /
+ * decode failed) or the opts collapse the window to zero — callers guard on
+ * this so a missing decode never yields `use_bpm(Infinity)` (SV66 div-by-zero).
+ *
+ * `sustain` defaults to -1 (Desktop's "play the whole buffer" sentinel,
+ * `sound.rb:2255`) — only when the user sets a finite sustain does the envelope
+ * clamp apply. REF: sound.rb:2236.
+ */
+export function sampleDurationSeconds(
+  bufferDurationSeconds: number | undefined | null,
+  opts?: Record<string, number>,
+): number | undefined {
+  if (bufferDurationSeconds === undefined || bufferDurationSeconds === null) return undefined
+  if (!(bufferDurationSeconds > 0)) return undefined
+  const o = opts ?? {}
+  const rate = Math.abs(typeof o.rate === 'number' ? o.rate : 1)
+  if (!(rate > 0)) return undefined
+  const start = typeof o.start === 'number' ? o.start : 0
+  const finish = typeof o.finish === 'number' ? o.finish : 1
+  const len = Math.abs(finish - start)
+  let realDur = bufferDurationSeconds * (1 / rate) * len
+  const sustain = typeof o.sustain === 'number' ? o.sustain : -1
+  if (sustain !== -1) {
+    const attack = typeof o.attack === 'number' ? o.attack : 0
+    const decay = typeof o.decay === 'number' ? o.decay : 0
+    const release = typeof o.release === 'number' ? o.release : 0
+    realDur = Math.min(attack + decay + sustain + release, realDur)
+  }
+  if (!(realDur > 0)) return undefined
+  return realDur
+}
+
 // ---------------------------------------------------------------------------
 // Sample player selection
 // ---------------------------------------------------------------------------

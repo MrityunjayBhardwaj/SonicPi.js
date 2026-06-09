@@ -5,7 +5,7 @@ import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioI
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
 import { Recorder } from './Recorder'
-import { normalizeFxParams } from './SoundLayer'
+import { normalizeFxParams, sampleDurationSeconds } from './SoundLayer'
 import { ALL_FX_NAMES } from './FxNames'
 import { DSL_NAMES } from './DslNames'
 import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbox'
@@ -71,6 +71,13 @@ export interface EngineComponents {
 export class SonicPiEngine {
   private scheduler: VirtualTimeScheduler | null = null
   private bridge: SuperSonicBridge | null = null
+  // Sample-duration lookup handed to every ProgramBuilder so `sample_duration` /
+  // `use_sample_bpm` resolve the real decoded buffer length (#513/SV66). Reads
+  // the bridge's cached durations synchronously — durations are pre-decoded in
+  // evaluate() before the build runs (predecodeTempoSamples). A bound arrow so
+  // it's a stable reference across the many builder-construction sites.
+  private readonly sampleDurationLookup = (name: string): number | undefined =>
+    this.bridge?.getSampleDuration(name)
   private eventStream = new SoundEventStream()
   private initialized = false
   private playing = false
@@ -350,6 +357,33 @@ export class SonicPiEngine {
   /** Whether audio output is available. False when SuperSonic failed to initialize. */
   get hasAudio(): boolean {
     return this.bridge !== null
+  }
+
+  // Matches `use_sample_bpm`/`with_sample_bpm`/`sample_duration` followed by a
+  // literal symbol (`:loop_amen`) or quoted-string sample name. The `\b` and
+  // optional `(`/whitespace cover both paren and paren-less Ruby call styles.
+  private static readonly TEMPO_SAMPLE_RE =
+    /\b(?:use_sample_bpm|with_sample_bpm|sample_duration)\s*\(?\s*[:"']([A-Za-z_]\w*)/g
+
+  /**
+   * Await the decode of every sample referenced by `use_sample_bpm`,
+   * `with_sample_bpm`, or `sample_duration` so its buffer length is cached
+   * before evaluate() runs the (synchronous) build that reads it (#513/SV66).
+   *
+   * Literal symbol/string args only (`use_sample_bpm :loop_amen`) — matching
+   * desktop's static-name resolution. A runtime-computed name can't be
+   * pre-decoded; the DSL then keeps the current tempo (and warns once on use).
+   * Cheap + deduped: the decode is the same one playback would trigger, just
+   * awaited up-front instead of fire-and-forget.
+   */
+  private async predecodeTempoSamples(code: string): Promise<void> {
+    if (!this.bridge) return
+    const names = new Set<string>()
+    for (const m of code.matchAll(SonicPiEngine.TEMPO_SAMPLE_RE)) names.add(m[1])
+    if (names.size === 0) return
+    await Promise.all(
+      [...names].map((n) => this.bridge!.ensureSampleDuration(n).catch(() => undefined)),
+    )
   }
 
   /**
@@ -886,6 +920,9 @@ export class SonicPiEngine {
           this.loopSeeds.set(name, seed + 1)
 
           const builder = new ProgramBuilder(seed, this.loopTicks.get(name))
+          // #513: loop bodies that call sample_duration / use_sample_bpm need the
+          // real decoded buffer length, not the stub.
+          builder.setSampleDurationProvider(this.sampleDurationLookup)
           // Apply the loop's synth default (set by top-level use_synth)
           if (task.currentSynth && task.currentSynth !== 'beep') {
             builder.use_synth(task.currentSynth)
@@ -1315,9 +1352,17 @@ export class SonicPiEngine {
         if (!this.bridge) return false
         return this.bridge.isSampleLoaded(name)
       }
-      const sample_duration = (name: string): number => {
+      // Desktop `sample_duration` returns BEATS at the current bpm by default
+      // (bpm-scaling ON, sound.rb:2276). beats = raw_seconds * bpm / 60, honoring
+      // rate/start/finish/sustain. At the default bpm 60 this equals raw seconds
+      // (the prior behavior); it only diverges once use_bpm/use_sample_bpm changes
+      // the tempo — which is exactly when the old raw-seconds value was wrong.
+      // Falls back to 0 when the buffer isn't decoded (unchanged). (#513/SV66)
+      const sample_duration = (name: string, opts?: Record<string, number>): number => {
         if (!this.bridge) return 0
-        return this.bridge.getSampleDuration(name) ?? 0
+        const raw = sampleDurationSeconds(this.bridge.getSampleDuration(name), opts)
+        if (raw === undefined) return 0
+        return (raw * defaultBpm) / 60
       }
 
       // ----- MIDI output (opts object carries keyword args from transpiler) -----
@@ -1401,6 +1446,7 @@ export class SonicPiEngine {
       // Top-level ProgramBuilder — provides tick/look/knit/etc. for code outside live_loops.
       // Inside live_loops, the callback parameter `b` shadows this.
       const topLevelBuilder = new ProgramBuilder()
+      topLevelBuilder.setSampleDurationProvider(this.sampleDurationLookup)
 
       // Top-level random + iteration helpers. These live on ProgramBuilder for
       // use inside live_loops (`b.rrand(...)`), but some Ruby patterns call
@@ -1463,8 +1509,20 @@ export class SonicPiEngine {
         midi_all_notes_off, midi_notes_off, midi_devices,
         // OSC
         use_osc, osc, topLevelOscSend,
-        // Sample BPM
-        (name: string) => topLevelBuilder.use_sample_bpm(name),
+        // Sample BPM — set the GLOBAL tempo from a sample's natural length.
+        // Desktop sound.rb:542: use_bpm(num_beats * 60 / raw_sample_seconds). Must
+        // mutate the engine-level defaultBpm (like top-level use_bpm via
+        // topLevelUseBpm), NOT topLevelBuilder.use_bpm — the latter only sets the
+        // builder's local bpm and never reaches the loops (which inherit
+        // defaultBpm). Duration is pre-decoded in evaluate() (predecodeTempoSamples);
+        // if still unknown, leave the tempo unchanged — never use_bpm(Infinity).
+        // (#513/SV66)
+        (name: string, opts?: Record<string, number>) => {
+          const numBeats = typeof opts?.num_beats === 'number' && opts.num_beats > 0 ? opts.num_beats : 1
+          const raw = sampleDurationSeconds(this.bridge?.getSampleDuration(name), opts)
+          if (raw === undefined) return
+          topLevelUseBpm(numBeats * (60.0 / raw))
+        },
         // Debug (no-op in browser)
         (_val?: boolean) => { /* no-op — use_debug controls log verbosity in Desktop SP */ },
         // Latency — no-op at top level; inside loops it's handled by ProgramBuilder + AudioInterpreter
@@ -1769,6 +1827,13 @@ export class SonicPiEngine {
         ...Object.fromEntries(this.defonceCache),
         ...Object.fromEntries(this.definedFns),
       }
+      // #513/SV66: `use_sample_bpm` / `sample_duration` derive the tempo from a
+      // sample's decoded buffer length, but the build below runs them
+      // SYNCHRONOUSLY while web decode is async. Pre-decode the tempo-referenced
+      // samples now (awaited) so the duration is cached before the build reads it.
+      // Desktop reads this synchronously via blocking Ruby I/O (sound.rb:2236).
+      await this.predecodeTempoSamples(code)
+
       const sandbox = createIsolatedExecutor(transpiledCode, dslNames, persistedFns)
       scopeHandle = sandbox.scopeHandle
       // Set the re-entry guard while the synchronous top-level body runs.
@@ -2287,6 +2352,9 @@ export class SonicPiEngine {
     if (this.currentStratum <= Stratum.S2) {
       const loopBuilders = this.loopBuilders
       const scheduler = this.scheduler
+      // Captured for the query factory below — `this` inside the queryRange
+      // method shorthand is not the engine. (#513)
+      const sampleDurationLookup = this.sampleDurationLookup
 
       result.capture = {
         async queryRange(begin: number, end: number): Promise<QueryEvent[]> {
@@ -2296,6 +2364,7 @@ export class SonicPiEngine {
             const bpm = task?.bpm ?? 60
             const factory = (ticks?: Map<string, number>, iteration?: number) => {
               const builder = new ProgramBuilder(iteration ?? 0, ticks)
+              builder.setSampleDurationProvider(sampleDurationLookup)
               // Apply the loop's synth default so QueryInterpreter shows the correct synth
               if (task?.currentSynth && task.currentSynth !== 'beep') {
                 builder.use_synth(task.currentSynth)

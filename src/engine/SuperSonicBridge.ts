@@ -1413,6 +1413,22 @@ export class SuperSonicBridge {
     return this.sampleDurations.get(name)
   }
 
+  /**
+   * Decode (if needed) and return the sample's raw buffer duration in seconds.
+   * Awaits the async decode so callers running BEFORE first playback (e.g. the
+   * `use_sample_bpm` pre-decode in evaluate(), #513/SV66) get the real length
+   * instead of `undefined`. Desktop reads this synchronously via Ruby blocking
+   * I/O (`sound.rb:2236 load_sample_at_path(path).duration`); on web the decode
+   * is async, so the value must be awaited up-front. Returns `undefined` on a
+   * decode failure (caller keeps the current bpm — never `use_bpm(Infinity)`).
+   */
+  async ensureSampleDuration(name: string): Promise<number | undefined> {
+    if (!this.sampleDurations.has(name)) {
+      await this.fetchSampleDuration(name).catch(() => {})
+    }
+    return this.sampleDurations.get(name)
+  }
+
   /** Return loaded sample names (Tier C PR #2 #253 — for sample_paths host stub). */
   getLoadedSampleNames(): string[] {
     return Array.from(this.loadedSamples.keys())

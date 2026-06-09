@@ -13,6 +13,7 @@ import { SeededRandom } from './SeededRandom'
 import { noteToMidi, noteToMidiStrict, midiToFreq, hzToMidi, noteInfo } from './NoteToFreq'
 import { ring, knit, range, line, Ring, Ramp } from './Ring'
 import { spread } from './EuclideanRhythm'
+import { sampleDurationSeconds } from './SoundLayer'
 import { chord, scale, chord_invert, note, note_range, chord_degree, degree, chord_names, scale_names } from './ChordScale'
 
 /** Default maximum iterations before a loop is considered infinite. */
@@ -102,9 +103,25 @@ export class ProgramBuilder {
   // the real path via setTimeStateContext.
   private _ownerIdPath: number[] = [0]
 
+  // Injected by the engine: returns a sample's decoded RAW buffer duration in
+  // seconds, or undefined if not yet decoded. ProgramBuilder is otherwise pure
+  // (no bridge access); this callback is the one seam to the async decode cache
+  // (SuperSonicBridge.getSampleDuration). Needed so `sample_duration` /
+  // `use_sample_bpm` derive from the real buffer length instead of the old
+  // hardcoded `1` stub (#513/SV66). Inherited by sub-builders (with_fx/in_thread)
+  // like _currentBpm so loop bodies can call `__b.sample_duration`.
+  private _sampleDurationProvider?: (name: string) => number | undefined
+
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
     this.rng = new SeededRandom(seed)
     if (initialTicks) this.ticks = new Map(initialTicks)
+  }
+
+  /** Engine wires the sample-duration lookup (reads the bridge's decoded
+   *  buffer durations). See `_sampleDurationProvider`. (#513) */
+  setSampleDurationProvider(fn: (name: string) => number | undefined): this {
+    this._sampleDurationProvider = fn
+    return this
   }
 
   /** Snapshot current tick state — saved by the engine between loop iterations. */
@@ -226,10 +243,34 @@ export class ProgramBuilder {
    *  synth, not the engine-level `defaultSynth`. */
   get currentDefaultSynth(): string { return this.currentSynth }
 
-  /** Set BPM to match a sample's natural tempo. */
+  /**
+   * Set BPM to match a sample's natural tempo. Desktop `sound.rb:542-552`:
+   * disable bpm-scaling, read the RAW-seconds sample duration, then
+   * `use_bpm(num_beats * 60.0 / raw_dur)`. `num_beats` (default 1) lets the
+   * caller declare how many beats the sample spans (e.g. `num_beats: 4`).
+   *
+   * Guards div-by-zero: if the buffer duration is unknown (decode not done /
+   * failed) the bpm is left UNCHANGED rather than set to Infinity (SV66).
+   */
   use_sample_bpm(name: string, opts?: Record<string, unknown>): this {
-    const dur = this.sample_duration(name, opts)
-    return this.use_bpm(60.0 / dur)
+    const o = (opts ?? {}) as Record<string, number>
+    const numBeats = typeof o.num_beats === 'number' && o.num_beats > 0 ? o.num_beats : 1
+    const rawSeconds = this.sampleDurationSeconds(name, opts)
+    if (rawSeconds === undefined) return this // unknown → keep current bpm
+    return this.use_bpm(numBeats * (60.0 / rawSeconds))
+  }
+
+  /**
+   * Raw playback length of a sample in seconds, honoring rate/start/finish/
+   * sustain, or undefined when the buffer duration isn't decoded yet. The
+   * provider returns the decoded buffer length; SoundLayer applies the opts
+   * math (mirrors desktop `sound.rb:2236`). The bpm→beats conversion is the
+   * caller's responsibility (use_sample_bpm wants seconds; sample_duration
+   * wants beats).
+   */
+  private sampleDurationSeconds(name: string, opts?: Record<string, unknown>): number | undefined {
+    const buffer = this._sampleDurationProvider?.(name)
+    return sampleDurationSeconds(buffer, opts as Record<string, number> | undefined)
   }
 
   use_random_seed(seed: number): this {
@@ -561,6 +602,10 @@ export class ProgramBuilder {
     // with_fx (same thread) continues it; in_thread/at snapshot it at fork.
     // Previously NO sub-builder inherited it → silent 2× tempo error.
     inner._currentBpm = this._currentBpm
+    // #513: sub-builders (with_fx / in_thread / at) must reach the same sample
+    // duration cache so `sample_duration` / `use_sample_bpm` inside them resolve
+    // the real buffer length rather than falling back to the stub.
+    inner._sampleDurationProvider = this._sampleDurationProvider
     // #345: use_osc sets :sonic_pi_osc_client as a thread-local in desktop SP
     // (core.rb:649-653). Same SP94 drift class as #343 — the inherit-list
     // omitted this field. Same handling as _currentBpm: with_fx (same thread)
@@ -1416,11 +1461,19 @@ export class ProgramBuilder {
   }
 
   /**
-   * Get the duration of a sample in beats. Stub: returns 1.
-   * Real implementation needs SuperSonic bridge access.
+   * Duration of a sample in BEATS at the current bpm — Desktop SP's default
+   * (bpm-scaling ON divides the raw seconds by the sleep multiplier,
+   * `sound.rb:2276`). So `sleep sample_duration(:loop_amen)` advances exactly
+   * one buffer's worth of time at any bpm.
+   *
+   * beats = raw_seconds / sleep_mul, sleep_mul = 60 / bpm  ⇒  raw_seconds * bpm / 60.
+   * Falls back to 1 beat when the buffer duration isn't decoded yet (the old
+   * stub value — never NaN/Infinity into a `sleep`). (#513/SV66)
    */
-  sample_duration(_name: string, _opts?: Record<string, unknown>): number {
-    return 1
+  sample_duration(name: string, opts?: Record<string, unknown>): number {
+    const rawSeconds = this.sampleDurationSeconds(name, opts)
+    if (rawSeconds === undefined) return 1
+    return (rawSeconds * this._currentBpm) / 60
   }
 
   // --- Data constructors (pure, no side effects) ---
