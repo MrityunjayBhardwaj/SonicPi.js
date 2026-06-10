@@ -1253,7 +1253,7 @@ end
     <details open class="spectro"><summary>🎛️ A/B spectrogram</summary><img loading="lazy" src="gate-detail/bach/spectrogram.png" alt="bach spectrogram"></details>
     <details open class="report"><summary>📊 Full comparison report (6 tiers)</summary><div class="md"><h1>Desktop ↔ Web Comparison: comm-community__06_bach</h1>
 <ul>
-<li><strong>Timestamp:</strong> 2026-06-09T01:06:26.174Z</li>
+<li><strong>Timestamp:</strong> 2026-06-09T20:56:12.158Z</li>
 <li><strong>Capture window:</strong> 30000 ms</li>
 </ul>
 <h2>Code</h2>
@@ -1301,21 +1301,21 @@ play_pattern_timed [71,69],[0.5,1]
 </thead>
 <tbody><tr>
 <td>Duration (s)</td>
-<td>31.371</td>
-<td>29.781</td>
-<td>1.589</td>
+<td>31.369</td>
+<td>29.696</td>
+<td>1.673</td>
 </tr>
 <tr>
 <td>Peak</td>
-<td>0.9998</td>
-<td>0.2086</td>
-<td>0.7912</td>
+<td>0.3952</td>
+<td>0.2080</td>
+<td>0.1872</td>
 </tr>
 <tr>
 <td>RMS</td>
-<td>0.0742</td>
-<td>0.0283</td>
-<td>0.0459</td>
+<td>0.0740</td>
+<td>0.0284</td>
+<td>0.0456</td>
 </tr>
 <tr>
 <td>Clipping (%)</td>
@@ -1341,7 +1341,7 @@ play_pattern_timed [71,69],[0.5,1]
 <h3>Tier 0 — Validity gates</h3>
 <ul>
 <li>✓ 0.1 Sample rate consistent (48000 Hz)</li>
-<li>⚠ 0.2 Capture-window misaligned (Δ 1.59s &gt; 0.5s) — note-count / level aggregates unreliable  <strong>(SOFT — Tier 3 + 1.3 unreliable; Tier 1 pitch still valid)</strong></li>
+<li>⚠ 0.2 Capture-window misaligned (Δ 1.67s &gt; 0.5s) — note-count / level aggregates unreliable  <strong>(SOFT — Tier 3 + 1.3 unreliable; Tier 1 pitch still valid)</strong></li>
 <li>◦ 0.3 equal preconditions / 0.4 lossless capture / 0.5 routing sanity — not auto-checked; ensure SP.app reset + raw-float32 + FX-bus wired (SV31/SV27/SV30)</li>
 </ul>
 <h3>Tier 1 — Musical correctness (THE verdict — energy/MFCC may never override)</h3>
@@ -1371,7 +1371,7 @@ play_pattern_timed [71,69],[0.5,1]
 </blockquote>
 <ul>
 <li>3.1 RMS ratio web/desktop = 0.38× (outside band — tracked separately, not a Tier-1 fail)</li>
-<li>3.2 Peak ratio web/desktop = 0.21×</li>
+<li>3.2 Peak ratio web/desktop = 0.53×</li>
 <li>3.3 Clipping: desktop 0% · web 0% ✓ (&lt; 1%)</li>
 </ul>
 <h3>Tier 2 — Spectral / timbral (supporting only) · Tier 4 — FX/routing · Tier 5 — lifecycle</h3>
@@ -1397,12 +1397,12 @@ play_pattern_timed [71,69],[0.5,1]
 </thead>
 <tbody><tr>
 <td>L2 distance (mel-dB)</td>
-<td>10.63</td>
+<td>10.62</td>
 <td>&lt; 10 = very close · 10–25 = similar shape · &gt; 25 = divergent</td>
 </tr>
 <tr>
 <td>MFCC distance (timbre)</td>
-<td>106.16</td>
+<td>108.64</td>
 <td>&lt; 30 = similar · 30–80 = noticeably different · &gt; 80 = unrelated</td>
 </tr>
 <tr>
@@ -1412,7 +1412,7 @@ play_pattern_timed [71,69],[0.5,1]
 </tr>
 <tr>
 <td>Frames compared</td>
-<td>2793</td>
+<td>2785</td>
 <td>overlapping window after length-aligning</td>
 </tr>
 <tr>
@@ -1426,7 +1426,7 @@ play_pattern_timed [71,69],[0.5,1]
 <td>dominant frequency</td>
 </tr>
 <tr>
-<td>⚠ MFCC distance 106.16 is high — <strong>check Tier 1 first</strong>: if pitch-track matched, this is timbre/gain (the known 0.5× + reverb tail), NOT wrong notes. Only treat as &quot;different synth/sample chain&quot; when Tier 1 also diverges.</td>
+<td>⚠ MFCC distance 108.64 is high — <strong>check Tier 1 first</strong>: if pitch-track matched, this is timbre/gain (the known 0.5× + reverb tail), NOT wrong notes. Only treat as &quot;different synth/sample chain&quot; when Tier 1 also diverges.</td>
 <td></td>
 <td></td>
 </tr>
@@ -1434,9 +1434,9 @@ play_pattern_timed [71,69],[0.5,1]
 <h2>Tool stdout (debug)</h2>
 <h3>Desktop</h3>
 <pre><code>▶ Desktop capture (30000ms): comm-community__06_bach
-✓ Report: /Users/mrityunjaybhardwaj/Documents/projects/sonicPiWeb/.captures/desktop_2026-06-09T01-05-11-872Z_comm-community__06_bach.md
+✓ Report: /Users/mrityunjaybhardwaj/Documents/projects/sonicPiWeb/.captures/desktop_2026-06-09T20-54-56-611Z_comm-community__06_bach.md
 ✓ WAV:    gate-detail/bach/desktop.wav
-  31.37s · peak 0.9998 · RMS 0.0742 · clip 0%
+  31.37s · peak 0.3952 · RMS 0.074 · clip 0%
 </code></pre>
 <h3>Web</h3>
 <pre><code>Launching Chromium (headed, audio capture)...
@@ -1482,7 +1482,7 @@ end
     <details open class="spectro"><summary>🎛️ A/B spectrogram</summary><img loading="lazy" src="gate-detail/dark_neon/spectrogram.png" alt="dark_neon spectrogram"></details>
     <details open class="report"><summary>📊 Full comparison report (6 tiers)</summary><div class="md"><h1>Desktop ↔ Web Comparison: dark_neon</h1>
 <ul>
-<li><strong>Timestamp:</strong> 2026-06-09T00:29:54.287Z</li>
+<li><strong>Timestamp:</strong> 2026-06-09T20:19:05.348Z</li>
 <li><strong>Capture window:</strong> 15000 ms</li>
 </ul>
 <h2>Code</h2>
@@ -1524,14 +1524,14 @@ end
 <tr>
 <td>Peak</td>
 <td>1.0000</td>
-<td>0.8265</td>
-<td>0.1735</td>
+<td>0.7985</td>
+<td>0.2015</td>
 </tr>
 <tr>
 <td>RMS</td>
 <td>0.5077</td>
-<td>0.2370</td>
-<td>0.2707</td>
+<td>0.2392</td>
+<td>0.2685</td>
 </tr>
 <tr>
 <td>Clipping (%)</td>
@@ -1553,7 +1553,7 @@ end
 </tr>
 </tbody></table>
 <h2>Verdict</h2>
-<h3>✅ EVENT-MATCH — per-synthdef <code>/s_new</code> onset-sequence parity STRUCTURE-MATCHES desktop (SV61): the engine emitted the right notes at the right times. The audio Tier-1 said <em>&quot;INCONCLUSIVE — pitch-tracker method asymmetry: desktop <code>contour</code> (conf 0.98) vs web <code>onset</code> (conf 1); no PRNG token — not promoted (different signals dominate each side) — no Tier-1 verdict (#376)&quot;</em>, but that measures stage-7+ scsynth DSP (WASM-vs-native rendering / pitch-tracker noise), not the engine. Authoritative cross-engine check passes.  · ⚠ Tier-0 SOFT: level/count aggregates unreliable (Tier 1 pitch unaffected)</h3>
+<h3>✅ EVENT-MATCH — per-synthdef <code>/s_new</code> onset-sequence parity STRUCTURE-MATCHES desktop (SV61): the engine emitted the right notes at the right times. The audio Tier-1 said <em>&quot;PITCH DIVERGENCE at pc 1 (desktop 11 vs web 1)&quot;</em>, but that measures stage-7+ scsynth DSP (WASM-vs-native rendering / pitch-tracker noise), not the engine. Authoritative cross-engine check passes.  · ⚠ Tier-0 SOFT: level/count aggregates unreliable (Tier 1 pitch unaffected)</h3>
 <h3>Tier 0 — Validity gates</h3>
 <ul>
 <li>✓ 0.1 Sample rate consistent (48000 Hz)</li>
@@ -1562,21 +1562,21 @@ end
 </ul>
 <h3>Tier 1 — Musical correctness (THE verdict — energy/MFCC may never override)</h3>
 <ul>
-<li><strong>1.1 Note progression:</strong> ⚠ INCONCLUSIVE — pitch-tracker method asymmetry: desktop <code>contour</code> (conf 0.98) vs web <code>onset</code> (conf 1); no PRNG token — not promoted (different signals dominate each side) — no Tier-1 verdict (#376)<ul>
-<li>method: desktop <code>contour</code> (conf 0.98) · web <code>onset</code> (conf 1) · compared octave-invariant</li>
+<li><strong>1.1 Note progression:</strong> ✗ PITCH DIVERGENCE at pc 1 (desktop 11 vs web 1)<ul>
+<li>method: desktop <code>contour</code> (conf 0.98) · web <code>contour</code> (conf 0.98) · compared octave-invariant</li>
 <li>desktop: <code>11,11,11,0,11,11,0,11,11,0,11</code></li>
-<li>web&nbsp;&nbsp;&nbsp;: <code>0,0,0</code></li>
+<li>web&nbsp;&nbsp;&nbsp;: <code>11,1,11,11,0,11,11,0,11,11,11</code></li>
 </ul>
 </li>
-<li><strong>1.2 Tempo (inter-onset):</strong> ✗ desktop 0.295s · web 2.820s/note</li>
-<li><strong>1.3 Onset count:</strong> desktop 11 · web 3 (Δ explained by Tier-0 window misalignment)</li>
+<li><strong>1.2 Tempo (inter-onset):</strong> ✗ desktop 0.295s · web 0.885s/note</li>
+<li><strong>1.3 Onset count:</strong> desktop 11 · web 11 (Δ explained by Tier-0 window misalignment)</li>
 <li>◦ 1.4 note duration / 1.5 polyphony / 1.6 determinism — not auto-tracked here (unit tests cover determinism; see SV24/SV45)</li>
 </ul>
 <h3>Tier 1.0 — Event parity (<code>/s_new</code> onset-sequence vs desktop — SV61 authoritative tiebreaker)</h3>
 <ul>
 <li><strong>Structure (synthdef multiset):</strong> STRUCTURE-MATCH — desktop 43 voice <code>/s_new</code>, web 40</li>
 <li><strong>Onset sequence (ε=15ms, prefix-compared, + per-tick NOTE multiset):</strong> ✓ MATCH<ul>
-<li>✓ <code>basic_stereo_player</code> — 32 onsets within ε (max Δ 0ms), notes match</li>
+<li>✓ <code>basic_stereo_player</code> — 32 onsets within ε (max Δ 1ms), notes match</li>
 <li>✓ <code>blade</code> — 4 onsets within ε (max Δ 0ms), notes match</li>
 <li>✓ <code>stereo_player</code> — 4 onsets within ε (max Δ 0ms), notes match</li>
 </ul>
@@ -1589,7 +1589,7 @@ end
 </blockquote>
 <ul>
 <li>3.1 RMS ratio web/desktop = 0.47× (outside band — tracked separately, not a Tier-1 fail)</li>
-<li>3.2 Peak ratio web/desktop = 0.83×</li>
+<li>3.2 Peak ratio web/desktop = 0.80×</li>
 <li>3.3 Clipping: desktop 7.56% · web 0% ⚠</li>
 </ul>
 <h3>Tier 2 — Spectral / timbral (supporting only) · Tier 4 — FX/routing · Tier 5 — lifecycle</h3>
@@ -1615,12 +1615,12 @@ end
 </thead>
 <tbody><tr>
 <td>L2 distance (mel-dB)</td>
-<td>10.61</td>
+<td>10.53</td>
 <td>&lt; 10 = very close · 10–25 = similar shape · &gt; 25 = divergent</td>
 </tr>
 <tr>
 <td>MFCC distance (timbre)</td>
-<td>152.46</td>
+<td>149.20</td>
 <td>&lt; 30 = similar · 30–80 = noticeably different · &gt; 80 = unrelated</td>
 </tr>
 <tr>
@@ -1644,7 +1644,7 @@ end
 <td>dominant frequency</td>
 </tr>
 <tr>
-<td>⚠ MFCC distance 152.46 is high — <strong>check Tier 1 first</strong>: if pitch-track matched, this is timbre/gain (the known 0.5× + reverb tail), NOT wrong notes. Only treat as &quot;different synth/sample chain&quot; when Tier 1 also diverges.</td>
+<td>⚠ MFCC distance 149.20 is high — <strong>check Tier 1 first</strong>: if pitch-track matched, this is timbre/gain (the known 0.5× + reverb tail), NOT wrong notes. Only treat as &quot;different synth/sample chain&quot; when Tier 1 also diverges.</td>
 <td></td>
 <td></td>
 </tr>
@@ -1652,7 +1652,7 @@ end
 <h2>Tool stdout (debug)</h2>
 <h3>Desktop</h3>
 <pre><code>▶ Desktop capture (15000ms): dark_neon
-✓ Report: /Users/mrityunjaybhardwaj/Documents/projects/sonicPiWeb/.captures/desktop_2026-06-09T00-29-09-653Z_dark_neon.md
+✓ Report: /Users/mrityunjaybhardwaj/Documents/projects/sonicPiWeb/.captures/desktop_2026-06-09T20-18-20-267Z_dark_neon.md
 ✓ WAV:    gate-detail/dark_neon/desktop.wav
   16.37s · peak 1 · RMS 0.5077 · clip 7.56%
 </code></pre>
