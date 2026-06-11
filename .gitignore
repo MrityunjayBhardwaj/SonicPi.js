@@ -45,6 +45,10 @@ test_results/sp107/
 # 7 gate rows). The viewer gate-detail.html is checked in; assets regenerate via
 # tools/build-gate-detail.ts after a sweep.
 test_results/gate-detail/
+# Experiments investigation dashboard assets (det_*/norand_*/numbeats_* WAVs +
+# PNGs + event/compare JSON). The viewer experiments.html is checked in; the
+# artifacts regenerate via tools/compare-desktop-vs-web.ts + event-parity.ts.
+test_results/experiments/
 
 # Playwright
 playwright-report/
