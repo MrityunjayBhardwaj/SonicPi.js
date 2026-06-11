@@ -285,6 +285,14 @@ export class ProgramBuilder {
   get currentTranspose(): number { return this._transpose }
   get currentSynthDefaultsMap(): Record<string, number> { return { ...this._synthDefaults } }
 
+  /** #353: parent's in-flight `use_osc` target — a nested `live_loop`
+   *  registration inherits these from the parent builder (the surrounding
+   *  in_thread's `use_osc`), mirroring `currentDefaultSynth`/`currentTranspose`.
+   *  Desktop `:sonic_pi_osc_client` is a thread-local snapshotted at fork
+   *  (core.rb:649-653). */
+  get currentOscHost(): string { return this._oscHost }
+  get currentOscPort(): number { return this._oscPort }
+
   /**
    * Set BPM to match a sample's natural tempo. Desktop `sound.rb:542-552`:
    * disable bpm-scaling, read the RAW-seconds sample duration, then

@@ -84,6 +84,12 @@ export interface TaskState {
    *  currentSynth. Desktop snapshots both thread-locals at fork (runtime.rb:1067). */
   transpose: number
   synthDefaults: Record<string, number>
+  /** #353: use_osc target (host/port) inherited at the loop's source position,
+   *  mirroring transpose/synth — a nested live_loop inherits the surrounding
+   *  in_thread's `use_osc` so `osc` inside the body targets the right host.
+   *  Desktop `:sonic_pi_osc_client` thread-local snapshotted at fork. */
+  oscHost: string
+  oscPort: number
   outBus: number
   /** The async loop body */
   asyncFn: () => Promise<void>
@@ -276,6 +282,9 @@ export class VirtualTimeScheduler {
     // position (mirrors `synth`), seeded into TaskState below.
     transpose?: number
     synthDefaults?: Record<string, number>
+    // #353: use_osc target snapshotted at the loop's source position (mirrors transpose).
+    oscHost?: string
+    oscPort?: number
     outBus?: number
     // #475: anchor the new task's start virtual time to a specific cursor
     // instead of the wall-clock getAudioTime(). A thread spawned mid-run by a
@@ -309,6 +318,8 @@ export class VirtualTimeScheduler {
       currentSynth: options?.synth ?? 'beep',
       transpose: options?.transpose ?? 0,
       synthDefaults: options?.synthDefaults ?? {},
+      oscHost: options?.oscHost ?? 'localhost',
+      oscPort: options?.oscPort ?? 4560,
       outBus: options?.outBus ?? 0,
       asyncFn,
       running: true,

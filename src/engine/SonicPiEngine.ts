@@ -627,7 +627,7 @@ export class SonicPiEngine {
 
       // Collection map for re-evaluate hot-swap path
       const pendingLoops = new Map<string, () => Promise<void>>()
-      const pendingDefaults = new Map<string, { bpm: number; synth: string; transpose: number; synthDefaults: Record<string, number> }>()
+      const pendingDefaults = new Map<string, { bpm: number; synth: string; transpose: number; synthDefaults: Record<string, number>; oscHost: string; oscPort: number }>()
 
       // Top-level set_volume! — Desktop SP range is 0-5, maps to mixer pre_amp.
       // currentVolume is captured by closures (set_volume + current_volume_fn +
@@ -979,6 +979,13 @@ export class SonicPiEngine {
           if (task.synthDefaults && Object.keys(task.synthDefaults).length > 0) {
             builder.use_synth_defaults(task.synthDefaults)
           }
+          // #353: seed the inherited use_osc target so `osc` inside the body
+          // targets the surrounding in_thread's host, not localhost:4560. Re-seeded
+          // each iteration like transpose; a use_osc inside the body overrides for
+          // that iteration (desktop per-iteration fork-snapshot).
+          if (task.oscHost !== 'localhost' || task.oscPort !== 4560) {
+            builder.use_osc(task.oscHost, task.oscPort)
+          }
           // Seed introspection state for current_time / current_beat (#226).
           // task.virtualTime is the iteration-start audio time (advances on sleep).
           // loopBeats persists current_beat across iterations like loopTicks does.
@@ -1115,6 +1122,12 @@ export class SonicPiEngine {
         // synth — parent builder when nested (SP72/SV28), engine default at top.
         const inheritedTranspose = nestedFromParent ? parentBuilder.currentTranspose : defaultTranspose
         const inheritedSynthDefaults = nestedFromParent ? parentBuilder.currentSynthDefaultsMap : defaultSynthDefaults
+        // #353: use_osc target follows the same inheritance — parent builder when
+        // nested (the surrounding in_thread's `use_osc`), engine-level top-level
+        // default (`oscDefaultHost`/`oscDefaultPort`) otherwise. Same SP72/SV28
+        // "field the inherited list missed" class as transpose.
+        const inheritedOscHost = nestedFromParent ? parentBuilder.currentOscHost : oscDefaultHost
+        const inheritedOscPort = nestedFromParent ? parentBuilder.currentOscPort : oscDefaultPort
         // #480: a nested registration (depth>0) forks at the parent thread's
         // current vtime, not the deferred-registration getAudioTime(). Top-level
         // (depth 0) registrations keep getAudioTime() (undefined anchor) — their
@@ -1162,12 +1175,15 @@ export class SonicPiEngine {
             existing.currentSynth = inheritedSynth
             existing.transpose = inheritedTranspose
             existing.synthDefaults = inheritedSynthDefaults
+            existing.oscHost = inheritedOscHost
+            existing.oscPort = inheritedOscPort
             existing.outBus = loopBus
           } else {
             // New inner declared during hot-swap (e.g. user added it on Run).
             scheduler.registerLoop(name, asyncFn, {
               bpm: inheritedBpm, synth: inheritedSynth,
               transpose: inheritedTranspose, synthDefaults: inheritedSynthDefaults,
+              oscHost: inheritedOscHost, oscPort: inheritedOscPort,
               virtualTime: nestedAnchorVt, idPath: consumeIdPath(),
             })
             const task = scheduler.getTask(name)
@@ -1178,6 +1194,7 @@ export class SonicPiEngine {
           pendingDefaults.set(name, {
             bpm: defaultBpm, synth: defaultSynth,
             transpose: inheritedTranspose, synthDefaults: inheritedSynthDefaults,
+            oscHost: inheritedOscHost, oscPort: inheritedOscPort,
           })
         } else {
           // #480: nestedAnchorVt is undefined at depth 0 → registerLoop keeps
@@ -1195,6 +1212,8 @@ export class SonicPiEngine {
             task.currentSynth = inheritedSynth
             task.transpose = inheritedTranspose
             task.synthDefaults = inheritedSynthDefaults
+            task.oscHost = inheritedOscHost
+            task.oscPort = inheritedOscPort
             task.outBus = loopBus
           }
         }
@@ -2074,6 +2093,8 @@ export class SonicPiEngine {
             task.currentSynth = defaults.synth
             task.transpose = defaults.transpose
             task.synthDefaults = defaults.synthDefaults
+            task.oscHost = defaults.oscHost
+            task.oscPort = defaults.oscPort
             task.outBus = this.bridge?.getLoopBus(name) ?? 0
           }
         }
