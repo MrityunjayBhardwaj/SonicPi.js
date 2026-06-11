@@ -429,4 +429,40 @@ describe('sync/cue — SP95(d) build-time payload + wake-phase (#350/#351)', () 
     expect(ret).toBe(b)
     expect(b.build()).toEqual([{ tag: 'sync', name: 'beat', bpmSync: true }])
   })
+
+  it('sync inside with_fx stays a runtime-step even when the outer builder is sync-wired — N synced plays interleave, never batch (#490)', () => {
+    // #490: `with_fx :reverb { 8.times { sync :tick; synth :saw } }` must spread
+    // the saws at the cue cadence, not pile them at one vt. The outer __run_once
+    // builder IS sync-wired (top-level `sync; play get(:x)` needs the build-time
+    // await), but `with_fx` builds its body through forkBuilder('same-thread'),
+    // which deliberately does NOT propagate _syncScheduler/_syncTaskId. So the
+    // inner `sync` falls to the RUNTIME-STEP path: it pushes a `{tag:'sync'}`
+    // step interleaved with each play, and AudioInterpreter `case 'sync'` blocks
+    // on it at interpret time — exactly like desktop's blocking with_fx thread.
+    //
+    // If forkBuilder were ever "consistency-refactored" to inherit the scheduler,
+    // the inner sync would build-await (return a Promise) inside the SYNCHRONOUS
+    // with_fx buildFn — un-awaited, dropped — pushing NO sync step and piling the
+    // plays. This test catches exactly that regression: the body would collapse
+    // to ['play','play','play'] and the assertion below would fail.
+    const scheduler = new VirtualTimeScheduler({ getAudioTime: () => 0, schedAheadTime: 100 })
+    scheduler.registerLoop('__run_once', async () => {})
+    const b = new ProgramBuilder(0)
+    b.setSyncContext(scheduler, '__run_once') // build-time-await wiring on the OUTER builder
+
+    b.with_fx('reverb', (inner) => {
+      for (let i = 0; i < 3; i++) {
+        const ret = inner.sync('tick')
+        expect(ret).toBe(inner) // runtime-step path: chainable, NOT a Promise
+        inner.play(52, { synth: 'saw' })
+      }
+      return inner
+    })
+
+    const fx = b.build().find((s) => s.tag === 'fx')
+    expect(fx).toBeDefined()
+    const body = (fx as { body: { tag: string }[] }).body
+    // Interleaved runtime steps — proof the syncs were NOT consumed at build time.
+    expect(body.map((s) => s.tag)).toEqual(['sync', 'play', 'sync', 'play', 'sync', 'play'])
+  })
 })
