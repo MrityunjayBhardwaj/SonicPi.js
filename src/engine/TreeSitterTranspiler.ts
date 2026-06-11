@@ -1081,6 +1081,31 @@ function extractLiteralSynthArg(callNode: any): string | null {
   return null
 }
 
+// #421/SV55: a numeric literal (incl. signed) — the only arg shape we will
+// hoist into an eager prefix for use_transpose / use_synth_defaults. Runtime
+// expressions (vars, rrand) are NOT hoisted: re-emitting them before the loop
+// would evaluate against an empty top-level scope (or double-evaluate a random)
+// — so we leave those deferred in __run_once (no eager prefix).
+function isNumericLiteralNode(n: any): boolean {
+  if (!n) return false
+  if (n.type === 'integer' || n.type === 'float') return true
+  // `-12` / `+3` parse as a unary node wrapping a number.
+  if (n.type === 'unary' && /^[-+]?\d/.test(n.text)) return true
+  return false
+}
+// `use_transpose <number>` — hoistable iff the sole arg is a numeric literal.
+function isLiteralTransposeCall(callNode: any): boolean {
+  const args = callNode.childForFieldName('arguments')?.namedChildren ?? []
+  return args.length === 1 && isNumericLiteralNode(args[0])
+}
+// `use_synth_defaults amp: 0.5, cutoff: 80` — hoistable iff every arg is a
+// keyword pair with a numeric-literal value (the common shape).
+function isLiteralSynthDefaultsCall(callNode: any): boolean {
+  const args = callNode.childForFieldName('arguments')?.namedChildren ?? []
+  if (args.length === 0) return false
+  return args.every((a: any) => a.type === 'pair' && isNumericLiteralNode(a.namedChildren[1]))
+}
+
 function transpileProgram(node: any, ctx: TranspileContext): string {
   const children = node.namedChildren
 
@@ -1137,6 +1162,14 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   // flows to bareCode (deferred) for bare-play interleave — this only records.
   let currentTopSynth: string | null = null
   const blockSynth = new Map<any, string | null>()
+  // #421/SV55: same source-order tracking for use_transpose / use_synth_defaults
+  // (also fork-snapshotted thread-locals in desktop, sound.rb:1481-1484/:4139).
+  // We store the CALL NODE (re-transpiled into the eager prefix) when its args
+  // are numeric literals, else null (non-literal → leave deferred, no hoist).
+  let currentTopTranspose: any = null
+  let currentTopDefaults: any = null
+  const blockTranspose = new Map<any, any>()
+  const blockDefaults = new Map<any, any>()
 
   // #448/SP118: source-position START-GATE for top-level `in_thread`. When an
   // in_thread is declared after vtime-advancing bare code (`sleep`/`sync`), it
@@ -1165,6 +1198,14 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     if (method === 'use_synth') {
       currentTopSynth = extractLiteralSynthArg(child)
     }
+    // #421/SV55: same for use_transpose / use_synth_defaults (literal args only;
+    // a non-literal arg → null → no eager prefix, stays deferred in __run_once).
+    if (method === 'use_transpose') {
+      currentTopTranspose = isLiteralTransposeCall(child) ? child : null
+    }
+    if (method === 'use_synth_defaults') {
+      currentTopDefaults = isLiteralSynthDefaultsCall(child) ? child : null
+    }
 
     // Bare with_fx (no live_loop inside) should be treated as bare code, not a
     // block — UNLESS it wraps a bare `loop do`, which is hoisted to a live_loop
@@ -1191,6 +1232,8 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
                           method === 'in_thread' || isBareLoopNode)) {
       blocks.push(child)
       blockSynth.set(child, currentTopSynth)
+      blockTranspose.set(child, currentTopTranspose)
+      blockDefaults.set(child, currentTopDefaults)
       // #448/SP118: gate a top-level loop/thread declared after vtime-advancing
       // bare code so it forks at the source-position vtime (desktop fork-at-
       // current-vtime), not vt 0. Assign a unique cue and drop a marker into
@@ -1267,6 +1310,11 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   // loops sharing the same source-order synth emits the prefix only once
   // (defaultSynth persists across registrations at runtime).
   let lastEagerSynth: string | null = null
+  // #421/SV55: same dedup for the transpose / synth_defaults eager prefixes,
+  // keyed by emitted source text (so two distinct nodes with the same value
+  // emit once — defaultTranspose/defaultSynthDefaults persist across registrations).
+  let lastEagerTranspose: string | null = null
+  let lastEagerDefaults: string | null = null
   const blockJS = blocks.map(c => {
     const m = (c.type === 'call' || c.type === 'method_call')
       ? (c.childForFieldName('method')?.text ?? c.namedChildren[0]?.text)
@@ -1285,13 +1333,28 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     // live_loop (else it is bareCode), so `m === 'with_fx'` here always wraps a
     // registering loop. Skipped for non-literal args (tagged === null) and when
     // the value is unchanged from the last eager emit.
+    const isLoopRegister = m === 'live_loop' || m === 'loop' || m === 'in_thread' || m === 'with_fx'
     const tagged = blockSynth.get(c) ?? null
     let eagerPrefix = ''
-    if (tagged !== null &&
-        (m === 'live_loop' || m === 'loop' || m === 'in_thread' || m === 'with_fx') &&
-        tagged !== lastEagerSynth) {
+    if (tagged !== null && isLoopRegister && tagged !== lastEagerSynth) {
       eagerPrefix = `use_synth(${JSON.stringify(tagged)})\n`
       lastEagerSynth = tagged
+    }
+    // #421/SV55: transpose / synth_defaults eager prefixes — re-transpile the
+    // recorded literal call node at top level (a bare call → topLevelUseTranspose
+    // / topLevelUseSynthDefaults, NOT __b.* since we're outside a loop body here).
+    // Dedup by emitted source text. Same loop-registering scope as the synth prefix.
+    if (isLoopRegister) {
+      const tNode = blockTranspose.get(c)
+      if (tNode) {
+        const code = transpileNode(tNode, ctx)
+        if (code && code !== lastEagerTranspose) { eagerPrefix += code + '\n'; lastEagerTranspose = code }
+      }
+      const dNode = blockDefaults.get(c)
+      if (dNode) {
+        const code = transpileNode(dNode, ctx)
+        if (code && code !== lastEagerDefaults) { eagerPrefix += code + '\n'; lastEagerDefaults = code }
+      }
     }
     if (m === 'loop') {
       const body = c.namedChildren.find((x: any) => x.type === 'do_block' || x.type === 'block')

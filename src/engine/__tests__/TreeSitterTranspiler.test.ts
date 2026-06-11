@@ -424,6 +424,73 @@ sleep 5`)
         expect(synthIdx).toBeLessThan(itIdx)
       })
 
+      // #421 item 3 — the same fork-snapshot semantics apply to use_transpose
+      // and use_synth_defaults (desktop: both thread-locals snapshotted at fork,
+      // sound.rb:1481-1484 / :4139, runtime.rb:1067). A top-level use_transpose /
+      // use_synth_defaults before a loop must reach the loop's registration via
+      // an eager top-level prefix (→ topLevelUseTranspose / topLevelUseSynthDefaults).
+      it('T-J (#421): top-level use_transpose prefixes the loop registration', () => {
+        const result = treeSitterTranspile(`use_transpose 7
+live_loop :s do
+  play 60
+  sleep 1
+end
+sleep 5`)
+        expect(result.ok).toBe(true)
+        const loopIdx = result.code.indexOf('live_loop("s"')
+        const tIdx = eagerIdx(result.code, 'use_transpose(7)')
+        expect(tIdx).toBeGreaterThanOrEqual(0)
+        expect(loopIdx).toBeGreaterThanOrEqual(0)
+        expect(tIdx).toBeLessThan(loopIdx)
+      })
+
+      it('T-K (#421): top-level use_synth_defaults prefixes the loop registration', () => {
+        const result = treeSitterTranspile(`use_synth_defaults amp: 0.5, cutoff: 80
+live_loop :s do
+  play 60
+  sleep 1
+end
+sleep 5`)
+        expect(result.ok).toBe(true)
+        const loopIdx = result.code.indexOf('live_loop("s"')
+        const dIdx = eagerIdx(result.code, 'use_synth_defaults(')
+        expect(dIdx).toBeGreaterThanOrEqual(0)
+        expect(dIdx).toBeLessThan(loopIdx)
+        // The eager prefix carries the literal opts.
+        const prefix = result.code.slice(dIdx, loopIdx)
+        expect(prefix).toMatch(/amp:\s*0\.5/)
+        expect(prefix).toMatch(/cutoff:\s*80/)
+      })
+
+      it('T-L (#421): use_transpose AFTER the loop does NOT prefix it (forward-only)', () => {
+        const result = treeSitterTranspile(`live_loop :s do
+  play 60
+  sleep 1
+end
+use_transpose 7
+sleep 5`)
+        expect(result.ok).toBe(true)
+        const loopIdx = result.code.indexOf('live_loop("s"')
+        const tIdx = eagerIdx(result.code, 'use_transpose(7)')
+        expect(tIdx === -1 || tIdx > loopIdx).toBe(true)
+      })
+
+      it('T-M (#421): a NON-literal use_transpose arg is NOT hoisted (stays deferred)', () => {
+        // `use_transpose n` can't be re-emitted eagerly (n is a runtime var with
+        // no top-level binding) — leave it deferred in __run_once, no eager prefix.
+        const result = treeSitterTranspile(`n = 7
+use_transpose n
+live_loop :s do
+  play 60
+  sleep 1
+end
+sleep 5`)
+        expect(result.ok).toBe(true)
+        const loopIdx = result.code.indexOf('live_loop("s"')
+        const tIdx = eagerIdx(result.code, 'use_transpose(n)')
+        expect(tIdx === -1 || tIdx > loopIdx).toBe(true)
+      })
+
       // #448/SP118: a top-level in_thread declared after vtime-advancing bare
       // code must fork at the source-position vtime — gated via a start-gate cue
       // __run_once fires at the in_thread's source position.

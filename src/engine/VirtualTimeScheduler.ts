@@ -79,6 +79,11 @@ export interface TaskState {
   bpm: number
   density: number
   currentSynth: string
+  /** #421/SV55: transpose (semitones) and synth_defaults inherited at the loop's
+   *  source position — seeded into each iteration's builder, mirroring
+   *  currentSynth. Desktop snapshots both thread-locals at fork (runtime.rb:1067). */
+  transpose: number
+  synthDefaults: Record<string, number>
   outBus: number
   /** The async loop body */
   asyncFn: () => Promise<void>
@@ -267,6 +272,10 @@ export class VirtualTimeScheduler {
   registerLoop(name: string, asyncFn: () => Promise<void>, options?: {
     bpm?: number
     synth?: string
+    // #421/SV55: transpose / synth_defaults snapshotted at the loop's source
+    // position (mirrors `synth`), seeded into TaskState below.
+    transpose?: number
+    synthDefaults?: Record<string, number>
     outBus?: number
     // #475: anchor the new task's start virtual time to a specific cursor
     // instead of the wall-clock getAudioTime(). A thread spawned mid-run by a
@@ -298,6 +307,8 @@ export class VirtualTimeScheduler {
       bpm: options?.bpm ?? 60,
       density: 1,
       currentSynth: options?.synth ?? 'beep',
+      transpose: options?.transpose ?? 0,
+      synthDefaults: options?.synthDefaults ?? {},
       outBus: options?.outBus ?? 0,
       asyncFn,
       running: true,
