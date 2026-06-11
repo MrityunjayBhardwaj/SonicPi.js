@@ -17,6 +17,40 @@ describe('ProgramBuilder', () => {
     expect(step.synth).toBe('beep') // default synth
   })
 
+  it('play(opts) with no note plays at default note 52 with the opts (SP35 / #522)', () => {
+    // Desktop sound.rb:1199 — `play release: 0.01, amp: 13` (no positional note)
+    // → synth nil, n. The transpiler emits __b.play({ release, amp }); the hash
+    // must NOT be swallowed as the note (→ "[object Object]0" → skipped/silence).
+    const b = new ProgramBuilder()
+    b.play({ release: 0.01, amp: 13 } as unknown as number)
+    const steps = b.build()
+    expect(steps).toHaveLength(1)
+    const step = steps[0] as Extract<(typeof steps)[0], { tag: 'play' }>
+    expect(step.note).toBe(52)
+    expect(step.opts.amp).toBe(13)
+    expect(step.opts.release).toBe(0.01)
+    expect(step.noteName).toBeUndefined() // 52 is a valid numeric note, not skipped
+  })
+
+  it('play(opts) honors the current synth and transpose, not "[object Object]0"', () => {
+    const b = new ProgramBuilder()
+    b.use_synth('pnoise')
+    b.use_transpose(2)
+    b.play({ amp: 2 } as unknown as number)
+    const step = b.build().find((s) => s.tag === 'play') as Extract<ReturnType<ProgramBuilder['build']>[0], { tag: 'play' }>
+    expect(step.synth).toBe('pnoise')
+    expect(step.note).toBe(54) // 52 + transpose 2
+    expect(Number.isNaN(step.note)).toBe(false)
+  })
+
+  it('play(note, opts) is unaffected by the opts-only shift', () => {
+    const b = new ProgramBuilder()
+    b.play(60, { amp: 0.5 })
+    const step = b.build()[0] as Extract<ReturnType<ProgramBuilder['build']>[0], { tag: 'play' }>
+    expect(step.note).toBe(60)
+    expect(step.opts.amp).toBe(0.5)
+  })
+
   it('play() converts string notes to MIDI', () => {
     const b = new ProgramBuilder()
     b.play('c4')

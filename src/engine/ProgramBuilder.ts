@@ -151,6 +151,27 @@ export class ProgramBuilder {
   get lastRef(): number { return this._lastRef }
 
   play(noteVal: number | string | Ring<number> | number[] | null | undefined, opts?: Record<string, unknown>): this {
+    // Opts-only form: `play release: 0.01, amp: 13` (no positional note).
+    // Desktop `sound.rb:1197-1203`: `play(n)` where `n.is_a?(Hash) && args.empty?`
+    // → `synth nil, n` — play the current synth with those opts and NO explicit
+    // note (the synthdef's default). The transpiler emits this as a single object
+    // arg, so the hash lands in the `noteVal` position at runtime (the TS type
+    // never permits it, but no internal caller passes an object — only transpiled
+    // user code does). Without this, `noteVal + this._transpose` coerces the object
+    // to the string "[object Object]0" → an invalid note → the play is skipped →
+    // silence (SP35 family; e.g. cloud_beat's pnoise hihat). Shift the hash to
+    // `opts` and default the note to 52 (Sonic Pi convention; matches the SP35
+    // `transpileSynthCommand` default).
+    if (
+      opts === undefined &&
+      noteVal !== null &&
+      typeof noteVal === 'object' &&
+      !(noteVal instanceof Ring) &&
+      !Array.isArray(noteVal)
+    ) {
+      opts = noteVal as Record<string, unknown>
+      noteVal = 52
+    }
     // Chord: Ring or array — push one play step per note (all at the same virtual time).
     if (noteVal instanceof Ring || Array.isArray(noteVal)) {
       const notes: number[] = noteVal instanceof Ring ? noteVal.toArray() : noteVal
