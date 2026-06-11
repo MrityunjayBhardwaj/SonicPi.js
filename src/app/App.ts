@@ -167,6 +167,14 @@ const BUFFER_COUNT = 10
 
 export class App {
   private engine: SonicPiEngine | null = null
+  /** In-flight engine init, shared so concurrent callers (first-gesture
+   *  warmup + a near-simultaneous Run — a Run *click* is itself a
+   *  `pointerdown` that fires the warmup) await one boot instead of
+   *  racing into two scsynth/AudioContext instances. Cleared on settle so
+   *  a failed init can retry on the next gesture/Run (cf. SV43). */
+  private engineInitPromise: Promise<boolean> | null = null
+  /** One-shot guard so the first-gesture warmup arms its listeners once. */
+  private firstGestureWarmupArmed = false
   private editor!: Editor
   private scope!: Scope
   private console!: Console
@@ -393,6 +401,10 @@ export class App {
         }
       }
     })
+
+    // Warm the audio engine on the first user gesture so the ~300ms scsynth
+    // cold-start overlaps with the user reading/typing, not the first Run (#524).
+    this.armFirstGestureWarmup()
 
     // Apply saved preferences
     this.applyAllPrefs()
@@ -800,6 +812,36 @@ export class App {
   }
 
   /**
+   * Boot the audio engine on the first qualifying user gesture instead of
+   * the first Run (#524). The passive splash (Preloader) can warm the JS+WASM
+   * *bytes* pre-gesture, but the AudioContext + scsynth AudioWorklet can only
+   * start inside a user gesture (autoplay policy). So we listen for the first
+   * `pointerdown` / `keydown` / `touchstart` and kick off `ensureEngineInitialised`
+   * then — the ~300ms boot overlaps with the user reading/typing, and by the
+   * time they hit Run scsynth + COMMON_SYNTHDEFS are loaded → near-instant
+   * first sound. The lazy first-Run path stays as the fallback for a user who
+   * never interacts before Run (handlePlay calls the same idempotent method).
+   */
+  private armFirstGestureWarmup(): void {
+    if (this.firstGestureWarmupArmed) return
+    this.firstGestureWarmupArmed = true
+
+    const events: Array<keyof DocumentEventMap> = ['pointerdown', 'keydown', 'touchstart']
+    const warm = () => {
+      for (const ev of events) document.removeEventListener(ev, warm, true)
+      // Fire-and-forget: idempotent + concurrency-guarded. A failed boot here
+      // just leaves the lazy first-Run path to retry.
+      void this.ensureEngineInitialised()
+    }
+    // Capture phase + passive so we never interfere with editor/toolbar
+    // handlers and never block scrolling. The listener removes itself on
+    // first fire (above) — `once` would only cover the event that fired.
+    for (const ev of events) {
+      document.addEventListener(ev, warm, { capture: true, passive: true })
+    }
+  }
+
+  /**
    * Initialise the audio engine if not already initialised. Idempotent.
    * Used both by handlePlay (which then evaluates the editor buffer) and by
    * the sample-browser preview, which wants engine without disturbing the
@@ -807,6 +849,21 @@ export class App {
    */
   private async ensureEngineInitialised(): Promise<boolean> {
     if (this.engine) return true
+    // Dedup concurrent boots. The first-gesture warmup and a near-simultaneous
+    // Run (a Run *click* is itself a `pointerdown` that arms the warmup) would
+    // otherwise both see a null engine and boot two scsynth/AudioContext
+    // instances. Share one in-flight promise; clear it on settle so a failed
+    // init can retry on the next gesture/Run (cf. SV43).
+    if (this.engineInitPromise) return this.engineInitPromise
+    this.engineInitPromise = this._initEngine()
+    try {
+      return await this.engineInitPromise
+    } finally {
+      this.engineInitPromise = null
+    }
+  }
+
+  private async _initEngine(): Promise<boolean> {
     try {
       this.toolbar.setLoading(true)
       const t0 = performance.now()
