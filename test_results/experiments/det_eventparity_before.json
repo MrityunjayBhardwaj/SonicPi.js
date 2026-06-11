@@ -1,0 +1,858 @@
+{
+  "name": "filtered_dnb_det",
+  "ts": "2026-06-09T15-24-33-577Z",
+  "duration": 12000,
+  "code": "# deterministic filtered_dnb (rrand removed) — grounding #513 tempo\nuse_sample_bpm :loop_amen\n\nwith_fx :rlpf, cutoff: 80 do |c|\n  live_loop :dnb do\n    sample :bass_dnb_f, amp: 5\n    sample :loop_amen, amp: 5\n    sleep 1\n    control c, cutoff: 80\n  end\nend\n",
+  "report": {
+    "verdict": "STRUCTURE-MATCH",
+    "isPrng": true,
+    "reasons": [
+      "Significant layers present on both sides (PRNG piece — counts/choices vary by SV49)."
+    ],
+    "rows": [
+      {
+        "synthdef": "sonic-pi-basic_stereo_player",
+        "desktop": 16,
+        "web": 26,
+        "ratio": 1.625,
+        "significant": true,
+        "status": "match",
+        "desktopOnset": 0,
+        "webOnset": 0
+      }
+    ],
+    "fxRows": [
+      {
+        "synthdef": "sonic-pi-fx_rlpf",
+        "desktop": 1,
+        "web": 1,
+        "ratio": 1,
+        "significant": false,
+        "status": "match",
+        "desktopOnset": 0,
+        "webOnset": -3.068
+      }
+    ],
+    "desktopTotal": 16,
+    "webTotal": 26,
+    "totalRatio": 1.63,
+    "orderMatch": true,
+    "desktopOrder": [
+      "basic_stereo_player"
+    ],
+    "webOrder": [
+      "basic_stereo_player"
+    ],
+    "sequenceParity": {
+      "match": false,
+      "epsilonMs": 15,
+      "notesChecked": false,
+      "rows": [
+        {
+          "synthdef": "sonic-pi-basic_stereo_player",
+          "desktopOnsets": [
+            0,
+            0,
+            1.753,
+            1.753,
+            3.507,
+            3.507,
+            5.26,
+            5.26,
+            7.013,
+            7.013,
+            8.767,
+            8.767,
+            10.52,
+            10.52,
+            12.273,
+            12.273
+          ],
+          "webOnsets": [
+            0,
+            0,
+            1,
+            1,
+            2,
+            2,
+            3,
+            3,
+            4,
+            4,
+            5,
+            5,
+            6,
+            6,
+            7,
+            7,
+            8,
+            8,
+            9,
+            9,
+            10,
+            10,
+            11,
+            11,
+            12,
+            12
+          ],
+          "comparedLen": 16,
+          "timingMatched": false,
+          "firstMismatchIdx": 2,
+          "maxDevMs": 5273,
+          "noteMatched": null,
+          "matched": false
+        }
+      ],
+      "reasons": [
+        "basic_stereo_player: onset #2 desktop 1.753s vs web 1s (Δ 753ms > 15ms ε) — mis-timed layer"
+      ]
+    }
+  },
+  "desktop": [
+    {
+      "addr": "/g_new",
+      "params": {},
+      "tRel": null,
+      "raw": "[ \"/g_new\", 1141, 1, 4 ]",
+      "nodeId": 1141,
+      "addAction": 1,
+      "group": 4
+    },
+    {
+      "addr": "/g_new",
+      "params": {},
+      "tRel": null,
+      "raw": "[ \"/g_new\", 1142, 1, 1141 ]",
+      "nodeId": 1142,
+      "addAction": 1,
+      "group": 1141
+    },
+    {
+      "addr": "/g_new",
+      "params": {},
+      "tRel": null,
+      "raw": "[ \"/g_new\", 1143, 0, 1142 ]",
+      "nodeId": 1143,
+      "addAction": 0,
+      "group": 1142
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 0.3,
+        "amp_slide": 0.1,
+        "amp_slide_shape": 1,
+        "amp_slide_curve": 0,
+        "in_bus": 194,
+        "out_bus": 18
+      },
+      "tRel": null,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_mixer\", 1144, 0, 2, \"amp\", 1, \"amp_slide\", 0.1, \"amp_slide_shape\", 1, \"amp_slide_curve\", 0, \"in_bus\", 194, \"amp\", 0.3, \"out_bus\", 18 ]",
+      "synthdef": "sonic-pi-basic_mixer",
+      "nodeId": 1144,
+      "addAction": 0,
+      "group": 2
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "cutoff": 80,
+        "reps": 1,
+        "in_bus": 192,
+        "out_bus": 194
+      },
+      "tRel": 0,
+      "raw": "[ \"/s_new\", \"sonic-pi-fx_rlpf\", 1145, 1, 1142, \"cutoff\", 80, \"reps\", 1, \"in_bus\", 192, \"out_bus\", 194 ]",
+      "synthdef": "sonic-pi-fx_rlpf",
+      "nodeId": 1145,
+      "addAction": 1,
+      "group": 1142
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 11,
+        "out_bus": 192
+      },
+      "tRel": 0,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1146, 1, 1143, \"amp\", 5, \"buf\", 11, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1146,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 10,
+        "out_bus": 192
+      },
+      "tRel": 0,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1147, 1, 1143, \"amp\", 5, \"buf\", 10, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1147,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/n_set",
+      "params": {
+        "cutoff": 80
+      },
+      "tRel": 1.758,
+      "raw": "[ \"/n_set\", 1145, \"cutoff\", 80 ]",
+      "nodeId": 1145
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 11,
+        "out_bus": 192
+      },
+      "tRel": 1.753,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1148, 1, 1143, \"amp\", 5, \"buf\", 11, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1148,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 10,
+        "out_bus": 192
+      },
+      "tRel": 1.753,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1149, 1, 1143, \"amp\", 5, \"buf\", 10, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1149,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/n_set",
+      "params": {
+        "cutoff": 80
+      },
+      "tRel": 3.512,
+      "raw": "[ \"/n_set\", 1145, \"cutoff\", 80 ]",
+      "nodeId": 1145
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 11,
+        "out_bus": 192
+      },
+      "tRel": 3.507,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1150, 1, 1143, \"amp\", 5, \"buf\", 11, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1150,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 10,
+        "out_bus": 192
+      },
+      "tRel": 3.507,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1151, 1, 1143, \"amp\", 5, \"buf\", 10, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1151,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/n_set",
+      "params": {
+        "cutoff": 80
+      },
+      "tRel": 5.265,
+      "raw": "[ \"/n_set\", 1145, \"cutoff\", 80 ]",
+      "nodeId": 1145
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 11,
+        "out_bus": 192
+      },
+      "tRel": 5.26,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1152, 1, 1143, \"amp\", 5, \"buf\", 11, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1152,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 10,
+        "out_bus": 192
+      },
+      "tRel": 5.26,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1153, 1, 1143, \"amp\", 5, \"buf\", 10, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1153,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/n_set",
+      "params": {
+        "cutoff": 80
+      },
+      "tRel": 7.018,
+      "raw": "[ \"/n_set\", 1145, \"cutoff\", 80 ]",
+      "nodeId": 1145
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 11,
+        "out_bus": 192
+      },
+      "tRel": 7.013,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1154, 1, 1143, \"amp\", 5, \"buf\", 11, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1154,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 10,
+        "out_bus": 192
+      },
+      "tRel": 7.013,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1155, 1, 1143, \"amp\", 5, \"buf\", 10, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1155,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/n_set",
+      "params": {
+        "cutoff": 80
+      },
+      "tRel": 8.772,
+      "raw": "[ \"/n_set\", 1145, \"cutoff\", 80 ]",
+      "nodeId": 1145
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 11,
+        "out_bus": 192
+      },
+      "tRel": 8.767,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1156, 1, 1143, \"amp\", 5, \"buf\", 11, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1156,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 10,
+        "out_bus": 192
+      },
+      "tRel": 8.767,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1157, 1, 1143, \"amp\", 5, \"buf\", 10, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1157,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/n_set",
+      "params": {
+        "cutoff": 80
+      },
+      "tRel": 10.525,
+      "raw": "[ \"/n_set\", 1145, \"cutoff\", 80 ]",
+      "nodeId": 1145
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 11,
+        "out_bus": 192
+      },
+      "tRel": 10.52,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1158, 1, 1143, \"amp\", 5, \"buf\", 11, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1158,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 10,
+        "out_bus": 192
+      },
+      "tRel": 10.52,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1159, 1, 1143, \"amp\", 5, \"buf\", 10, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1159,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/n_set",
+      "params": {
+        "cutoff": 80
+      },
+      "tRel": 12.278,
+      "raw": "[ \"/n_set\", 1145, \"cutoff\", 80 ]",
+      "nodeId": 1145
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 11,
+        "out_bus": 192
+      },
+      "tRel": 12.273,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1160, 1, 1143, \"amp\", 5, \"buf\", 11, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1160,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/s_new",
+      "params": {
+        "amp": 5,
+        "buf": 10,
+        "out_bus": 192
+      },
+      "tRel": 12.273,
+      "raw": "[ \"/s_new\", \"sonic-pi-basic_stereo_player\", 1161, 1, 1143, \"amp\", 5, \"buf\", 10, \"out_bus\", 192 ]",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 1161,
+      "addAction": 1,
+      "group": 1143
+    },
+    {
+      "addr": "/n_set",
+      "params": {
+        "amp_slide": 1
+      },
+      "tRel": null,
+      "raw": "[ \"/n_set\", 1144, \"amp_slide\", 1 ]",
+      "nodeId": 1144
+    },
+    {
+      "addr": "/n_set",
+      "params": {
+        "amp": 0
+      },
+      "tRel": null,
+      "raw": "[ \"/n_set\", 1144, \"amp\", 0 ]",
+      "nodeId": 1144
+    }
+  ],
+  "web": [
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-fx_rlpf",
+      "nodeId": 11004,
+      "addAction": 0,
+      "group": 101,
+      "params": {
+        "in_bus": 18,
+        "out_bus": 0,
+        "cutoff": 80
+      },
+      "tRel": -3.068,
+      "raw": "[t:0.0000] /s_new \"sonic-pi-fx_rlpf\" 11004 0 101 {in_bus: 18, out_bus: 0, cutoff: 80}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11005,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 0,
+      "raw": "[t:3.0680] /s_new \"sonic-pi-basic_stereo_player\" 11005 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11006,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 0,
+      "raw": "[t:3.0680] /s_new \"sonic-pi-basic_stereo_player\" 11006 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11007,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 1,
+      "raw": "[t:4.0680] /s_new \"sonic-pi-basic_stereo_player\" 11007 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11008,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 1,
+      "raw": "[t:4.0680] /s_new \"sonic-pi-basic_stereo_player\" 11008 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11009,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 2,
+      "raw": "[t:5.0680] /s_new \"sonic-pi-basic_stereo_player\" 11009 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11010,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 2,
+      "raw": "[t:5.0680] /s_new \"sonic-pi-basic_stereo_player\" 11010 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11011,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 3,
+      "raw": "[t:6.0680] /s_new \"sonic-pi-basic_stereo_player\" 11011 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11012,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 3,
+      "raw": "[t:6.0680] /s_new \"sonic-pi-basic_stereo_player\" 11012 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11013,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 4,
+      "raw": "[t:7.0680] /s_new \"sonic-pi-basic_stereo_player\" 11013 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11014,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 4,
+      "raw": "[t:7.0680] /s_new \"sonic-pi-basic_stereo_player\" 11014 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11015,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 5,
+      "raw": "[t:8.0680] /s_new \"sonic-pi-basic_stereo_player\" 11015 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11016,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 5,
+      "raw": "[t:8.0680] /s_new \"sonic-pi-basic_stereo_player\" 11016 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11017,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 6,
+      "raw": "[t:9.0680] /s_new \"sonic-pi-basic_stereo_player\" 11017 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11018,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 6,
+      "raw": "[t:9.0680] /s_new \"sonic-pi-basic_stereo_player\" 11018 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11019,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 7,
+      "raw": "[t:10.0680] /s_new \"sonic-pi-basic_stereo_player\" 11019 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11020,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 7,
+      "raw": "[t:10.0680] /s_new \"sonic-pi-basic_stereo_player\" 11020 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11021,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 8,
+      "raw": "[t:11.0680] /s_new \"sonic-pi-basic_stereo_player\" 11021 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11022,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 8,
+      "raw": "[t:11.0680] /s_new \"sonic-pi-basic_stereo_player\" 11022 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11023,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 9,
+      "raw": "[t:12.0680] /s_new \"sonic-pi-basic_stereo_player\" 11023 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11024,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 9,
+      "raw": "[t:12.0680] /s_new \"sonic-pi-basic_stereo_player\" 11024 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11025,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 10,
+      "raw": "[t:13.0680] /s_new \"sonic-pi-basic_stereo_player\" 11025 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11026,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 10,
+      "raw": "[t:13.0680] /s_new \"sonic-pi-basic_stereo_player\" 11026 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11027,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 11,
+      "raw": "[t:14.0680] /s_new \"sonic-pi-basic_stereo_player\" 11027 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11028,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 11,
+      "raw": "[t:14.0680] /s_new \"sonic-pi-basic_stereo_player\" 11028 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11029,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 0,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 12,
+      "raw": "[t:15.0680] /s_new \"sonic-pi-basic_stereo_player\" 11029 0 100 {buf: 0, amp: 5, out_bus: 18}"
+    },
+    {
+      "addr": "/s_new",
+      "synthdef": "sonic-pi-basic_stereo_player",
+      "nodeId": 11030,
+      "addAction": 0,
+      "group": 100,
+      "params": {
+        "buf": 1,
+        "amp": 5,
+        "out_bus": 18
+      },
+      "tRel": 12,
+      "raw": "[t:15.0680] /s_new \"sonic-pi-basic_stereo_player\" 11030 0 100 {buf: 1, amp: 5, out_bus: 18}"
+    }
+  ]
+}

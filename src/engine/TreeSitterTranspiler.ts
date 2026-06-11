@@ -1386,7 +1386,7 @@ function transpileMethodCall(node: any, ctx: TranspileContext): string {
     }
 
     // with_fx :name, opts do ... end
-    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_transpose' || methodName === 'with_arg_bpm_scaling' || methodName === 'with_synth_defaults' || methodName === 'with_sample_defaults' || methodName === 'with_random_seed' || methodName === 'with_octave' || methodName === 'with_arg_checks' || methodName === 'with_debug' || methodName === 'with_timing_guarantees' || methodName === 'with_merged_synth_defaults' || methodName === 'with_merged_sample_defaults') {
+    if (methodName === 'with_fx' || methodName === 'with_synth' || methodName === 'with_bpm' || methodName === 'with_sample_bpm' || methodName === 'with_transpose' || methodName === 'with_arg_bpm_scaling' || methodName === 'with_synth_defaults' || methodName === 'with_sample_defaults' || methodName === 'with_random_seed' || methodName === 'with_octave' || methodName === 'with_arg_checks' || methodName === 'with_debug' || methodName === 'with_timing_guarantees' || methodName === 'with_merged_synth_defaults' || methodName === 'with_merged_sample_defaults') {
       return transpileWithBlock(methodName, argsNode, blockNode, ctx)
     }
 

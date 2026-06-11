@@ -108,3 +108,79 @@ describe('ProgramBuilder.sample_duration (#513)', () => {
     expect(bare.sample_duration('loop_amen')).toBe(1)
   })
 })
+
+describe('ProgramBuilder.with_sample_bpm (#518, desktop sound.rb:588)', () => {
+  const withProvider = (dur: number | undefined) => {
+    const b = new ProgramBuilder()
+    b.setSampleDurationProvider(() => dur)
+    return b
+  }
+
+  it('sets the block bpm to the sample tempo (loop_amen → ~34.2) then RESTORES it', () => {
+    const b = withProvider(LOOP_AMEN)
+    let inside = -1
+    // transpiler emits the no-opts form as with_sample_bpm(name, fn)
+    b.with_sample_bpm('loop_amen', (bb) => { inside = bb.currentBpm })
+    expect(inside).toBeCloseTo(60 / 1.753, 2) // 34.23 inside the block
+    expect(b.currentBpm).toBe(60)             // restored after the block
+  })
+
+  it('honors num_beats (opts form: with_sample_bpm(name, opts, fn))', () => {
+    const b = withProvider(LOOP_AMEN)
+    let inside = -1
+    b.with_sample_bpm('loop_amen', { num_beats: 4 }, (bb) => { inside = bb.currentBpm })
+    expect(inside).toBeCloseTo((4 * 60) / 1.753, 2)
+    expect(b.currentBpm).toBe(60)
+  })
+
+  it('emits the useBpm step pair (set then restore) so sleeps inside scale', () => {
+    const b = withProvider(LOOP_AMEN)
+    b.with_sample_bpm('loop_amen', (bb) => { bb.sleep(1) })
+    const useBpm = b.build().filter((s) => s.tag === 'useBpm') as Array<{ bpm: number }>
+    expect(useBpm.length).toBe(2)
+    expect(useBpm[0].bpm).toBeCloseTo(60 / 1.753, 2) // set to sample tempo
+    expect(useBpm[1].bpm).toBe(60)                    // restored
+  })
+
+  it('unknown duration → block STILL runs at the current bpm AND warns once (#519)', () => {
+    const b = withProvider(undefined)
+    const warned: string[] = []
+    b.setWarnHandler((n) => warned.push(n))
+    let ran = false
+    let inside = -1
+    b.with_sample_bpm('mystery', (bb) => { ran = true; inside = bb.currentBpm })
+    expect(ran).toBe(true)        // a block wrapper must always execute its body
+    expect(inside).toBe(60)       // bpm unchanged (no use_bpm(Infinity))
+    expect(b.currentBpm).toBe(60)
+    expect(warned).toEqual(['mystery'])
+  })
+
+  it('no warn when the duration IS known', () => {
+    const b = withProvider(LOOP_AMEN)
+    const warned: string[] = []
+    b.setWarnHandler((n) => warned.push(n))
+    b.with_sample_bpm('loop_amen', () => {})
+    expect(warned).toEqual([])
+  })
+})
+
+describe('ProgramBuilder use_sample_bpm warn seam (#519)', () => {
+  it('use_sample_bpm warns once via _warnHandler when the duration is unknown', () => {
+    const b = new ProgramBuilder()
+    b.setSampleDurationProvider(() => undefined)
+    const warned: string[] = []
+    b.setWarnHandler((n) => warned.push(n))
+    b.use_sample_bpm('mystery')
+    expect(b.currentBpm).toBe(60)
+    expect(warned).toEqual(['mystery'])
+  })
+
+  it('the warn seam is inherited by with_fx sub-builders', () => {
+    const b = new ProgramBuilder()
+    b.setSampleDurationProvider(() => undefined)
+    const warned: string[] = []
+    b.setWarnHandler((n) => warned.push(n))
+    b.with_fx('reverb', (inner) => inner.use_sample_bpm('mystery'))
+    expect(warned).toEqual(['mystery'])
+  })
+})

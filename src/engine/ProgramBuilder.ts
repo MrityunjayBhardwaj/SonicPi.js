@@ -112,6 +112,14 @@ export class ProgramBuilder {
   // like _currentBpm so loop bodies can call `__b.sample_duration`.
   private _sampleDurationProvider?: (name: string) => number | undefined
 
+  // #519: one-time warn seam for `use_sample_bpm` / `with_sample_bpm` when the
+  // sample's duration is unknown (runtime-computed / unrecognized name → not
+  // pre-decoded) so the tempo is left unchanged. The engine wires a deduping
+  // closure (warns once per name via printHandler). Inherited by sub-builders
+  // (with_fx/in_thread/at) like _sampleDurationProvider so the warn fires from
+  // anywhere the no-op can occur, not just the top level.
+  private _warnHandler?: (name: string) => void
+
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
     this.rng = new SeededRandom(seed)
     if (initialTicks) this.ticks = new Map(initialTicks)
@@ -121,6 +129,13 @@ export class ProgramBuilder {
    *  buffer durations). See `_sampleDurationProvider`. (#513) */
   setSampleDurationProvider(fn: (name: string) => number | undefined): this {
     this._sampleDurationProvider = fn
+    return this
+  }
+
+  /** Engine wires the one-time warn closure for the `use_sample_bpm` /
+   *  `with_sample_bpm` unknown-duration no-op. See `_warnHandler`. (#519) */
+  setWarnHandler(fn: (name: string) => void): this {
+    this._warnHandler = fn
     return this
   }
 
@@ -256,7 +271,11 @@ export class ProgramBuilder {
     const o = (opts ?? {}) as Record<string, number>
     const numBeats = typeof o.num_beats === 'number' && o.num_beats > 0 ? o.num_beats : 1
     const rawSeconds = this.sampleDurationSeconds(name, opts)
-    if (rawSeconds === undefined) return this // unknown → keep current bpm
+    if (rawSeconds === undefined) {
+      // unknown → keep current bpm, but warn once (#519) instead of silent no-op
+      this._warnHandler?.(name)
+      return this
+    }
     return this.use_bpm(numBeats * (60.0 / rawSeconds))
   }
 
@@ -606,6 +625,9 @@ export class ProgramBuilder {
     // duration cache so `sample_duration` / `use_sample_bpm` inside them resolve
     // the real buffer length rather than falling back to the stub.
     inner._sampleDurationProvider = this._sampleDurationProvider
+    // #519: sub-builders must reach the same one-time warn closure so an unknown
+    // sample name inside with_fx/in_thread/at also warns (not just at top level).
+    inner._warnHandler = this._warnHandler
     // #345: use_osc sets :sonic_pi_osc_client as a thread-local in desktop SP
     // (core.rb:649-653). Same SP94 drift class as #343 — the inherit-list
     // omitted this field. Same handling as _currentBpm: with_fx (same thread)
@@ -1266,6 +1288,41 @@ export class ProgramBuilder {
     this._currentBpm = prev
     this.steps.push({ tag: 'useBpm', bpm: prev })
     return this
+  }
+
+  /**
+   * Block-scoped form of `use_sample_bpm` (#518). Desktop `sound.rb:588`:
+   * `with_sample_bpm(name, num_beats: 1, &block)` reads the sample's RAW-seconds
+   * duration then `with_bpm(num_beats * 60.0 / dur, &block)` — the same BPM math
+   * as `use_sample_bpm`, applied through the block-scoped `with_bpm` (sets bpm
+   * for the block, restores after) instead of the rest-of-thread `use_bpm`.
+   *
+   * The transpiler emits either `with_sample_bpm(name, opts, fn)` or
+   * `with_sample_bpm(name, fn)` (opts elided when none) — same variadic shape as
+   * with_fx — so `buildFn` may arrive as the 2nd or 3rd argument.
+   *
+   * When the buffer duration is unknown (runtime-computed / unrecognized name →
+   * not pre-decoded) the block STILL runs at the current bpm — a block wrapper
+   * must always execute its body — and we warn once (#519), unlike a plain
+   * setting which can no-op silently.
+   */
+  with_sample_bpm(
+    name: string,
+    optsOrFn: Record<string, unknown> | ((b: ProgramBuilder) => void),
+    maybeFn?: (b: ProgramBuilder) => void,
+  ): this {
+    const buildFn = typeof optsOrFn === 'function' ? optsOrFn : maybeFn!
+    const opts = typeof optsOrFn === 'function' ? undefined : optsOrFn
+    const o = (opts ?? {}) as Record<string, number>
+    const numBeats = typeof o.num_beats === 'number' && o.num_beats > 0 ? o.num_beats : 1
+    const rawSeconds = this.sampleDurationSeconds(name, opts)
+    if (rawSeconds === undefined) {
+      // unknown → block runs at the current bpm; warn once (#519)
+      this._warnHandler?.(name)
+      buildFn(this)
+      return this
+    }
+    return this.with_bpm(numBeats * (60.0 / rawSeconds), buildFn)
   }
 
   /** Temporarily set synth for a block, then restore. */

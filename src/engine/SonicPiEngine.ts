@@ -78,6 +78,21 @@ export class SonicPiEngine {
   // it's a stable reference across the many builder-construction sites.
   private readonly sampleDurationLookup = (name: string): number | undefined =>
     this.bridge?.getSampleDuration(name)
+  // #519: names already warned about (sample duration unknown → use_sample_bpm /
+  // with_sample_bpm kept the current tempo). Deduped so a live_loop calling it
+  // every iteration warns once per name, not once per iteration. Persists across
+  // Runs — the same unresolved name is the same warning.
+  private readonly warnedSampleBpmNames = new Set<string>()
+  // Bound arrow (stable reference for the many builder-construction sites, like
+  // sampleDurationLookup). Wired into builders via setWarnHandler. (#519)
+  private readonly warnSampleBpmUnknown = (name: string): void => {
+    if (this.warnedSampleBpmNames.has(name)) return
+    this.warnedSampleBpmNames.add(name)
+    this.printHandler?.(
+      `[Warning] use_sample_bpm :${name} — sample duration unknown ` +
+      `(runtime-computed or unrecognized name; not pre-decoded). Tempo unchanged.`,
+    )
+  }
   private eventStream = new SoundEventStream()
   private initialized = false
   private playing = false
@@ -941,6 +956,9 @@ export class SonicPiEngine {
           // #513: loop bodies that call sample_duration / use_sample_bpm need the
           // real decoded buffer length, not the stub.
           builder.setSampleDurationProvider(this.sampleDurationLookup)
+          // #519: warn once if use_sample_bpm / with_sample_bpm gets a name whose
+          // duration is unknown (runtime-computed) instead of a silent no-op.
+          builder.setWarnHandler(this.warnSampleBpmUnknown)
           // Apply the loop's synth default (set by top-level use_synth)
           if (task.currentSynth && task.currentSynth !== 'beep') {
             builder.use_synth(task.currentSynth)
@@ -1479,6 +1497,7 @@ export class SonicPiEngine {
       // Inside live_loops, the callback parameter `b` shadows this.
       const topLevelBuilder = new ProgramBuilder()
       topLevelBuilder.setSampleDurationProvider(this.sampleDurationLookup)
+      topLevelBuilder.setWarnHandler(this.warnSampleBpmUnknown) // #519
 
       // Top-level random + iteration helpers. These live on ProgramBuilder for
       // use inside live_loops (`b.rrand(...)`), but some Ruby patterns call
@@ -1552,7 +1571,7 @@ export class SonicPiEngine {
         (name: string, opts?: Record<string, number>) => {
           const numBeats = typeof opts?.num_beats === 'number' && opts.num_beats > 0 ? opts.num_beats : 1
           const raw = sampleDurationSeconds(this.bridge?.getSampleDuration(name), opts)
-          if (raw === undefined) return
+          if (raw === undefined) { this.warnSampleBpmUnknown(name); return } // #519
           topLevelUseBpm(numBeats * (60.0 / raw))
         },
         // Debug (no-op in browser)

@@ -203,6 +203,42 @@ end`)
         // Inside a loop body it must remain builder-scoped, not hoisted to top level.
         expect(result.code).toContain('__b.use_sample_bpm("loop_amen")')
       })
+
+      // #518: with_sample_bpm is a block-scoped wrapper (like with_bpm), NOT a
+      // rest-of-thread setting — it routes through transpileWithBlock to
+      // `__b.with_sample_bpm(name[, opts], (__b) => { ... })` both inside a loop
+      // and at top level (where bare code defers into __run_once → still `__b.`).
+      it('with_sample_bpm INSIDE a live_loop emits the block wrapper (__b. + callback)', () => {
+        const result = treeSitterTranspile(`live_loop :x do
+  with_sample_bpm :loop_amen do
+    sample :loop_amen
+    sleep 1
+  end
+end`)
+        expect(result.ok).toBe(true)
+        expect(result.code).toMatch(/__b\.with_sample_bpm\("loop_amen",\s*\(__b\) =>/)
+      })
+
+      it('with_sample_bpm carries num_beats as an opts hash before the callback', () => {
+        const result = treeSitterTranspile(`live_loop :x do
+  with_sample_bpm :loop_amen, num_beats: 4 do
+    sleep 4
+  end
+end`)
+        expect(result.ok).toBe(true)
+        expect(result.code).toMatch(/__b\.with_sample_bpm\("loop_amen",\s*\{ num_beats: 4 \},\s*\(__b\) =>/)
+      })
+
+      it('TOP-LEVEL with_sample_bpm defers into __run_once as __b.with_sample_bpm (never unprefixed)', () => {
+        const result = treeSitterTranspile(`with_sample_bpm :loop_amen do
+  sample :loop_amen
+  sleep 1
+end`)
+        expect(result.ok).toBe(true)
+        expect(result.code).toContain('__b.with_sample_bpm("loop_amen"')
+        // Must NOT emit an unbound top-level call (there is no top-level binding).
+        expect(result.code).not.toMatch(/(^|[^.\w])with_sample_bpm\(/m)
+      })
     })
 
     describe('#419 / SV55: top-level use_synth honored by live_loop with trailing bare code', () => {
