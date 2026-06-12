@@ -1,6 +1,7 @@
 import { VirtualTimeScheduler, DEFAULT_SCHED_AHEAD_TIME, type TaskState } from './VirtualTimeScheduler'
 import { ProgramBuilder } from './ProgramBuilder'
 import { EventHistory, TimeStateView } from './EventHistory'
+import { loadWhiteRandStream, isWhiteRandStreamLoaded } from './RandStream'
 import { runProgram, type AudioContext as AudioCtx } from './interpreters/AudioInterpreter'
 import { queryLoopProgram, type QueryEvent } from './interpreters/QueryInterpreter'
 import { SuperSonicBridge, type SuperSonicBridgeOptions } from './SuperSonicBridge'
@@ -314,10 +315,17 @@ export class SonicPiEngine {
   constructor(options?: {
     bridge?: SuperSonicBridgeOptions
     schedAheadTime?: number
+    /** URL of the frozen rand stream (EPIC #531). Defaults to the Vite-served
+     *  `/rand-stream.wav`; a library consumer serving it elsewhere overrides this,
+     *  mirroring the tree-sitter wasm URL override. */
+    randStreamUrl?: string
   }) {
     this.bridgeOptions = options?.bridge ?? {}
     this.schedAheadTime = options?.schedAheadTime ?? DEFAULT_SCHED_AHEAD_TIME
+    this.randStreamUrl = options?.randStreamUrl ?? '/rand-stream.wav'
   }
+
+  private readonly randStreamUrl: string
 
   /**
    * Initialize the engine. Must be called once before `evaluate()`.
@@ -366,7 +374,16 @@ export class SonicPiEngine {
       ? initTreeSitter().catch(() => { /* Non-fatal — regex fallback */ })
       : Promise.resolve()
 
-    await Promise.all([bridgeInit, treeSitterInit])
+    // EPIC #531: load desktop's frozen rand stream before any builder is built.
+    // Browser fetches the served wav; Node tests preload it via vitest setup (so
+    // it's already loaded here). FATAL if missing — rand without the table would
+    // silently diverge from desktop, the bug this EPIC removes.
+    const randStreamInit =
+      isWhiteRandStreamLoaded() || !isBrowser
+        ? Promise.resolve()
+        : loadWhiteRandStream(this.randStreamUrl)
+
+    await Promise.all([bridgeInit, treeSitterInit, randStreamInit])
 
     // Wire MIDI input events → scheduler cues.
     // Desktop SP format: `/midi:device_name:channel/event_type` (#151).

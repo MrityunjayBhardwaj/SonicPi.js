@@ -19,7 +19,7 @@ import { SPRand } from '../../src/engine/SPRand'
  * drift guard. Still runs in CI via the standard vitest suite.
  */
 const HERE = dirname(fileURLToPath(import.meta.url))
-const WAV = join(HERE, '..', '..', 'src', 'engine', 'assets', 'rand-stream.wav')
+const WAV = join(HERE, '..', '..', 'public', 'rand-stream.wav')
 const table = decodeRandStream(readFileSync(WAV))
 
 // Desktop golden values (test_random.rb), == table[1..4].

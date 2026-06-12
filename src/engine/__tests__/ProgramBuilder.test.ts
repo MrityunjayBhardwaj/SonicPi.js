@@ -652,12 +652,27 @@ describe('ProgramBuilder', () => {
       expect(b.current_random_seed()).toBe(50)
     })
 
-    it('rand_back clamps at idx=0 (never negative)', () => {
+    it('rand_back does NOT clamp — idx goes negative like desktop dec_idx! (#531)', () => {
+      // Desktop SPRand.dec_idx! is unclamped (core.rb:190-194); the negative index
+      // is floor-modded into the table at read time (rand_peek). current_random_seed
+      // = seed + idx = 1 + (2 - 99) = -96. The prior clamp-at-0 was an MT19937
+      // artifact (you can't replay a negative draw count), not desktop behaviour.
       const b = new ProgramBuilder()
       b.use_random_seed(1)
-      b.rand_skip(2)
-      b.rand_back(99)  // would go to idx -97, must clamp to 0
-      expect(b.current_random_seed()).toBe(1)
+      b.rand_skip(2)   // idx 0 → 2
+      b.rand_back(99)  // idx 2 → -97 (no clamp)
+      expect(b.current_random_seed()).toBe(-96)
+    })
+
+    it('rand through the real builder matches desktop golden values (#531 parity)', () => {
+      // The end-to-end proof that ProgramBuilder now indexes desktop's frozen
+      // stream: after use_random_seed 0, rand yields the exact values desktop's
+      // test_random.rb asserts (== rand-stream.wav table[1..4]).
+      const b = new ProgramBuilder()
+      b.use_random_seed(0)
+      expect([b.rand(1), b.rand(1), b.rand(1), b.rand(1)]).toEqual([
+        0.75006103515625, 0.733917236328125, 0.464202880859375, 0.24249267578125,
+      ])
     })
 
     it('rand / rand_i reject 2-arg form with a clear message (matches Desktop SP, #229)', () => {

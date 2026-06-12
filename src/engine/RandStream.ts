@@ -68,3 +68,56 @@ export function decodeRandStream(bytes: ArrayBuffer | Uint8Array): Float64Array 
   }
   return table
 }
+
+// ---------------------------------------------------------------------------
+// Process-wide white-stream singleton (EPIC #531 Phase 1b)
+//
+// SPRand instances (one per ProgramBuilder) all index the SAME frozen table —
+// desktop loads it once at boot. We mirror that with one shared `Float64Array`,
+// loaded by whoever boots the engine: the browser fetches `/rand-stream.wav` in
+// `SonicPiEngine.init`; the Node test harness reads it from `public/` in the
+// vitest setup. ProgramBuilder reads it synchronously via `getWhiteRandStream`,
+// so it MUST be set before the first builder is constructed (which is after
+// init / setup, never at import time).
+// ---------------------------------------------------------------------------
+
+let whiteRandStream: Float64Array | null = null
+
+/** Install the decoded white random stream. Called once at boot. */
+export function setWhiteRandStream(table: Float64Array): void {
+  whiteRandStream = table
+}
+
+/** Whether the white random stream has been loaded (init/setup guard). */
+export function isWhiteRandStreamLoaded(): boolean {
+  return whiteRandStream !== null
+}
+
+/**
+ * The shared white random table. Throws if not yet loaded — a builder must never
+ * silently fall back to a wrong stream (that would re-introduce the exact
+ * MT19937-vs-desktop divergence this EPIC removes). Boot order guarantees it is
+ * set first: `SonicPiEngine.init` (browser) / vitest setup (Node).
+ */
+export function getWhiteRandStream(): Float64Array {
+  if (!whiteRandStream) {
+    throw new Error(
+      'rand stream not loaded — SonicPiEngine.init() (browser) or the test setup ' +
+        'must call setWhiteRandStream() before any ProgramBuilder is constructed',
+    )
+  }
+  return whiteRandStream
+}
+
+/**
+ * Fetch + decode the white random stream from a URL and install it (browser
+ * boot). No-op if already loaded (Node tests preload via fs). Defaults to the
+ * Vite-served `/rand-stream.wav`; a library consumer serving it elsewhere passes
+ * its own URL (mirrors the tree-sitter wasm URL override).
+ */
+export async function loadWhiteRandStream(url = '/rand-stream.wav'): Promise<void> {
+  if (whiteRandStream) return
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`rand stream fetch failed: ${url} (${res.status})`)
+  setWhiteRandStream(decodeRandStream(await res.arrayBuffer()))
+}

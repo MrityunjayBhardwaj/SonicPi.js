@@ -9,7 +9,8 @@
  */
 
 import type { Step, Program } from './Program'
-import { SeededRandom } from './SeededRandom'
+import { SPRand } from './SPRand'
+import { getWhiteRandStream } from './RandStream'
 import { noteToMidi, noteToMidiStrict, midiToFreq, hzToMidi, noteInfo } from './NoteToFreq'
 import { ring, knit, range, line, Ring, Ramp } from './Ring'
 import { spread } from './EuclideanRhythm'
@@ -49,7 +50,7 @@ export class InfiniteLoopError extends Error {
 export class ProgramBuilder {
   private steps: Step[] = []
   private currentSynth = 'beep'
-  private rng: SeededRandom
+  private rng: SPRand
   private ticks = new Map<string, number>()
   private densityFactor: number = 1
   private nextRef: number = 1
@@ -121,7 +122,10 @@ export class ProgramBuilder {
   private _warnHandler?: (name: string) => void
 
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
-    this.rng = new SeededRandom(seed)
+    // EPIC #531: index desktop's shared frozen rand stream (loaded at boot),
+    // not a per-builder MT19937. getWhiteRandStream() throws if boot didn't load
+    // it — never silently fall back to a divergent stream.
+    this.rng = new SPRand(getWhiteRandStream(), seed)
     if (initialTicks) this.ticks = new Map(initialTicks)
   }
 
