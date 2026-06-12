@@ -26,12 +26,12 @@
  */
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { marked } from 'marked'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CONTENT_DIR = join(HERE, '..', 'src', 'tutorial', 'content')
-const OUT_FILE = join(HERE, '..', 'src', 'tutorial', 'tutorialData.ts')
+export const OUT_FILE = join(HERE, '..', 'src', 'tutorial', 'tutorialData.ts')
 const PINNED_COMMIT = 'abc844fade22463fa6533215dc9f14ba4710079e'
 
 /** Curated ~12 set (#311 §5, maintainer-locked). Order = chapter sequence. */
@@ -182,7 +182,18 @@ function ingestChapter(slug: string): TutorialChapter {
   }
 }
 
-function main() {
+/**
+ * Build the full text of tutorialData.ts from the vendored corpus, WITHOUT
+ * writing it. Pure + deterministic — same vendored bytes produce the same
+ * `content` every call. Exported so the drift guard (#333,
+ * tools/__tests__/ingest-tutorial-drift.test.ts) can assert the committed
+ * file is byte-identical to a fresh ingest, in-process, with no temp files.
+ */
+export function buildTutorialData(): {
+  content: string
+  chapterCount: number
+  codeBlocks: number
+} {
   const onDisk = new Set(
     readdirSync(CONTENT_DIR).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, '')),
   )
@@ -223,15 +234,29 @@ export interface TutorialChapter {
 
 export const TUTORIAL: TutorialChapter[] = `
 
-  writeFileSync(OUT_FILE, header + JSON.stringify(chapters, null, 2) + '\n', 'utf8')
-
   const codeBlocks = chapters.reduce(
     (n, c) => n + c.blocks.filter((b) => b.kind === 'code').length,
     0,
   )
+  return {
+    content: header + JSON.stringify(chapters, null, 2) + '\n',
+    chapterCount: chapters.length,
+    codeBlocks,
+  }
+}
+
+function main() {
+  const { content, chapterCount, codeBlocks } = buildTutorialData()
+  writeFileSync(OUT_FILE, content, 'utf8')
   console.log(
-    `ingest-tutorial: ${chapters.length} chapters, ${codeBlocks} code blocks → ${OUT_FILE}`,
+    `ingest-tutorial: ${chapterCount} chapters, ${codeBlocks} code blocks → ${OUT_FILE}`,
   )
 }
 
-main()
+// Only run the ingester when executed directly (`tsx tools/ingest-tutorial.ts`),
+// NOT when imported (e.g. by the #333 drift guard) — importing must not
+// overwrite the committed tutorialData.ts.
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+if (invokedDirectly) main()
