@@ -64,6 +64,15 @@ describe('EventHistory auto-trim (#402)', () => {
     expect(h.eventCount(KEY)).toBe(64)
   })
 
+  it('a config set ONCE is readable at any far-future vt (the common set-once/read-forever case)', () => {
+    // `set :root, 60` once at t=0, then `get :root` an hour later. A single entry
+    // is below the min floor, so trim never touches it — the read must still hit.
+    const h = new EventHistory(opts)
+    h.insert(KEY, 0, [0], 60)
+    expect(h.eventCount(KEY)).toBe(1)
+    expect(h.getMostRecent(KEY, 3600, [0])?.value).toBe(60)
+  })
+
   it('keeps keys independent — trimming one does not touch another', () => {
     const h = new EventHistory(opts)
     for (let i = 0; i < 100; i++) h.insert('/set/a', i, [0], `a${i}`)
