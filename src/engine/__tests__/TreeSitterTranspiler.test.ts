@@ -2596,4 +2596,62 @@ describe('#484/SP130 — __run_once wrap gate is structural (bare DSL reaching t
     expect(wraps('with_fx :reverb do\n  play 60\nend')).toBe(true)
     expect(hasBarePlay('with_fx :reverb do\n  play 60\nend')).toBe(false)
   })
+
+  // #537 — conditional branch bodies must emit EVERY statement. tree-sitter-ruby
+  // holds an `else`'s statements directly (not `then`-wrapped) and NESTS the
+  // trailing elsif/else inside each elsif node. The old handler read only
+  // `namedChildren[0]` of the else and never recursed past the first elsif, so it
+  // silently dropped statements — losing audible events AND random draws, which
+  // desynced PRNG pieces from desktop (orchard_improv: every `mode != 2` iteration
+  // dropped a `rrand_i` draw → the whole walk diverged).
+  describe('#537: conditional branches emit all statements (no dropped events/draws)', () => {
+    it('multi-statement else keeps every statement (was: only the first)', () => {
+      const code = treeSitterTranspile(
+        `if x == 2 then\n  play 52\nelse\n  tr = rrand_i(0, 4)\n  play 57, amp: tr\nend`
+      ).code
+      expect(code).toContain('tr = __b.rrand_i(0, 4)')
+      expect(code).toContain('__b.play(57')
+    })
+
+    it('else after elsif is not dropped (nested inside the elsif node)', () => {
+      const code = treeSitterTranspile(
+        `if x == 1 then\n  play 1\nelsif x == 2 then\n  play 3\nelse\n  play 5\nend`
+      ).code
+      expect(code).toContain('__b.play(1')
+      expect(code).toContain('} else if (x == 2)')
+      expect(code).toContain('__b.play(3')
+      expect(code).toContain('} else {')
+      expect(code).toContain('__b.play(5')
+    })
+
+    it('chained elsif + multi-statement bodies all survive', () => {
+      const code = treeSitterTranspile(
+        `if x == 1 then\n  a = 1\n  play 1\nelsif x == 2 then\n  play 3\nelsif x == 3 then\n  b = 2\n  play 4\nelse\n  c = 5\n  play 6\nend`
+      ).code
+      // every branch's draws/assignments and plays present
+      for (const frag of ['a = 1', '__b.play(1', '__b.play(3', 'b = 2', '__b.play(4', 'c = 5', '__b.play(6']) {
+        expect(code).toContain(frag)
+      }
+      // two `else if` plus a final `else`
+      expect(code.match(/else if/g)?.length).toBe(2)
+    })
+
+    it('multi-statement unless/else keeps every statement', () => {
+      const code = treeSitterTranspile(
+        `unless x then\n  a = 1\n  play 7\nelse\n  b = 2\n  play 8\nend`
+      ).code
+      for (const frag of ['a = 1', '__b.play(7', 'b = 2', '__b.play(8']) {
+        expect(code).toContain(frag)
+      }
+    })
+
+    it('multi-statement case/else keeps every statement', () => {
+      const code = treeSitterTranspile(
+        `case x\nwhen 1 then\n  play 9\n  play 10\nelse\n  c = 3\n  play 11\nend`
+      ).code
+      for (const frag of ['__b.play(9', '__b.play(10', 'c = 3', '__b.play(11']) {
+        expect(code).toContain(frag)
+      }
+    })
+  })
 })
