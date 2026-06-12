@@ -218,8 +218,17 @@ export function defaultPreloadSteps(): PreloadStep[] {
       // imports the same URL on first Run. Importing here parses + compiles
       // the JS so first Run only pays for scsynth WASM + AudioContext
       // (~300 ms) instead of the full ~1-2 s cold start.
-      // @ts-ignore CDN URL
-      load: () => import(/* @vite-ignore */ 'https://unpkg.com/supersonic-scsynth@0.57.0'),
+      //
+      // Also warm the rand-stream.wav HTTP cache (~860 KB, EPIC #531): the
+      // engine fetches it in SonicPiEngine.init to build the frozen random
+      // table. Force-caching here means that init fetch is a cache hit, not a
+      // cold stall at first-gesture warmup. Vite-served from /public like the
+      // tree-sitter wasm above.
+      load: () => Promise.all([
+        // @ts-ignore CDN URL
+        import(/* @vite-ignore */ 'https://unpkg.com/supersonic-scsynth@0.57.0'),
+        fetch('/rand-stream.wav', { cache: 'force-cache' }),
+      ]),
     },
   ]
 }
