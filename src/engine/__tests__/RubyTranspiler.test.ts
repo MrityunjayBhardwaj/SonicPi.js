@@ -136,7 +136,12 @@ end`
       expect(prophetIdx).toBeLessThan(secondPlayIdx)
     })
 
-    it('use_bpm and use_random_seed still hoist above the wrapper (commutative)', () => {
+    it('use_bpm hoists above the wrapper; use_random_seed stays INLINE (flow-sensitive, #537)', () => {
+      // use_bpm is a run-level tempo setting → hoisted above the wrapper.
+      // use_random_seed is FLOW-SENSITIVE — its effect begins at its source
+      // position. With NO loop to read an engine-global seed, hoisting it would
+      // re-seed any preceding bare draws (dice_hoist / e2e_06). So it stays inline
+      // as `__b.use_random_seed` at source position.
       const code = `use_bpm 120\nuse_random_seed 42\nplay 60`
       const result = autoTranspileDetailed(code)
       expect(result.hasError).toBe(false)
@@ -144,8 +149,33 @@ end`
       const wrapperStart = out.indexOf('live_loop("__run_once"')
       expect(wrapperStart).toBeGreaterThanOrEqual(0)
       const before = out.slice(0, wrapperStart)
+      const inside = out.slice(wrapperStart)
       expect(before).toContain('use_bpm(120)')
-      expect(before).toContain('use_random_seed(42)')
+      expect(before).not.toContain('use_random_seed(42)') // NOT hoisted
+      expect(inside).toContain('__b.use_random_seed(42)')  // emitted inline
+    })
+
+    it('use_random_seed AFTER bare draws does not re-seed them (no-loop, #537)', () => {
+      // The bug: a trailing use_random_seed hoisted to the top re-seeded the whole
+      // sequence. It must emit inline so `rrand` before it uses the default seed.
+      const code = `play rrand_i(50, 80)\nsleep 0.25\nuse_random_seed 42\nplay 90`
+      const result = autoTranspileDetailed(code)
+      expect(result.hasError).toBe(false)
+      const out = result.code
+      const seedIdx = out.indexOf('use_random_seed(42)')
+      const drawIdx = out.indexOf('rrand_i(50, 80)')
+      expect(drawIdx).toBeGreaterThanOrEqual(0)
+      expect(seedIdx).toBeGreaterThan(drawIdx) // seed emitted AFTER the draw, inline
+      expect(out).toContain('__b.use_random_seed(42)')
+    })
+
+    it('use_random_seed STILL hoists when a live_loop needs the engine seed (#537)', () => {
+      // When a separately-registered loop is present, the seed must reach the
+      // engine at registration → keep the eager top-level emission (registersLoop).
+      const code = `use_random_seed 42\nlive_loop :x do\n  play rrand_i(50, 80)\n  sleep 1\nend`
+      const result = autoTranspileDetailed(code)
+      expect(result.hasError).toBe(false)
+      expect(result.code).toContain('use_random_seed(42)')
     })
 
     it('wraps bare code alongside existing live_loops', () => {

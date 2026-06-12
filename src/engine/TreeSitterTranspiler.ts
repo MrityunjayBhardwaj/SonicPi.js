@@ -1155,6 +1155,25 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   const bareCode: any[] = []
   const blocks: any[] = []
 
+  // #537/SV55: `use_random_seed` / `use_random_source` are FLOW-SENSITIVE — their
+  // effect begins at their SOURCE POSITION (desktop SPRand set_seed!). Hoisting
+  // them above the bare-code wrapper (TOP_LEVEL_SETTINGS) is ONLY needed so a
+  // separately-registered loop (live_loop / in_thread / bare `loop` / with_fx-
+  // wrapping-loop) reads the seed from the engine at registration. When the
+  // program registers NO such loop, the hoist is purely wrong: a `use_random_seed`
+  // near the end (dice_hoist, e2e_06) would re-seed the WHOLE bare sequence from
+  // its top instead of only the draws that follow it. Detect the no-loop case and
+  // keep these settings INLINE in bareCode (emitted as `__b.use_random_seed`).
+  const registersLoop = children.some((c: any) => {
+    if (c.type !== 'call' && c.type !== 'method_call') return false
+    const m = c.childForFieldName('method')?.text ?? c.namedChildren[0]?.text
+    if (m === 'live_loop' || m === 'in_thread') return true
+    if (m === 'loop' && c.namedChildren.some((x: any) => x.type === 'do_block' || x.type === 'block')) return true
+    if (m === 'with_fx' && /\b(?:live_loop|loop)\b/.test(c.text ?? '')) return true
+    return false
+  })
+  const FLOW_SENSITIVE_RANDOM = new Set(['use_random_seed', 'use_random_source'])
+
   // #419/SV55: track the top-level `use_synth` in SOURCE ORDER so each block
   // inherits the synth in effect at its definition point (desktop fork-snapshot
   // parity, runtime.rb:1067). `blockSynth` tags each registration-capturing
@@ -1223,7 +1242,8 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     const isBareLoopNode = method === 'loop' &&
       child.namedChildren.some((c: any) => c.type === 'do_block' || c.type === 'block')
 
-    if (method && TOP_LEVEL_SETTINGS.has(method)) {
+    if (method && TOP_LEVEL_SETTINGS.has(method)
+        && !(FLOW_SENSITIVE_RANDOM.has(method) && !registersLoop)) {
       topLevel.push(child)
     // `comment` and `uncomment` are control-flow (like if-true/if-false), NOT
     // structural blocks. They stay in bareCode so their content gets the __b.
