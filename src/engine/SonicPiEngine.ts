@@ -168,8 +168,15 @@ export class SonicPiEngine {
   // S1/S2 bodies stay synchronous; `await` on their void return is identity, and
   // the QueryInterpreter path (capture, S1/S2 only) ignores the return value.
   private loopBuilders = new Map<string, (b: ProgramBuilder) => void | Promise<void>>()
-  /** Per-loop seed counters for deterministic random */
-  private loopSeeds = new Map<string, number>()
+  /**
+   * Per-loop random stream state — EPIC #531 Phase 3. Replaces the old name-hash
+   * `loopSeeds`. The loop's child seed is derived ONCE at registration from the
+   * top-level stream (desktop's per-thread fork seeding, runtime.rb:1062-1067);
+   * the (seed, idx) then PERSISTS and advances across iterations so a live_loop's
+   * `rand` is one continuous stream — desktop semantics (live_loop is one thread,
+   * one stream). Cleared/derived on the same lifecycle as loopTicks.
+   */
+  private loopRngState = new Map<string, { seed: number; idx: number }>()
   /** Per-loop tick counters — persisted across iterations so ring.tick() advances correctly */
   private loopTicks = new Map<string, Map<string, number>>()
   /** Per-loop beat counter — persisted across iterations so current_beat keeps growing (#226) */
@@ -588,7 +595,7 @@ export class SonicPiEngine {
         })
 
         this.loopBuilders.clear()
-        this.loopSeeds.clear()
+        this.loopRngState.clear()
       }
 
       // Transpile: Ruby DSL → JS builder chain (TreeSitter only).
@@ -890,14 +897,21 @@ export class SonicPiEngine {
 
         // Store builder function for capture path
         this.loopBuilders.set(name, builderFn)
-        if (!this.loopSeeds.has(name)) {
-          // Seed derived from loop name — each loop gets a unique PRNG sequence
-          // (matches desktop Sonic Pi's per-loop deterministic seeding)
-          let hash = 0
-          for (let i = 0; i < name.length; i++) {
-            hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0
-          }
-          this.loopSeeds.set(name, Math.abs(hash))
+        if (!this.loopRngState.has(name)) {
+          // EPIC #531 Phase 3: derive this loop's child random seed from the
+          // top-level stream, exactly as desktop forks a spider thread's seed
+          // from its parent (runtime.rb:1062-1067):
+          //   child_seed = SPRand.rand!(441000, gen_idx) + parent_seed
+          // with gen_idx incremented per spawn (sibling loops → different
+          // streams). The parent (topLevelBuilder) already carries the user's
+          // use_random_seed value — `use_random_seed` is a TOP_LEVEL_SETTING, so
+          // the eager top-level seed runs BEFORE any loop registers here. This
+          // REPLACES the old name-hash seed, which ignored use_random_seed and
+          // never matched desktop (SP140 / the Phase-3 E2E unlock). Derived once
+          // at registration; persists across iterations (continuous stream) and
+          // across hot-swaps (a running loop keeps its stream, like desktop).
+          const childSeed = topLevelBuilder.deriveChildSeed()
+          this.loopRngState.set(name, { seed: childSeed, idx: 0 })
         }
 
         // Create the async function that builds a Program each iteration
@@ -974,10 +988,13 @@ export class SonicPiEngine {
             }
           }
 
-          const seed = this.loopSeeds.get(name) ?? 0
-          this.loopSeeds.set(name, seed + 1)
-
-          const builder = new ProgramBuilder(seed, this.loopTicks.get(name))
+          // EPIC #531 Phase 3: restore this loop's persistent random stream so it
+          // advances CONTINUOUSLY across iterations (desktop live_loop = one
+          // thread, one stream — no per-iteration re-seed). Saved back after the
+          // build (below). Replaces the old per-iteration `seed++` scheme.
+          const rngState = this.loopRngState.get(name) ?? { seed: 0, idx: 0 }
+          const builder = new ProgramBuilder(0, this.loopTicks.get(name))
+          builder.setRandomState(rngState)
           // #513: loop bodies that call sample_duration / use_sample_bpm need the
           // real decoded buffer length, not the stub.
           builder.setSampleDurationProvider(this.sampleDurationLookup)
@@ -1098,6 +1115,10 @@ export class SonicPiEngine {
           this.loopTicks.set(name, builder.getTicks())
           // Persist beat counter so current_beat keeps advancing across iterations (#226)
           this.loopBeats.set(name, builder.currentBeatRaw)
+          // EPIC #531 Phase 3: persist the random (seed, idx) so the loop's stream
+          // continues from where this iteration left off (desktop one-stream-per-
+          // thread). Saved AFTER builderFn so it captures every draw this iteration.
+          this.loopRngState.set(name, builder.getRandomState())
           const program = builder.build()
 
           await runProgram(program, {
@@ -1995,12 +2016,12 @@ export class SonicPiEngine {
         //   - loopSynced.has(name) → true → restored loop SKIPS waiting for
         //     its `sync:` target → starts at registerLoop's getAudioTime()
         //     instead of the next met1 cue → music drifts out of phase.
-        //   - loopTicks/loopBeats/loopSeeds → tick state resumes from where
+        //   - loopTicks/loopBeats/loopRngState → tick state resumes from where
         //     it left off pre-removal → wrong notes from .tick/.shuffle/etc.
         //   - loopBuilders → stale closure could be re-invoked from edge paths.
         for (const name of removedLoops) {
           this.loopBuilders.delete(name)
-          this.loopSeeds.delete(name)
+          this.loopRngState.delete(name)
           this.loopTicks.delete(name)
           this.loopBeats.delete(name)
           this.loopSynced.delete(name)
@@ -2272,7 +2293,7 @@ export class SonicPiEngine {
     this.scheduler?.dispose()
     this.scheduler = null
     this.loopBuilders.clear()
-    this.loopSeeds.clear()
+    this.loopRngState.clear()
     this.loopTicks.clear()
     this.loopBeats.clear()
     this.loopSynced.clear()
@@ -2343,7 +2364,7 @@ export class SonicPiEngine {
     this.initialized = false
     this.currentStratum = Stratum.S3  // Reset to S3 so capture is unavailable
     this.loopBuilders.clear()
-    this.loopSeeds.clear()
+    this.loopRngState.clear()
     this.globalStore.clear()
     this.definedFns.clear()
     this.defonceCache.clear()

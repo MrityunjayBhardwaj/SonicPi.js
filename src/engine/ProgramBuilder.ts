@@ -121,6 +121,15 @@ export class ProgramBuilder {
   // anywhere the no-op can occur, not just the top level.
   private _warnHandler?: (name: string) => void
 
+  /**
+   * EPIC #531 Phase 3: per-thread spawn counter — desktop's
+   * `:sonic_pi_spider_new_thread_random_gen_idx` (runtime.rb:1062-1064). Each
+   * child thread forked from this builder reads the next gen_idx position, so
+   * sibling threads (live_loops) get DIFFERENT deterministic streams. Reset to 0
+   * by `use_random_seed` (matches desktop core.rb:3415).
+   */
+  private newThreadGenIdx = 0
+
   constructor(seed: number = 0, initialTicks?: Map<string, number>) {
     // EPIC #531: index desktop's shared frozen rand stream (loaded at boot),
     // not a per-builder MT19937. getWhiteRandStream() throws if boot didn't load
@@ -333,6 +342,37 @@ export class ProgramBuilder {
 
   use_random_seed(seed: number): this {
     this.rng.reset(seed)
+    // EPIC #531 Phase 3: desktop's use_random_seed resets the per-thread spawn
+    // counter to 0 (core.rb:3415) so re-running re-derives the SAME child seeds.
+    this.newThreadGenIdx = 0
+    return this
+  }
+
+  /**
+   * EPIC #531 Phase 3: derive a forked sub-thread's child seed and advance this
+   * thread's spawn counter (desktop runtime.rb:1062-1064). Each call reads the
+   * next gen_idx position from the parent stream, so sibling threads (sibling
+   * live_loops / in_threads) fork DIFFERENT deterministic streams.
+   */
+  deriveChildSeed(): number {
+    const seed = this.rng.deriveChildSeed(this.newThreadGenIdx)
+    this.newThreadGenIdx++
+    return seed
+  }
+
+  /**
+   * EPIC #531 Phase 3: snapshot the rand (seed, idx) so a live_loop's stream
+   * PERSISTS and advances continuously across iterations — desktop's live_loop is
+   * one thread with one stream (it does NOT re-seed per iteration). The engine
+   * restores this before each iteration's build and saves it after.
+   */
+  getRandomState(): { seed: number; idx: number } {
+    return this.rng.getState()
+  }
+
+  /** EPIC #531 Phase 3: restore a (seed, idx) snapshot (see getRandomState). */
+  setRandomState(state: { seed: number; idx: number }): this {
+    this.rng.setState(state)
     return this
   }
 
@@ -643,12 +683,11 @@ export class ProgramBuilder {
    *    (runtime.rb:1062-1067 only re-seeds on a new thread).
    */
   private forkBuilder(mode: 'same-thread' | 'forked'): ProgramBuilder {
-    // 'forked' re-seeds the rng from the parent stream (deterministic fork);
-    // 'same-thread' shares the parent rng instance (set below) so the seed
-    // here is irrelevant and must NOT consume from the parent stream.
-    const inner = mode === 'forked'
-      ? new ProgramBuilder(this.rng.next() * 0xFFFFFFFF)
-      : new ProgramBuilder()
+    // Both modes start with a default rng; the seed is set below per mode
+    // ('forked' → desktop child-seed derivation; 'same-thread' → shares the
+    // parent rng instance). The constructor seed must NOT consume from the
+    // parent stream.
+    const inner = new ProgramBuilder()
     // Common — inherited by every sub-builder regardless of mode.
     inner.currentSynth = this.currentSynth
     inner.densityFactor = this.densityFactor
@@ -686,9 +725,17 @@ export class ProgramBuilder {
       // with_fx forks no thread: tick map AND random stream continue. Sharing
       // the tick Map by reference is the #340/#341 fix; sharing the rng
       // instance is its seed-fork analog (#343 Defect C). 'forked' leaves
-      // inner.ticks a fresh Map and inner.rng the re-seeded generator.
+      // inner.ticks a fresh Map and gets a desktop-derived child stream below.
       inner.ticks = this.ticks
       inner.rng = this.rng
+    } else {
+      // EPIC #531 Phase 3: a forked thread (in_thread / at) gets its OWN stream
+      // derived from the parent at fork — desktop runtime.rb:1062-1067:
+      // child_seed = rand!(441000, gen_idx) + parent_seed, gen_idx++ per spawn.
+      // Replaces the old `rng.next()*0xFFFFFFFF` which both CONSUMED a parent
+      // draw (desktop's explicit-idx peek does not) and produced a non-desktop
+      // seed. idx 0 so the child stream starts at its seed position.
+      inner.rng.setState({ seed: this.deriveChildSeed(), idx: 0 })
     }
     return inner
   }

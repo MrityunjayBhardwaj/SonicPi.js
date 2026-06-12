@@ -148,6 +148,24 @@ export class SPRand {
   }
 
   /**
+   * Derive a forked child thread's seed (EPIC #531 Phase 3). Desktop forks every
+   * spider thread (live_loop / in_thread / at) with its OWN deterministic stream
+   * derived from the PARENT's stream at spawn (runtime.rb:1062-1067):
+   *   new_rand_seed = SPRand.rand!(441000, gen_idx)   # explicit idx ⇒ NO consume
+   *   child_seed    = new_rand_seed + SPRand.get_seed  # + parent seed
+   * The EXPLICIT `gen_idx` makes the lookup a peek at the fixed position
+   * `(parent_seed + gen_idx + 1)`, so the derivation does NOT advance the parent
+   * stream and is independent of how many draws the parent already made — only
+   * the parent SEED and the spawn-order `gen_idx` matter. `gen_idx` increments per
+   * spawn (the caller advances it), so sibling threads get DIFFERENT streams.
+   * The result is a FLOAT; randPeek floors the table position, so a float seed
+   * indexes correctly downstream.
+   */
+  deriveChildSeed(genIdx: number): number {
+    return this.randPeek(RAND_STREAM_LENGTH, genIdx) + this.seed
+  }
+
+  /**
    * `current_random_seed` = `get_seed_plus_idx` = seed + idx (the position the
    * next draw resolves from, modulo the +1 lookahead).
    */
