@@ -1134,7 +1134,10 @@ export class ProgramBuilder {
     const span = rangeSpan(args[0])
     if (span) return this.rng.rrand_i(span.from, span.to)
     const max = (args[0] as number) ?? 2
-    return this.rng.rrand_i(0, max - 1)
+    // Desktop rand_i (lang/core.rb:3208) = rand_i!(max) directly, NOT rrand_i —
+    // so rand_i(1) still draws (rand_i!(1)=0), unlike rrand_i(0,0) which doesn't.
+    if (max === 0) return 0
+    return this.rng.randI(max)
   }
 
   rand_look(): number {
@@ -1146,12 +1149,10 @@ export class ProgramBuilder {
   }
 
   shuffle<T>(arr: T[] | Ring<T>): Ring<T> {
+    // Desktop's derived-seed shuffle (consumes exactly one outer draw), NOT a
+    // plain Fisher-Yates — see SPRand.shuffle (#531 Phase 2).
     const items = arr instanceof Ring ? arr.toArray() : [...arr]
-    for (let i = items.length - 1; i > 0; i--) {
-      const j = this.rng.rrand_i(0, i)
-      ;[items[i], items[j]] = [items[j], items[i]]
-    }
-    return new Ring(items)
+    return new Ring(this.rng.shuffle(items))
   }
 
   /**
@@ -1180,7 +1181,9 @@ export class ProgramBuilder {
   }
 
   dice(sides: number, bonus: number = 0): number {
-    return this.rng.dice(sides) + bonus
+    // Desktop dice (lang/core.rb:3046) = rrand_i(1, sides) — so dice(1) returns 1
+    // WITHOUT a draw (min==max), unlike a direct table read.
+    return this.rng.rrand_i(1, sides) + bonus
   }
 
   one_in(n: number): boolean {

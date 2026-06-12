@@ -80,24 +80,65 @@ export class SPRand {
     return this.randBang(1)
   }
 
-  /** Random float in [min, max) — `min + rand!(max - min)`. */
-  rrand(min: number, max: number): number {
-    return min + this.randBang(max - min)
+  /** `rand_i!(max)` — `floor(rand!(max))`, one draw (Ruby Float#to_i truncates). */
+  randI(max: number): number {
+    return Math.floor(this.randBang(max))
   }
 
-  /** Random int in [min, max] inclusive. */
+  /**
+   * `rrand(min, max)` — desktop lang/core.rb:3117. Returns min WITHOUT a draw when
+   * `min == max` (the consumption-exact edge a `min + rand!(0)` would get wrong by
+   * drawing); otherwise `min(min,max) + rand!(|min-max|)`. The `|range|` + smallest
+   * form also handles `min > max` like desktop.
+   */
+  rrand(min: number, max: number): number {
+    if (min === max) return min
+    const r = this.randBang(Math.abs(min - max))
+    return Math.min(min, max) + r
+  }
+
+  /** `rrand_i(min, max)` — desktop lang/core.rb:3159. No draw when `min == max`;
+   *  else `min(min,max) + rand_i!(|min-max| + 1)`. */
   rrand_i(min: number, max: number): number {
-    return Math.floor(this.rrand(min, max + 1))
+    if (min === max) return min
+    const r = Math.floor(this.randBang(Math.abs(min - max) + 1))
+    return Math.min(min, max) + r
   }
 
   /** Random element from an array (`arr[rand_i!(len)]`). */
   choose<T>(arr: T[]): T {
-    return arr[Math.floor(this.randBang(arr.length))]
+    return arr[this.randI(arr.length)]
   }
 
-  /** Random integer in [1, sides]. */
-  dice(sides: number): number {
-    return Math.floor(this.randBang(sides)) + 1
+  /**
+   * `Array#shuffle` — desktop's SPRand override (sprand_core.rb:1083-1100), NOT a
+   * plain Fisher-Yates. It derives a fresh seed from ONE outer draw, runs `s`
+   * random-swap iterations on that DERIVED stream, then restores the outer stream
+   * advanced by EXACTLY ONE. So shuffle consumes exactly one value from the
+   * caller's stream regardless of list size — the property a plain Fisher-Yates
+   * (which consumes `s` draws) breaks, misaligning every subsequent rand.
+   * Returns a new array; the input is not mutated.
+   */
+  shuffle<T>(arr: readonly T[]): T[] {
+    const origSeed = this.seed
+    const origIdx = this.idx
+    // rand_i!(441000): one outer draw → the derived shuffle seed.
+    const derived = Math.floor(this.randBang(RAND_STREAM_LENGTH))
+    this.seed = derived
+    this.idx = 0
+    const a = arr.slice()
+    const s = a.length
+    for (let k = 0; k < s; k++) {
+      const ia = Math.floor(this.randBang(s))
+      const ib = Math.floor(this.randBang(s))
+      const tmp = a[ia]
+      a[ia] = a[ib]
+      a[ib] = tmp
+    }
+    // Restore the outer stream, advanced by exactly one (set_seed!(orig, idx+1)).
+    this.seed = origSeed
+    this.idx = origIdx + 1
+    return a
   }
 
   /** `use_random_seed s` / `set_seed!(s)` — set seed, reset idx to 0. */
