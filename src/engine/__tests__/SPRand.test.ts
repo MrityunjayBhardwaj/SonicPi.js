@@ -79,6 +79,13 @@ describe('SPRand stream mechanics (#531)', () => {
     expect(r.peek()).toBe(440998)
   })
 
+  it('floors a float position — thread-derived seeds (Phase 3) truncate like Ruby array index', () => {
+    // A child thread seed is a float (rand!(441000,..)+parentSeed). pos must floor.
+    const r = new SPRand(T, 1000.7)
+    // pos = floor((1000.7 + 0 + 1) mod 441000) = floor(1001.7) = 1001
+    expect(r.peek()).toBe(1001)
+  })
+
   it('wraps at the top of the table (modulo 441000)', () => {
     const r = new SPRand(T, RAND_STREAM_LENGTH - 1)
     // pos = (440999 + 0 + 1) mod 441000 = 0

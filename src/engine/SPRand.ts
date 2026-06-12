@@ -55,7 +55,10 @@ export class SPRand {
   private randPeek(max = 1, idx?: number, seed?: number): number {
     const i = idx === undefined ? this.idx : idx
     const s = seed === undefined ? this.seed : seed
-    const pos = floorMod(s + i + 1, RAND_STREAM_LENGTH)
+    // Floor the position: a thread-derived seed (Phase 3) is a float, and desktop's
+    // Ruby `random_numbers[float]` truncates. Integer seeds (use_random_seed) are a
+    // no-op here. Indexing a Float64Array with a non-integer would yield undefined.
+    const pos = Math.floor(floorMod(s + i + 1, RAND_STREAM_LENGTH))
     return this.table[pos] * max
   }
 
