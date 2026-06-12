@@ -613,8 +613,20 @@ export class ProgramBuilder {
     // stream continue through it (#340/#341 + #343 Defect C). forkBuilder is
     // the single source of truth for sub-builder state threading.
     const inner = this.forkBuilder('same-thread')
-    fn(inner, fxRef)
-    const fxOpts = !this._argBpmScaling ? { ...opts, _argBpmScaling: 0 } : opts
+    // `with_fx :x, reps: N` re-runs the BLOCK N times inside ONE FX scope,
+    // re-executing the body each pass (desktop sound.rb). Unroll at BUILD time —
+    // running the buildFn N times on the same-thread sub-builder — so each rep
+    // re-evaluates its random draws (rrand/choose) on the continuing stream.
+    // Replaying a pre-built body (the interpreter's old reps loop) froze the
+    // first rep's draws and desynced PRNG pieces (#537 lorezzed: every krush
+    // rep reused one release/pan/sleep draw); QueryInterpreter also ignored reps,
+    // so audio/query disagreed. Unrolling fixes both. `reps` is then stripped so
+    // the interpreter runs the (already N-long) body exactly once.
+    const repsRaw = typeof opts.reps === 'number' ? opts.reps : 1
+    const reps = repsRaw > 1 ? Math.floor(repsRaw) : 1
+    for (let r = 0; r < reps; r++) fn(inner, fxRef)
+    const { reps: _droppedReps, ...optsNoReps } = opts
+    const fxOpts = !this._argBpmScaling ? { ...optsNoReps, _argBpmScaling: 0 } : optsNoReps
     this.steps.push({ tag: 'fx', name, opts: fxOpts, body: inner.build(), nodeRef: fxRef })
     return this
   }

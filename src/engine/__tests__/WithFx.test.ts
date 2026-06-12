@@ -343,4 +343,46 @@ describe('with_fx', () => {
     // Outer sleep after fx block
     expect(program[1]).toMatchObject({ tag: 'sleep', beats: 999999 })
   })
+
+  // #537 — `with_fx reps: N` re-runs the BLOCK N times, re-executing the body
+  // each pass (fresh random draws). The body is unrolled at BUILD time so the
+  // draws advance per rep; replaying a pre-built body froze the first rep's draw
+  // and desynced PRNG pieces (lorezzed). `reps` is stripped from the step opts so
+  // the interpreter runs the (already N-long) body exactly once.
+  describe('#537: with_fx reps unrolls the body with fresh draws per rep', () => {
+    it('reps: 4 produces 4 play steps with 4 DISTINCT rrand amps', () => {
+      const program = new ProgramBuilder(0)
+        .with_fx('krush', { reps: 4, amp: 3 }, (b) => b.play(60, { amp: b.rrand(0, 1) }))
+        .build()
+      const fxStep = program[0] as { tag: 'fx'; body: import('../Program').Step[]; opts: Record<string, unknown> }
+      const amps = fxStep.body
+        .filter((s) => s.tag === 'play')
+        .map((s) => (s as { opts: Record<string, number> }).opts.amp)
+      expect(amps).toHaveLength(4)
+      expect(new Set(amps).size).toBe(4) // every rep drew a fresh value
+      // reps is consumed at build time — must NOT linger in the step opts (else
+      // the interpreter would loop the already-unrolled body N×N).
+      expect(fxStep.opts.reps).toBeUndefined()
+    })
+
+    it('reps draws advance the SHARED stream — a draw after the block continues it', () => {
+      // Two builders: one with reps:3, one with three plain plays. The post-block
+      // draw must read the same stream position in both (reps consumes 3 draws).
+      const withReps = new ProgramBuilder(0)
+        .with_fx('krush', { reps: 3 }, (b) => b.play(60, { amp: b.rrand(0, 1) }))
+      const afterReps = withReps.rrand(0, 1)
+      const plain = new ProgramBuilder(0)
+      for (let i = 0; i < 3; i++) plain.rrand(0, 1)
+      const afterPlain = plain.rrand(0, 1)
+      expect(afterReps).toBe(afterPlain)
+    })
+
+    it('no reps (or reps: 1) keeps a single body pass (regression)', () => {
+      const program = new ProgramBuilder(0)
+        .with_fx('reverb', { room: 0.5 }, (b) => b.play(60, { amp: b.rrand(0, 1) }))
+        .build()
+      const fxStep = program[0] as { tag: 'fx'; body: import('../Program').Step[] }
+      expect(fxStep.body.filter((s) => s.tag === 'play')).toHaveLength(1)
+    })
+  })
 })
