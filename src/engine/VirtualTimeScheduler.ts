@@ -253,7 +253,7 @@ export class VirtualTimeScheduler {
     this.tickInterval = options.tickInterval ?? DEFAULT_TICK_INTERVAL_MS
     // GAP M1c: share the engine's coordination store if injected, else own one.
     this.ownsCueHistory = !options.eventHistory
-    this.cueHistory = options.eventHistory ?? new EventHistory({ maxPerKey: 256 })
+    this.cueHistory = options.eventHistory ?? new EventHistory({ maxPerKey: 256, trimHistory: true })
 
     // Priority: by time, then by insertion order for determinism (SP1)
     // Uses entry.order directly — no Map lookup or string allocation (#75)

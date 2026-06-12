@@ -273,7 +273,7 @@ export class SonicPiEngine {
    * adapter). Because they share it, a `get :foo` sees a `cue :foo` and a
    * `sync :foo` wakes on a `set :foo` — the `/{cue,set,live_loop}/foo` read union.
    */
-  private readonly eventHistory = new EventHistory({ maxPerKey: 256 })
+  private readonly eventHistory = new EventHistory({ maxPerKey: 256, trimHistory: true })
   /** set/get facade over {@link eventHistory} with `/set/` write namespacing.
    *  Keeps the prior TimeState `{set,get,size,clear}` shape so the builder,
    *  closures and tests are unchanged. Cleared only on dispose (SK14). */

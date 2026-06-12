@@ -152,27 +152,53 @@ export class EventHistory {
   private readonly store = new Map<string | symbol, CueEvent[]>()
 
   /**
-   * Optional per-key cap on retained events (keep the `maxPerKey` GREATEST). A
-   * safety bound, NOT desktop's full `@history_depth` pruning (GAP L / #402,
-   * deferred) — it exists so the cue side (one auto-cue per loop iteration) does
-   * not grow unbounded the way the old single-entry `cueMap` never did. Old cues
-   * are irrelevant to `sync`/`getNext` (a syncer matches the NEXT cue after its
-   * point), so trimming the oldest is safe. `undefined` ⇒ unbounded (the
-   * set/get TimeState facade keeps its prior append-history behaviour).
+   * Optional per-key HARD ceiling on retained events (keep the `maxPerKey`
+   * GREATEST). A backstop above the age-based trim below — it bounds pathological
+   * bursts (>`maxPerKey` events within `historyDepthSeconds` on one key, which the
+   * age cutoff alone would not trim). Old events are irrelevant to `sync`/`getNext`
+   * (a syncer matches the NEXT cue after its point) and to `get` (a reader near
+   * "now" reads the retained head), so trimming the oldest is safe. `undefined` ⇒
+   * no ceiling (the age trim, if enabled, is the only bound).
    */
   private readonly maxPerKey?: number
 
-  constructor(opts?: { maxPerKey?: number }) {
+  /**
+   * Desktop-faithful auto-trim (GAP L / #402, IMPLEMENTED) mirroring
+   * `__insert_event!` (event_history.rb:392-399). When `trimHistory` is on, an
+   * insert keeps at least `minHistorySize` events per key and drops any OLDER
+   * than `historyDepthSeconds` behind the newest event on that key (`t` is in
+   * audio seconds, the same unit as desktop's wall-clock `@history_depth`).
+   *
+   * Reader-vt safety: the trim only ever removes the tail (oldest) beyond the
+   * `minHistorySize` most-recent, and only entries more than `historyDepthSeconds`
+   * behind the newest set. A `get`/`sync` reader at its own advancing vt tracks
+   * near the newest set, so it can never out-run the retained window — exactly
+   * desktop's guarantee (it accepts that a reader >32s in the past loses old
+   * events). Defaults match desktop: min 20, depth 32s.
+   */
+  private readonly trimHistory: boolean
+  private readonly minHistorySize: number
+  private readonly historyDepthSeconds: number
+
+  constructor(opts?: {
+    maxPerKey?: number
+    trimHistory?: boolean
+    minHistorySize?: number
+    historyDepthSeconds?: number
+  }) {
     this.maxPerKey = opts?.maxPerKey
+    this.trimHistory = opts?.trimHistory ?? false
+    this.minHistorySize = opts?.minHistorySize ?? 20
+    this.historyDepthSeconds = opts?.historyDepthSeconds ?? 32
   }
 
   /**
    * Record an event for `key`, keeping the per-key list in descending
    * `(t, idPath)` order. Mirrors `__insert_event!` (event_history.rb:385-418):
    * the common case (monotonically advancing virtual time) prepends; a rare
-   * out-of-order arrival is inserted at its sorted position. If `maxPerKey` is
-   * set, the oldest events past the cap are dropped (the tail of the descending
-   * list).
+   * out-of-order arrival is inserted at its sorted position. After insertion the
+   * list is trimmed: the desktop age trim ({@link trimHistory}) then the
+   * `maxPerKey` hard ceiling — both drop the tail (oldest) of the descending list.
    */
   insert(key: string | symbol, t: number, idPath: number[], value: unknown): void {
     const ce: CueEvent = { t, idPath, value }
@@ -187,6 +213,23 @@ export class EventHistory {
     let i = 0
     while (i < events.length && compareEvent(events[i], ce) > 0) i++
     events.splice(i, 0, ce)
+    this.trim(events)
+  }
+
+  /**
+   * Trim a key's descending event list in place: first the desktop-faithful age
+   * trim (keep ≥`minHistorySize`, drop oldest beyond `historyDepthSeconds` behind
+   * the newest), then the `maxPerKey` hard ceiling. `events[0]` is the greatest
+   * (newest) entry, so it is the reference "now" for the age cutoff — mirroring
+   * desktop's `Time.now` since `t` only advances.
+   */
+  private trim(events: CueEvent[]): void {
+    if (this.trimHistory && events.length > this.minHistorySize) {
+      const cutoff = events[0].t - this.historyDepthSeconds
+      while (events.length > this.minHistorySize && events[events.length - 1].t < cutoff) {
+        events.pop()
+      }
+    }
     if (this.maxPerKey !== undefined && events.length > this.maxPerKey) {
       events.length = this.maxPerKey // drop the oldest (tail of the descending list)
     }
@@ -331,6 +374,12 @@ export class EventHistory {
   /** Number of distinct keys (facade parity with the prior TimeState). */
   get size(): number {
     return this.store.size
+  }
+
+  /** Retained event count for one key (0 if never set). Introspection for the
+   *  #402 auto-trim bound; reads cost nothing in the hot path. */
+  eventCount(key: string | symbol): number {
+    return this.store.get(key)?.length ?? 0
   }
 
   /** Clear all events. Dispose-only (SK14) — never on stop/run. */
