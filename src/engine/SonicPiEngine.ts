@@ -42,7 +42,12 @@ import { MidiBridge } from './MidiBridge'
 import { spread } from './EuclideanRhythm'
 import { noteToMidi, midiToFreq, noteToFreq, hzToMidi, noteInfo } from './NoteToFreq'
 import { chord, scale, chord_invert, note, note_range, chord_degree, degree, chord_names, scale_names } from './ChordScale'
-import { getSampleNames, getCategories } from './SampleCatalog'
+import {
+  getSampleNames,
+  getSampleNamesByGroup,
+  getSampleGroupNames,
+  getAllGroupedSampleNames,
+} from './SampleCatalog'
 import { loadAllCustomSamples, type CustomSampleRecord } from './CustomSampleStore'
 import type { Program } from './Program'
 
@@ -796,8 +801,8 @@ export class SonicPiEngine {
         return dur !== undefined ? { duration: dur } : null
       }
 
-      // all_sample_names — from the sample catalog
-      const all_sample_names_fn = () => sample_names()
+      // all_sample_names — every grouped sample, sorted (desktop sound.rb:3248)
+      const all_sample_names_fn = () => getAllGroupedSampleNames()
 
       // Top-level print handler
       const topLevelPuts = (...args: unknown[]) => {
@@ -1522,8 +1527,15 @@ export class SonicPiEngine {
         this.midiBridge.getPitchBend(channel)
 
       // ----- Sample catalog -----
-      const sample_names = (): string[] => getSampleNames()
-      const sample_groups = (): string[] => getCategories()
+      // sample_names(group) → SORTED ring of that group's members (desktop
+      // sound.rb:3229 `g[:samples].sort.ring`); raises on unknown group. The
+      // group arg is required — `sample_names :ambi` transpiles to
+      // `sample_names("ambi")`. Returning a Ring keeps choose/tick/shuffle
+      // faithful. (#543)
+      const sample_names = (group: string): Ring<string> =>
+        ring(...getSampleNamesByGroup(group))
+      // sample_groups → SORTED ring of group keys (desktop sound.rb:3264). (#543)
+      const sample_groups = (): Ring<string> => ring(...getSampleGroupNames())
       const sample_loaded = (name: string): boolean => {
         if (!this.bridge) return false
         return this.bridge.isSampleLoaded(name)
@@ -1904,7 +1916,7 @@ export class SonicPiEngine {
         // matches the upstream sound.rb behavior loosely. Without `filter`,
         // returns every name we know about.
         (filter?: string) => {
-          const all = sample_names()
+          const all = getSampleNames()
           const loaded = this.bridge?.getLoadedSampleNames() ?? []
           // Union: bundled catalog + any extras already loaded (e.g. user uploads
           // not in the static catalog). Dedupe via Set, preserve catalog order.
