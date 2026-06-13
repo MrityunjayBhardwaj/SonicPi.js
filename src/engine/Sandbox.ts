@@ -118,6 +118,20 @@ export function createIsolatedExecutor(
           // canonical pattern works (#206):
           //   m = [:c4, :e4, :g4]
           //   loop do; play choose(m); sleep 1; end
+          //
+          // …and EXCEPT for a variable that already exists in the shared scope
+          // (#548 — Ruby closure-capture semantics). A live_loop's `do…end` is
+          // a block closure over the main-thread binding: assigning a variable
+          // that was bound BEFORE the loop (top-level / __run_once) mutates that
+          // outer binding in place, so sibling live_loops observe the new value.
+          // Only a variable FIRST introduced inside the loop body is block-local
+          // (stays in per-loop storage). Without this, each loop froze its own
+          // copy of a shared counter/selector var (e.g. a `:chord_selector` loop
+          // that updates `chord_high` was invisible to the `:chord_loop` reader).
+          if (prop in target) {
+            target[prop] = value
+            return true
+          }
           let locals = scopeLocals.get(currentScopeName)
           if (!locals) {
             locals = new Map()

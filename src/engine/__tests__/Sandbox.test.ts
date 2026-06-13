@@ -136,6 +136,66 @@ describe('Sandbox', () => {
     expect(result).toBe(99)
   })
 
+  it('#548: a top-level var mutated in loop A IS visible in loop B (Ruby closure capture)', async () => {
+    // A variable bound at top level (before any loop) is the main-thread
+    // binding. A live_loop body assigning it mutates that shared binding in
+    // place, so a sibling loop observes the new value (desktop semantics).
+    const { execute, scopeHandle } = createIsolatedExecutor(
+      `
+      const results = []
+      // Top-level binding (no scope active) — shared main-thread variable.
+      counter = 0
+      // Loop A increments the SHARED counter.
+      __enterScope__("loopA")
+      counter = counter + 5
+      results.push(counter)
+      __exitScope__()
+      // Loop B reads the shared counter — must see loop A's mutation.
+      __enterScope__("loopB")
+      results.push(counter)
+      __exitScope__()
+      storeResults(results)
+      `,
+      ['storeResults', '__enterScope__', '__exitScope__']
+    )
+    let captured: unknown[] = []
+    await execute(
+      (r: unknown[]) => { captured = r },
+      (name: string) => scopeHandle.enterScope(name),
+      () => scopeHandle.exitScope()
+    )
+    expect(captured[0]).toBe(5)   // Loop A mutated the shared counter
+    expect(captured[1]).toBe(5)   // Loop B observes the mutation (NOT frozen at 0)
+  })
+
+  it('#548: a var first assigned INSIDE a loop stays block-local (isolation preserved)', async () => {
+    // The fix narrows isolation to Ruby semantics: only a variable introduced
+    // inside the loop (never bound at top level) is block-local. This guards the
+    // Chesterton's-fence behavior — sibling loops must NOT leak truly-local vars.
+    const { execute, scopeHandle } = createIsolatedExecutor(
+      `
+      const results = []
+      __enterScope__("loopA")
+      local_only = 42   // first introduced here — never bound at top level
+      results.push(local_only)
+      __exitScope__()
+      __enterScope__("loopB")
+      results.push(typeof local_only === "undefined" ? "undefined" : local_only)
+      __exitScope__()
+      storeResults(results)
+      `,
+      ['storeResults', '__enterScope__', '__exitScope__']
+    )
+    let captured: unknown[] = []
+    await execute(
+      (r: unknown[]) => { captured = r },
+      (name: string) => scopeHandle.enterScope(name),
+      () => scopeHandle.exitScope()
+    )
+    expect(captured[0]).toBe(42)
+    expect(captured[1]).toBe('undefined')  // loop B does NOT see loop A's local
+  })
+
   it('per-loop scope: DSL functions accessible from all loops', async () => {
     const { execute, scopeHandle } = createIsolatedExecutor(
       `
