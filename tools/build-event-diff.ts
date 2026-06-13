@@ -20,6 +20,7 @@ import { readdirSync, readFileSync, writeFileSync, statSync, existsSync } from '
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { navBlock } from './lib/dashboard-nav.ts'
+import { isNonGradeable, nonGradeableReason } from './lib/non-gradeable.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -79,8 +80,13 @@ interface ParityReport {
  *  #537 PRNG-divergence class). Fold the onset-sequence verdict in so the dashboard
  *  counts what event-parity actually decided. Old captures (no sequenceParity) keep
  *  their structure verdict. */
-type EffVerdict = 'EVENT-MATCH' | 'STRUCTURE-DIVERGE' | 'SEQUENCE-DIVERGE' | 'DESKTOP-EMPTY' | 'WEB-EMPTY'
-function effectiveVerdict(r: ParityReport): EffVerdict {
+type EffVerdict = 'EVENT-MATCH' | 'STRUCTURE-DIVERGE' | 'SEQUENCE-DIVERGE' | 'DESKTOP-EMPTY' | 'WEB-EMPTY' | 'NON-GRADEABLE'
+function effectiveVerdict(r: ParityReport, name?: string): EffVerdict {
+  // #549: a fixture whose DESKTOP reference side can't be graded (desktop
+  // produces ~no usable events — see tools/lib/non-gradeable.ts) is never a
+  // web-engine divergence. Decided BEFORE any structure/sequence check so a
+  // desktop-side fixture failure can't masquerade as a SEQUENCE-DIVERGE.
+  if (name && isNonGradeable(name)) return 'NON-GRADEABLE'
   if (r.verdict === 'DESKTOP-EMPTY' || r.verdict === 'WEB-EMPTY') return r.verdict
   if (r.verdict === 'STRUCTURE-DIVERGE') return 'STRUCTURE-DIVERGE'
   // STRUCTURE-MATCH: defer to onset-sequence/notes when judged.
@@ -89,6 +95,10 @@ function effectiveVerdict(r: ParityReport): EffVerdict {
 }
 const isMatchEff = (v: EffVerdict) => v === 'EVENT-MATCH'
 const isDivergeEff = (v: EffVerdict) => v === 'STRUCTURE-DIVERGE' || v === 'SEQUENCE-DIVERGE'
+// Inconclusive = not a pass, but NOT counted against the web engine either:
+// desktop produced nothing this run (EMPTY) or the fixture is structurally
+// non-gradeable on the desktop side (#549). Badged ⚠, excluded from divergers.
+const isInconEff = (v: EffVerdict) => v.includes('EMPTY') || v === 'NON-GRADEABLE'
 interface OscEvent {
   addr: string
   synthdef?: string
@@ -125,10 +135,11 @@ function loadCaptures(): Capture[] {
       /* skip malformed */
     }
   }
-  // stable display order: diverge first, then empty, then match; alpha within.
+  // stable display order: diverge first, then inconclusive (empty/non-gradeable),
+  // then match; alpha within.
   const rank = (v: EffVerdict) =>
-    isDivergeEff(v) ? 0 : v.includes('EMPTY') ? 1 : 2
-  out.sort((a, b) => rank(effectiveVerdict(a.report)) - rank(effectiveVerdict(b.report)) || a.name.localeCompare(b.name))
+    isDivergeEff(v) ? 0 : isInconEff(v) ? 1 : 2
+  out.sort((a, b) => rank(effectiveVerdict(a.report, a.name)) - rank(effectiveVerdict(b.report, b.name)) || a.name.localeCompare(b.name))
   return out
 }
 
@@ -145,8 +156,8 @@ function fmtStamp(ts: string): string {
 
 // ── HTML fragments ───────────────────────────────────────────────────────────
 function verdictBadge(v: EffVerdict): string {
-  const cls = isMatchEff(v) ? 'pass' : v.includes('EMPTY') ? 'incon' : 'fail'
-  const icon = isMatchEff(v) ? '✓' : v.includes('EMPTY') ? '⚠' : '✗'
+  const cls = isMatchEff(v) ? 'pass' : isInconEff(v) ? 'incon' : 'fail'
+  const icon = isMatchEff(v) ? '✓' : isInconEff(v) ? '⚠' : '✗'
   return `<span class="verdict ${cls}">${icon} ${esc(v)}</span>`
 }
 
@@ -194,8 +205,14 @@ function streamRows(evs: OscEvent[]): string {
 
 function fixtureCard(c: Capture): string {
   const r = c.report
-  const eff = effectiveVerdict(r)
-  const reasons = r.reasons.map((x) => `<li>${esc(x)}</li>`).join('')
+  const eff = effectiveVerdict(r, c.name)
+  // #549: lead with the non-gradeable reason and suppress the structure/onset
+  // reasons + sequence line below — for these fixtures the desktop side is the
+  // limit, so those signals describe a desktop fixture failure, not the engine.
+  const ngReason = eff === 'NON-GRADEABLE' ? nonGradeableReason(c.name) : null
+  const reasons = ngReason
+    ? `<li>Not gradeable against desktop — ${esc(ngReason)}</li>`
+    : r.reasons.map((x) => `<li>${esc(x)}</li>`).join('')
   const voiceRows = r.rows.map(rowCells).join('')
   const fxRows = r.fxRows.length
     ? `<div class="tbl-h">FX</div><table class="diff"><thead><tr><th>synthdef</th><th>desktop</th><th>web</th><th>ratio</th><th>d@onset</th><th>w@onset</th><th>status</th></tr></thead><tbody>${r.fxRows.map(rowCells).join('')}</tbody></table>`
@@ -203,7 +220,7 @@ function fixtureCard(c: Capture): string {
   const stamp = fmtStamp(c.ts)
   // SV61/SV69 onset-sequence + per-tick NOTE parity line (when judged).
   const sp = r.sequenceParity
-  const seqLine = sp && sp.match !== null
+  const seqLine = ngReason ? '' : sp && sp.match !== null
     ? `<div class="totals">Onset-sequence + note parity (SV61/SV69, ε=${sp.epsilonMs}ms): <b style="color:${sp.match ? 'var(--pass)' : 'var(--fail)'}">${sp.match ? '✓ MATCH' : '✗ DIVERGE'}</b>${sp.match === false ? ` — ${esc(sp.reasons.find(x => /mis-timed|NOTE multiset|wrong notes/.test(x)) ?? sp.reasons[0] ?? 'onset/notes diverge')}` : ''}</div>`
     : ''
   return `<section class="fx-card" id="${esc(c.name)}">
@@ -234,9 +251,11 @@ const captures = loadCaptures()
 // match = EVENT-MATCH; structure-match but onset/notes diverge = SEQUENCE-DIVERGE
 // (a real divergence, the #537 PRNG class) — folded into `diverge`, not `match`.
 const counts = {
-  match: captures.filter((c) => isMatchEff(effectiveVerdict(c.report))).length,
-  diverge: captures.filter((c) => isDivergeEff(effectiveVerdict(c.report))).length,
-  empty: captures.filter((c) => effectiveVerdict(c.report).includes('EMPTY')).length,
+  match: captures.filter((c) => isMatchEff(effectiveVerdict(c.report, c.name))).length,
+  diverge: captures.filter((c) => isDivergeEff(effectiveVerdict(c.report, c.name))).length,
+  empty: captures.filter((c) => effectiveVerdict(c.report, c.name).includes('EMPTY')).length,
+  // #549: desktop-side non-gradeable fixtures — reported, never counted as divergers.
+  nonGradeable: captures.filter((c) => effectiveVerdict(c.report, c.name) === 'NON-GRADEABLE').length,
   total: captures.length,
 }
 const now = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
@@ -249,7 +268,7 @@ writeFileSync(
       counts,
       fixtures: captures.map((c) => ({
         name: c.name,
-        verdict: effectiveVerdict(c.report),       // SV61/SV69 effective (folds onset/note parity)
+        verdict: effectiveVerdict(c.report, c.name), // SV61/SV69 effective (folds onset/note parity; #549 non-gradeable)
         structureVerdict: c.report.verdict,         // raw multiset verdict (pre-sequence)
         sequenceMatch: c.report.sequenceParity?.match ?? null,
         isPrng: c.report.isPrng,
@@ -353,6 +372,7 @@ ${navBlock('event-level /s_new parity · #446')}
     <span class="stat pass">EVENT-MATCH <b>${counts.match}</b></span>
     <span class="stat fail">DIVERGE <b>${counts.diverge}</b></span>
     <span class="stat incon">EMPTY <b>${counts.empty}</b></span>
+    <span class="stat incon">NON-GRADEABLE <b>${counts.nonGradeable}</b></span>
     <span class="stat">fixtures <b>${counts.total}</b></span>
   </div>
   <div class="caveat">
@@ -368,5 +388,5 @@ ${navBlock('event-level /s_new parity · #446')}
 writeFileSync(join(TR, 'event-diff.html'), html)
 console.log(`✓ wrote test_results/event-diff.html + event-diff.json`)
 console.log(
-  `  ${counts.total} fixtures · MATCH ${counts.match} · DIVERGE ${counts.diverge} · EMPTY ${counts.empty}`,
+  `  ${counts.total} fixtures · MATCH ${counts.match} · DIVERGE ${counts.diverge} · EMPTY ${counts.empty} · NON-GRADEABLE ${counts.nonGradeable}`,
 )
