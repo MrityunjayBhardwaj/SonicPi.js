@@ -1755,8 +1755,15 @@ function transpileReceiverMethodCall(
     return `${recStr}?.at(__b.tick())`
   }
 
-  // .look / .look() → .at(__b.look())
+  // .look / .look(:name) → .at(__b.look()) / .at(__b.look("name"))
+  // Forward the tick-name arg (mirrors .tick above). Without it, `ring.look(:note)`
+  // read the DEFAULT tick instead of the :note tick — wrong notes whenever the
+  // default tick is independently advanced (square_skit: `tick(:note) if factor? tick, 4`
+  // bumps the default tick every iteration, so the dropped-name look incremented the
+  // ring index every play instead of holding it). Issue #552.
   if (method === 'look') {
+    const args = argsNode ? transpileArgList(argsNode, ctx) : ''
+    if (args) return `${recStr}?.at(__b.look(${args}))`
     return `${recStr}?.at(__b.look())`
   }
 

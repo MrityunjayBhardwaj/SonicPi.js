@@ -2247,6 +2247,18 @@ end`)
       expect(result.ok).toBe(true)
       expect(result.code).toContain('?.at(__b.look())')
     })
+
+    it('#552: ring .look(:name) forwards the tick name (not the default tick)', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  play (knit :c2, 2, :e1, 1).look(:note)
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      // The :note arg must reach look — else it reads the DEFAULT tick (wrong notes
+      // when the default tick is independently advanced, e.g. square_skit).
+      expect(result.code).toContain('?.at(__b.look("note"))')
+      expect(result.code).not.toContain('?.at(__b.look())')
+    })
   })
 
   // Phase A — error hardening (#185): previously silent passthroughs now
