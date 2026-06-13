@@ -61,6 +61,35 @@ describe('TreeSitterTranspiler', () => {
     expect(isTreeSitterReady()).toBe(true)
   })
 
+  describe('#546: N.times evaluates its count once (side-effecting counts)', () => {
+    it('hoists the count into a temp instead of re-evaluating it in the loop condition', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  divisors = ring 2, 4
+  divisors.tick.times do
+    sample :elec_blip
+    sleep 1.0 / divisors.look
+  end
+end`)
+      // count expression must appear exactly ONCE (hoisted), not in the for-condition
+      const tickCalls = (result.code.match(/__b\.tick\(\)/g) ?? []).length
+      expect(tickCalls).toBe(1)
+      expect(result.code).toMatch(/const __times_\d+ = divisors\?\.at\(__b\.tick\(\)\)/)
+      expect(result.code).toMatch(/for \(let _i = 0; _i < __times_\d+; _i\+\+\)/)
+      // the body still reads look (unchanged)
+      expect(result.code).toContain('__b.look()')
+    })
+
+    it('still works for a plain integer count', () => {
+      const result = treeSitterTranspile(`live_loop :t do
+  4.times do
+    sample :bd_haus
+  end
+end`)
+      expect(result.code).toMatch(/const __times_\d+ = 4/)
+      expect(result.code).toMatch(/for \(let _i = 0; _i < __times_\d+; _i\+\+\)/)
+    })
+  })
+
   describe('Task 1: Setup & Prototype', () => {
     it('parses and transpiles a basic live_loop', () => {
       const ruby = `live_loop :drums do
@@ -859,7 +888,9 @@ end`)
 end`)
       expect(result.ok).toBe(true)
       expect(result.code).toContain('for (let')
-      expect(result.code).toContain('< 4')
+      // count hoisted into a temp evaluated once (#546)
+      expect(result.code).toMatch(/const __times_\d+ = 4/)
+      expect(result.code).toMatch(/< __times_\d+/)
       expect(result.code).toContain('b.__checkBudget__()')
     })
 

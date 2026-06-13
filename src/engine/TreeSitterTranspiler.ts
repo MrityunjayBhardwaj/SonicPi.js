@@ -1665,11 +1665,17 @@ function transpileReceiverMethodCall(
   const recStr = transpileNode(receiver, ctx)
 
   // N.times do |i| ... end
+  // The count is hoisted into a temp so the receiver is evaluated ONCE (Ruby
+  // `N.times` evaluates its receiver once). Inlining `recStr` into the loop
+  // condition re-ran it every iteration — fatal when the count has side effects,
+  // e.g. `divisors.tick.times` advances the tick counter on every check, and any
+  // `.look` in the body then reads a runaway index (cloud_beat hihat). (#546)
   if (method === 'times' && blockNode) {
     const params = blockNode.namedChildren.find((c: any) => c.type === 'block_parameters')
     const varName = params?.namedChildren[0]?.text ?? '_i'
     const bodyStr = transpileBlockBody(blockNode, ctx)
-    return `for (let ${varName} = 0; ${varName} < ${recStr}; ${varName}++) {\n${ctx.indent}  __b.__checkBudget__()\n${bodyStr}\n${ctx.indent}}`
+    const nTmp = `__times_${ctx.indent.length}`
+    return `{ const ${nTmp} = ${recStr}; for (let ${varName} = 0; ${varName} < ${nTmp}; ${varName}++) {\n${ctx.indent}  __b.__checkBudget__()\n${bodyStr}\n${ctx.indent}} }`
   }
 
   // .each do |item| ... end  /  .each do |a, b| ... end (destructure)
