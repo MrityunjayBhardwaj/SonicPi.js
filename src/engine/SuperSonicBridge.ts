@@ -874,7 +874,8 @@ export class SuperSonicBridge {
     sampleName: string,
     audioTime: number,
     opts?: Record<string, number>,
-    bpm?: number
+    bpm?: number,
+    nodeId?: number,
   ): Promise<number> {
     if (!this.sonic) throw new Error('SuperSonic not initialized')
 
@@ -887,13 +888,13 @@ export class SuperSonicBridge {
     if (bufNum !== undefined && numChans !== undefined) {
       const playerName = selectSamplePlayer(opts, numChans)
       if (this.loadedSynthDefs.has(playerName)) {
-        return Promise.resolve(this.playSampleImmediate(sampleName, bufNum, playerName, audioTime, opts, bpm))
+        return Promise.resolve(this.playSampleImmediate(sampleName, bufNum, playerName, audioTime, opts, bpm, nodeId))
       }
     }
 
     // Slow path: load sample + decode channel count + load synthdef first
     // (only happens once per sample name / player synthdef).
-    return this.playSampleSlow(sampleName, audioTime, opts, bpm)
+    return this.playSampleSlow(sampleName, audioTime, opts, bpm, nodeId)
   }
 
   private playSampleImmediate(
@@ -903,8 +904,12 @@ export class SuperSonicBridge {
     audioTime: number,
     opts?: Record<string, number>,
     bpm?: number,
+    preReservedNodeId?: number,
   ): number {
-    const nodeId = this.sonic!.nextNodeId()
+    // #559: use the caller's pre-reserved id when given so `control s`/`kill s`
+    // (bound into nodeRefMap synchronously by the interpreter) targets exactly
+    // this sample's node — mirrors triggerSynth (#557).
+    const nodeId = preReservedNodeId ?? this.sonic!.nextNodeId()
     const duration = this.sampleDurations.get(sampleName) ?? null
     const translated = translateSampleOpts(opts, bpm ?? 60, duration)
     const sampleWarn = this.warnHandler
@@ -979,6 +984,7 @@ export class SuperSonicBridge {
     audioTime: number,
     opts?: Record<string, number>,
     bpm?: number,
+    nodeId?: number,
   ): Promise<number> {
     // Load the buffer and decode its channel count before selecting the
     // player — mirrors Desktop SP, which knows buf_info.num_chans before
@@ -995,7 +1001,7 @@ export class SuperSonicBridge {
     if (!this.loadedSynthDefs.has(playerName)) {
       await this.ensureSynthDefLoaded(playerName)
     }
-    return this.playSampleImmediate(sampleName, bufNum, playerName, audioTime, opts, bpm)
+    return this.playSampleImmediate(sampleName, bufNum, playerName, audioTime, opts, bpm, nodeId)
   }
 
   /**
