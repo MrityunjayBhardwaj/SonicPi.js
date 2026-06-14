@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { NON_GRADEABLE, isNonGradeable, nonGradeableReason } from '../lib/non-gradeable.ts'
 
 describe('non-gradeable fixtures (#549)', () => {
-  it('flags the two known desktop-side non-gradeable fixtures', () => {
+  it('flags the known desktop-side non-gradeable fixtures (both sub-classes)', () => {
+    // Sub-class A — desktop-sparse (#549).
     expect(isNonGradeable('iso_density')).toBe(true)
     expect(isNonGradeable('e2e_08_math_misc')).toBe(true)
+    // Sub-class B — desktop-non-deterministic (counter: racing live_loops).
+    expect(isNonGradeable('counter')).toBe(true)
   })
 
   it('does NOT flag a normal gradeable fixture', () => {
@@ -23,6 +26,7 @@ describe('non-gradeable fixtures (#549)', () => {
   it('nonGradeableReason returns the reason for listed fixtures, null otherwise', () => {
     expect(nonGradeableReason('iso_density')).toContain('non-looping')
     expect(nonGradeableReason('e2e_08_math_misc')).toContain('halts early')
+    expect(nonGradeableReason('counter')).toContain('DIFFERS run-to-run')
     expect(nonGradeableReason('cloud_beat')).toBeNull()
   })
 
