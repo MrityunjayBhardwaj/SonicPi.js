@@ -745,10 +745,23 @@ export class SuperSonicBridge {
    * The await in ensureSynthDefLoaded creates a microtask yield even on cache hit,
    * which at 43 events/sec causes significant event loop contention. See #71.
    */
+  /**
+   * Reserve the next scsynth node id WITHOUT queuing anything. The caller binds
+   * its ref→nodeId map synchronously and passes the same id back into
+   * `triggerSynth` (#557). Node ids are just a monotonic counter, so reserving
+   * one up front is free and lets a same-instant `control` (no intervening
+   * sleep) resolve THIS synth's node before the async synthdef load resolves.
+   */
+  reserveNodeId(): number {
+    if (!this.sonic) throw new Error('SuperSonic not initialized')
+    return this.sonic.nextNodeId()
+  }
+
   triggerSynth(
     synthName: string,
     audioTime: number,
-    params: Record<string, number>
+    params: Record<string, number>,
+    nodeId?: number,
   ): Promise<number> {
     if (!this.sonic) throw new Error('SuperSonic not initialized')
 
@@ -756,12 +769,14 @@ export class SuperSonicBridge {
 
     // Fast path: synthdef already loaded — skip async entirely
     if (this.loadedSynthDefs.has(fullName)) {
-      return Promise.resolve(this.triggerSynthImmediate(fullName, audioTime, params))
+      return Promise.resolve(this.triggerSynthImmediate(fullName, audioTime, params, nodeId))
     }
 
-    // Slow path: load synthdef first (only happens once per synth name)
+    // Slow path: load synthdef first (only happens once per synth name). The
+    // returned promise still REJECTS on a CDN miss (SV43/SP89), so the caller's
+    // .catch can surface it — the pre-reserved `nodeId` doesn't change that.
     return this.ensureSynthDefLoaded(fullName).then(() =>
-      this.triggerSynthImmediate(fullName, audioTime, params)
+      this.triggerSynthImmediate(fullName, audioTime, params, nodeId)
     )
   }
 
@@ -769,8 +784,11 @@ export class SuperSonicBridge {
     fullName: string,
     audioTime: number,
     params: Record<string, number>,
+    preReservedNodeId?: number,
   ): number {
-    const nodeId = this.sonic!.nextNodeId()
+    // Use the caller's pre-reserved id when given (#557) so the /s_new targets
+    // exactly the node the interpreter already bound into nodeRefMap.
+    const nodeId = preReservedNodeId ?? this.sonic!.nextNodeId()
     const paramList: (string | number)[] = []
     this.pushFiniteParams(paramList, params, `synth ${fullName.replace('sonic-pi-', ':')}`)
     this.queueMessage(audioTime, '/s_new', [fullName, nodeId, 0, 100, ...paramList])

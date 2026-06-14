@@ -632,8 +632,14 @@ function transpileNode(node: any, ctx: TranspileContext): string {
       const lhsStr = transpileNode(lhs, ctx)
       const rhsStr = transpileNode(rhs, ctx)
 
-      // If RHS is __b.play or __b.sample, capture lastRef
-      if (ctx.insideLoop && /^__b\.(play|sample)\(/.test(rhsStr)) {
+      // If RHS is __b.play or __b.sample, capture lastRef so a later
+      // `control p, …` / `kill p` resolves the synth's node ref. Applies at
+      // top level too, not just inside loops (#557): `p = play …; control p`
+      // at the top level is valid Sonic Pi — gating this on `insideLoop` left
+      // `p` bound to the builder object, so `control(p)` never resolved in
+      // nodeRefMap and was silently dropped. The regex matches only a direct
+      // play/sample call as the whole RHS, so chained/compound RHS is untouched.
+      if (/^__b\.(play|sample)\(/.test(rhsStr)) {
         return `${rhsStr}; ${lhsStr} = __b.lastRef`
       }
 

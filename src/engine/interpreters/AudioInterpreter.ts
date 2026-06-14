@@ -187,8 +187,28 @@ export async function runProgram(
             : undefined
           const params = normalizePlayParams(synth, step.opts, currentBpm, playWarn)
           params.out_bus = task.outBus
-          ctx.bridge.triggerSynth(synth, audioTime, params)
-            .then(realNodeId => ctx.nodeRefMap.set(nodeRef, realNodeId))
+          // #557: bind nodeRefMap SYNCHRONOUSLY so a same-iteration `control`
+          // (no intervening sleep — e.g. fm_noise's `p = play …; control p,
+          // divisor: …`) resolves THIS synth's live node. Previously the map
+          // was populated by the async `.then` on triggerSynth — a microtask
+          // that runs only AFTER the iteration's synchronous steps complete.
+          // So `control` read either an empty map (iteration 1 → /n_set
+          // dropped) or the PREVIOUS iteration's already-freed node (iteration
+          // N → /n_set to a dead node). Both made `control` of a running synth
+          // inaudible on web while desktop applied it (#557 / exp-019). Reserve
+          // the id up front (a free counter increment) and hand it to
+          // triggerSynth, which still loads the synthdef async and still
+          // REJECTS on a CDN miss (SV43/SP89). The `reserveNodeId` guard keeps
+          // older mock bridges (no such method) on the legacy async-bind path.
+          let preReservedNodeId: number | undefined
+          if (typeof ctx.bridge.reserveNodeId === 'function') {
+            preReservedNodeId = ctx.bridge.reserveNodeId()
+            ctx.nodeRefMap.set(nodeRef, preReservedNodeId)
+          }
+          ctx.bridge.triggerSynth(synth, audioTime, params, preReservedNodeId)
+            .then(realNodeId => {
+              if (preReservedNodeId === undefined) ctx.nodeRefMap.set(nodeRef, realNodeId)
+            })
             .catch((err: Error) => {
               ctx.printHandler?.(`Synth '${synth}' failed: ${err.message}`)
             })
