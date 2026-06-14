@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { SeededRandom } from '../SeededRandom'
-import { Ring, ring, ramp, stretch, doubles, halves, Ramp } from '../Ring'
+import { Ring, ring, ramp, stretch, doubles, halves, Ramp, line } from '../Ring'
 import { spread } from '../EuclideanRhythm'
 import { noteToMidi, midiToFreq, noteToFreq, noteInfo } from '../NoteToFreq'
 import { MidiBridge } from '../MidiBridge'
@@ -108,6 +108,39 @@ describe('Ring', () => {
   it('is iterable', () => {
     const r = ring(1, 2, 3)
     expect([...r]).toEqual([1, 2, 3])
+  })
+
+  // #554 — desktop Sonic Pi core.rb:1901-1916 parity. Previously `line` defaulted
+  // to the INCLUSIVE formula (/(steps-1), reaching `finish`); desktop's default is
+  // endpoint-EXCLUSIVE (/steps). This produced wrong notes in e2e_05 (line.tick).
+  describe('line (#554 desktop parity)', () => {
+    it('default is endpoint-exclusive: line(60,72,steps:4) → [60,63,66,69]', () => {
+      expect(line(60, 72, { steps: 4 }).toArray()).toEqual([60, 63, 66, 69])
+    })
+
+    it('doc example: line(0,4,steps:4) → [0,1,2,3]', () => {
+      expect(line(0, 4, { steps: 4 }).toArray()).toEqual([0, 1, 2, 3])
+    })
+
+    it('descending: line(5,0,steps:5) → [5,4,3,2,1]', () => {
+      expect(line(5, 0, { steps: 5 }).toArray()).toEqual([5, 4, 3, 2, 1])
+    })
+
+    it('inclusive: true reaches finish: line(60,72,steps:4,inclusive:true) → [60,64,68,72]', () => {
+      expect(line(60, 72, { steps: 4, inclusive: true }).toArray()).toEqual([60, 64, 68, 72])
+    })
+
+    it('inclusive doc example: line(0,3,inclusive:true) → [0,1,2,3]', () => {
+      expect(line(0, 3, { inclusive: true }).toArray()).toEqual([0, 1, 2, 3])
+    })
+
+    it('start == finish returns empty ring (core.rb:1904)', () => {
+      expect(line(60, 60, { steps: 4 }).toArray()).toEqual([])
+    })
+
+    it('numeric positional steps still works (exclusive): line(60,72,4) → [60,63,66,69]', () => {
+      expect(line(60, 72, 4).toArray()).toEqual([60, 63, 66, 69])
+    })
   })
 
   // #354 — desktop Sonic Pi core.rb:796-805 parity. Previously mirror/reflect

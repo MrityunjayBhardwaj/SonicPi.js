@@ -317,14 +317,20 @@ export function halves(start: number, num_halves: number = 1): Ring<number> {
 }
 
 /**
- * Line: generate a line of N values between start and end.
- * line(60, 72, 5) → Ring([60, 63, 66, 69, 72])
+ * Line: ring of `steps` evenly-spaced values from start towards finish.
+ * Endpoint-EXCLUSIVE by default (matches desktop Sonic Pi `line`, core.rb:1901):
+ *   line(60, 72, steps: 4)                  → Ring([60, 63, 66, 69])   (step (finish-start)/steps)
+ *   line(60, 72, steps: 4, inclusive: true) → Ring([60, 64, 68, 72])   (step (finish-start)/(steps-1))
  */
 export function line(start: number, finish: number, stepsOrOpts: number | { steps?: number; inclusive?: boolean } = 4): Ring<number> {
   const steps = typeof stepsOrOpts === 'number' ? stepsOrOpts : (stepsOrOpts.steps ?? 4)
+  const inclusive = typeof stepsOrOpts === 'number' ? false : (stepsOrOpts.inclusive === true)
+  // Desktop returns an empty ring when start == finish (core.rb:1904).
+  if (start === finish) return new Ring<number>([])
+  const denom = inclusive ? steps - 1 : steps
   const result: number[] = []
   for (let i = 0; i < steps; i++) {
-    result.push(steps === 1 ? start : start + (finish - start) * (i / (steps - 1)))
+    result.push(start + (finish - start) * (i / denom))
   }
   return new Ring(result)
 }
