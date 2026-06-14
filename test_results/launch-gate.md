@@ -4,11 +4,11 @@
 
 ### Criterion 1 — non-heavy official roster (PRNG graded by event-parity, SV69)
 
-**27/32 = 84.4%** · threshold ≥70% · **✅ PASS**
+**34/34 = 100.0%** · threshold ≥70% · **✅ PASS**
 
 ### Criterion 2 — Differential matrix ✅ (#469 · dharana §36)
 
-52/52 cells structure-match · 0 diverge/timing/empty/error. _(captured 2026-06-09T22:20:28.460Z, 8000ms window)_
+52/52 cells structure-match · 0 diverge/timing/empty/error. _(captured 2026-06-14T01:54:08.144Z, 8000ms window)_
 
 > Pass = MATCH / EVENT-MATCH / PRNG-VARIANT (the cos fallback). PRNG rows are graded by per-synthdef `/s_new` event-parity (SV69 — values now match desktop, EPIC #531). Rows the pitch-trackers cannot grade are graded via an instrument-friendly projection that exercises the same engine logic (see `tools/gate-reproducers/`). The raw sweep keeps the unvarnished verdicts; this is the launch-gate computation.
 
@@ -17,7 +17,7 @@
 | Row | raw sweep | gate verdict | graded via | detail |
 |---|---|---|---|---|
 | ✅ blockgame | event-match | event-match | raw-sweep |  |
-| ❌ cloud_beat | diverge | diverge | raw-sweep |  |
+| ✅ cloud_beat | event-match | event-match | raw-sweep |  |
 | ✅ sonic_dreams | event-match | event-match | raw-sweep |  |
 | ✅ haunted | match | match | raw-sweep |  |
 | ✅ ambient_experiment | event-match | event-match | raw-sweep |  |
@@ -29,23 +29,25 @@
 | ✅ reich_phase | event-match | match | projection | tools/gate-reproducers/reich_phase.rb → compare_2026-06-01T07-49-58-016Z_reich_phase_proj.md |
 | ✅ crushed | event-match | event-match | raw-sweep |  |
 | ✅ dark_neon | event-match | event-match | raw-sweep |  |
-| ✅ mod_303_phade | diverge | match | raw-refreshed | re-measured → compare_2026-05-30T19-32-34-562Z_mod_303_phade.md |
-| ❌ orchard_improv | diverge | diverge | raw-sweep |  |
+| ✅ mod_303_phade | match | match | raw-refreshed | re-measured → compare_2026-05-30T19-32-34-562Z_mod_303_phade.md |
+| ✅ orchard_improv | event-match | event-match | raw-sweep |  |
 | ✅ syncer | event-match | event-match | raw-sweep |  |
 | ✅ acid | event-match | event-match | raw-sweep |  |
-| ❌ ambient | diverge | diverge | raw-sweep |  |
+| ✅ ambient | event-match | event-match | raw-sweep |  |
 | ✅ compus_beats | event-match | event-match | raw-sweep |  |
-| ✅ echo_drama | event-match | event-match | raw-sweep |  |
+| ✅ echo_drama | match | match | raw-sweep |  |
 | ✅ idm_breakbeat | event-match | event-match | raw-sweep |  |
 | ✅ tron_bike | event-match | event-match | raw-sweep |  |
 | ✅ wob_rhyth | event-match | event-match | raw-sweep |  |
 | ✅ bach | event-match | event-match | raw-sweep |  |
-| ✅ driving_pulse | event-match | match | projection | tools/gate-reproducers/driving_pulse.rb → compare_2026-06-01T07-48-15-226Z_driving_pulse_proj.md |
-| ❌ lorezzed | diverge | diverge | raw-sweep |  |
+| ✅ driving_pulse | match | match | projection | tools/gate-reproducers/driving_pulse.rb → compare_2026-06-01T07-48-15-226Z_driving_pulse_proj.md |
+| ✅ lorezzed | event-match | event-match | raw-sweep |  |
 | ✅ monday_blues | event-match | match | projection | tools/gate-reproducers/monday_blues.rb → compare_2026-05-29T15-58-36-335Z_monday_blues.md · requires #409 note(octave:) fix (MERGED 8f38e2c) — without it web played +24 semitones; the projection itself surfaced this engine bug, SP106 |
 | ✅ rerezzed | event-match | event-match | raw-sweep |  |
-| ❌ square_skit | diverge | diverge | raw-sweep |  |
+| ✅ square_skit | event-match | event-match | raw-sweep |  |
+| ✅ blimp_zones | event-match | event-match | raw-sweep |  |
 | ✅ blip_rhythm | event-match | event-match | raw-sweep |  |
+| ✅ shufflit | event-match | event-match | raw-sweep |  |
 | ✅ tilburg_2 | event-match | event-match | raw-sweep |  |
 | ✅ time_machine | event-match | event-match | raw-sweep |  |
 

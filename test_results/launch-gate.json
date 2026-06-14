@@ -2,16 +2,16 @@
   "generatedFrom": "examples-sweep.json + tools/gate-reproducers/manifest.json + test_results/diff-matrix.json",
   "passed": true,
   "roster": {
-    "denominator": 32,
-    "passCount": 27,
-    "pct": 84.4,
+    "denominator": 34,
+    "passCount": 34,
+    "pct": 100,
     "thresholdPct": 70,
     "passed": true
   },
   "differentialMatrix": {
     "present": true,
     "green": true,
-    "generatedAt": "2026-06-09T22:20:28.460Z",
+    "generatedAt": "2026-06-14T01:54:08.144Z",
     "window": 8000,
     "counts": {
       "match": 52,
@@ -28,9 +28,9 @@
     "diverged": [],
     "note": "52/52 cells structure-match · 0 diverge/timing/empty/error."
   },
-  "denominator": 32,
-  "passCount": 27,
-  "pct": 84.4,
+  "denominator": 34,
+  "passCount": 34,
+  "pct": 100,
   "thresholdPct": 70,
   "rows": [
     {
@@ -43,9 +43,9 @@
     },
     {
       "example": "cloud_beat",
-      "rawVerdict": "diverge",
-      "gateVerdict": "diverge",
-      "pass": false,
+      "rawVerdict": "event-match",
+      "gateVerdict": "event-match",
+      "pass": true,
       "gradedVia": "raw-sweep",
       "detail": ""
     },
@@ -139,7 +139,7 @@
     },
     {
       "example": "mod_303_phade",
-      "rawVerdict": "diverge",
+      "rawVerdict": "match",
       "gateVerdict": "match",
       "pass": true,
       "gradedVia": "raw-refreshed",
@@ -147,9 +147,9 @@
     },
     {
       "example": "orchard_improv",
-      "rawVerdict": "diverge",
-      "gateVerdict": "diverge",
-      "pass": false,
+      "rawVerdict": "event-match",
+      "gateVerdict": "event-match",
+      "pass": true,
       "gradedVia": "raw-sweep",
       "detail": ""
     },
@@ -171,9 +171,9 @@
     },
     {
       "example": "ambient",
-      "rawVerdict": "diverge",
-      "gateVerdict": "diverge",
-      "pass": false,
+      "rawVerdict": "event-match",
+      "gateVerdict": "event-match",
+      "pass": true,
       "gradedVia": "raw-sweep",
       "detail": ""
     },
@@ -187,8 +187,8 @@
     },
     {
       "example": "echo_drama",
-      "rawVerdict": "event-match",
-      "gateVerdict": "event-match",
+      "rawVerdict": "match",
+      "gateVerdict": "match",
       "pass": true,
       "gradedVia": "raw-sweep",
       "detail": ""
@@ -227,7 +227,7 @@
     },
     {
       "example": "driving_pulse",
-      "rawVerdict": "event-match",
+      "rawVerdict": "match",
       "gateVerdict": "match",
       "pass": true,
       "gradedVia": "projection",
@@ -235,9 +235,9 @@
     },
     {
       "example": "lorezzed",
-      "rawVerdict": "diverge",
-      "gateVerdict": "diverge",
-      "pass": false,
+      "rawVerdict": "event-match",
+      "gateVerdict": "event-match",
+      "pass": true,
       "gradedVia": "raw-sweep",
       "detail": ""
     },
@@ -259,14 +259,30 @@
     },
     {
       "example": "square_skit",
-      "rawVerdict": "diverge",
-      "gateVerdict": "diverge",
-      "pass": false,
+      "rawVerdict": "event-match",
+      "gateVerdict": "event-match",
+      "pass": true,
+      "gradedVia": "raw-sweep",
+      "detail": ""
+    },
+    {
+      "example": "blimp_zones",
+      "rawVerdict": "event-match",
+      "gateVerdict": "event-match",
+      "pass": true,
       "gradedVia": "raw-sweep",
       "detail": ""
     },
     {
       "example": "blip_rhythm",
+      "rawVerdict": "event-match",
+      "gateVerdict": "event-match",
+      "pass": true,
+      "gradedVia": "raw-sweep",
+      "detail": ""
+    },
+    {
+      "example": "shufflit",
       "rawVerdict": "event-match",
       "gateVerdict": "event-match",
       "pass": true,
