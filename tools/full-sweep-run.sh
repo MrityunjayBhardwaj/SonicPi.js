@@ -53,8 +53,23 @@ run_pool() {
   return 1
 }
 
+# Pools 1-3 feed the COMPARE dashboards (examples-sweep / book / gate) via
+# compare_*.md. Pool 4 (event-parity) feeds the EVENT-DIFF dashboard via
+# eventparity_*.json — a SEPARATE capture source the compare pools never write
+# (SP151). Without it, rebuilding build-event-diff "after a sweep" just
+# re-renders STALE captures and mislabels them fresh. Running it here keeps
+# event-diff in step with the compare dashboards. It re-prep's its work manifest
+# from the latest captures per fixture on the first pass of each fresh run.
 run_pool "official-book" tools/official-book-sweep.sh OB_RUN_EPOCH
 run_pool "e2e"           tools/e2e-sweep.sh           E2E_RUN_EPOCH
 run_pool "community"     tools/community-sweep.sh     COMMUNITY_RUN_EPOCH
+run_pool "event-parity"  tools/event-parity-sweep.sh  EP_RUN_EPOCH
+
+# Rebuild the event-diff dashboard from the now-fresh eventparity captures. This
+# is the one that was silently stale before pool 4 existed (the compare
+# dashboards — examples-sweep / gate — are still rebuilt as a separate step,
+# unchanged). Safe to re-run: it only reads .captures and writes test_results.
+echo "REBUILD event-diff $(date)" | tee -a "$LOG"
+npx tsx tools/build-event-diff.ts 2>&1 | tee -a "$LOG"
 
 echo "FULL-SWEEP DONE $(date)" | tee -a "$LOG"
