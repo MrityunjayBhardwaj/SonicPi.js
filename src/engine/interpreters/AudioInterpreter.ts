@@ -118,6 +118,43 @@ export interface AudioContext {
 }
 
 /**
+ * Dispatch a controllable LEAF VOICE (synth or sample) and bind its node ref
+ * into `nodeRefMap` SYNCHRONOUSLY, so a same-instant `control`/`kill` (no
+ * intervening sleep — e.g. fm_noise's `p = play …; control p, …`) resolves THIS
+ * dispatch's live scsynth node. Shared by `case 'play'` and `case 'sample'`
+ * (#557/#559); the two FX paths bind their own refs differently (bus+group
+ * routing nodes) and are intentionally NOT folded in here.
+ *
+ * `nodeRef` is the BUILD-TIME ref the ProgramBuilder stamped on the step (one
+ * ref namespace with `fx`, so no play-vs-fx counter drift — #560). Reserve the
+ * scsynth id up front (a free counter increment), write the map before the next
+ * step runs, then fire `produce` with that id. `produce` still loads its
+ * synthdef/sample async and still REJECTS on a CDN miss (SV43/SP89). Falls back
+ * to the legacy async bind (on the producer's resolved id) when the bridge has
+ * no `reserveNodeId` (older mock bridges) or the step carries no ref.
+ */
+function dispatchNode(
+  ctx: AudioContext,
+  nodeRef: number | undefined,
+  produce: (nodeId?: number) => Promise<number>,
+  onError: (err: Error) => void,
+): void {
+  const bridge = ctx.bridge
+  let preReservedNodeId: number | undefined
+  if (nodeRef !== undefined && bridge && typeof bridge.reserveNodeId === 'function') {
+    preReservedNodeId = bridge.reserveNodeId()
+    ctx.nodeRefMap.set(nodeRef, preReservedNodeId)
+  }
+  produce(preReservedNodeId)
+    .then(realNodeId => {
+      if (preReservedNodeId === undefined && nodeRef !== undefined) {
+        ctx.nodeRefMap.set(nodeRef, realNodeId)
+      }
+    })
+    .catch(onError)
+}
+
+/**
  * Run a Program's steps for one loop iteration.
  * Called by the scheduler's loop runner.
  *
@@ -134,7 +171,6 @@ export async function runProgram(
   if (!fxCounter) fxCounter = { value: 0 }
   let currentSynth = 'beep'
   let currentBpm = ctx.scheduler.getTask(ctx.taskId)?.bpm ?? 60
-  let nextNodeRef = 1
 
   for (const step of program) {
     const task = ctx.scheduler.getTask(ctx.taskId)
@@ -164,7 +200,6 @@ export async function runProgram(
 
         const audioTime = task.virtualTime + ctx.schedAheadTime
         const synth = resolveSynthName(step.synth ?? currentSynth)
-        const nodeRef = nextNodeRef++
 
         if (ctx.bridge) {
           // Auto-start mic input on the FIRST dispatch of sound_in per run (#152).
@@ -187,31 +222,17 @@ export async function runProgram(
             : undefined
           const params = normalizePlayParams(synth, step.opts, currentBpm, playWarn)
           params.out_bus = task.outBus
-          // #557: bind nodeRefMap SYNCHRONOUSLY so a same-iteration `control`
-          // (no intervening sleep — e.g. fm_noise's `p = play …; control p,
-          // divisor: …`) resolves THIS synth's live node. Previously the map
-          // was populated by the async `.then` on triggerSynth — a microtask
-          // that runs only AFTER the iteration's synchronous steps complete.
-          // So `control` read either an empty map (iteration 1 → /n_set
-          // dropped) or the PREVIOUS iteration's already-freed node (iteration
-          // N → /n_set to a dead node). Both made `control` of a running synth
-          // inaudible on web while desktop applied it (#557 / exp-019). Reserve
-          // the id up front (a free counter increment) and hand it to
-          // triggerSynth, which still loads the synthdef async and still
-          // REJECTS on a CDN miss (SV43/SP89). The `reserveNodeId` guard keeps
-          // older mock bridges (no such method) on the legacy async-bind path.
-          let preReservedNodeId: number | undefined
-          if (typeof ctx.bridge.reserveNodeId === 'function') {
-            preReservedNodeId = ctx.bridge.reserveNodeId()
-            ctx.nodeRefMap.set(nodeRef, preReservedNodeId)
-          }
-          ctx.bridge.triggerSynth(synth, audioTime, params, preReservedNodeId)
-            .then(realNodeId => {
-              if (preReservedNodeId === undefined) ctx.nodeRefMap.set(nodeRef, realNodeId)
-            })
-            .catch((err: Error) => {
-              ctx.printHandler?.(`Synth '${synth}' failed: ${err.message}`)
-            })
+          // #557: bind nodeRefMap SYNCHRONOUSLY (via dispatchNode) so a
+          // same-iteration `control p` / `kill p` (no intervening sleep — e.g.
+          // fm_noise's `p = play …; control p, divisor: …`) resolves THIS
+          // synth's live node, not the previous iteration's freed one.
+          const bridge = ctx.bridge
+          dispatchNode(
+            ctx,
+            step.nodeRef,
+            (nodeId) => bridge.triggerSynth(synth, audioTime, params, nodeId),
+            (err) => ctx.printHandler?.(`Synth '${synth}' failed: ${err.message}`),
+          )
 
           // Extend enclosing FX scopes' aliveUntil so the FX bus outlives this
           // synth's audible envelope. Mirrors desktop sound.rb:1817-1822
@@ -255,10 +276,16 @@ export async function runProgram(
           const sampleOpts = task.outBus !== 0
             ? { ...step.opts, out_bus: task.outBus }
             : step.opts
-          ctx.bridge.playSample(step.name, audioTime, sampleOpts, currentBpm)
-            .catch((err: Error) => {
-              ctx.printHandler?.(`Sample '${step.name}' failed: ${err.message}`)
-            })
+          // #559: bind nodeRefMap SYNCHRONOUSLY (via dispatchNode) so a
+          // same-iteration `control s` / `kill s` on a running sample resolves
+          // THIS sample's live node — symmetric with `play` (#557).
+          const bridge = ctx.bridge
+          dispatchNode(
+            ctx,
+            step.nodeRef,
+            (nodeId) => bridge.playSample(step.name, audioTime, sampleOpts, currentBpm, nodeId),
+            (err) => ctx.printHandler?.(`Sample '${step.name}' failed: ${err.message}`),
+          )
 
           // Extend enclosing FX scopes' aliveUntil so the FX bus outlives this
           // sample. SP135/#506: a sample's audible end is its BUFFER PLAYOUT

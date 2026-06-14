@@ -12,8 +12,18 @@ export type Step =
        *  `note` is NaN because a string like "not a note" failed to resolve.
        *  Lets the dispatch-time guard name the bad input instead of silently
        *  sounding the middle-C fallback. */
-      noteName?: string }
-  | { tag: 'sample'; name: string; opts: Record<string, number>; srcLine?: number }
+      noteName?: string;
+      /** #557/#559/#560: BUILD-TIME node ref (= ProgramBuilder `_lastRef` at the
+       *  time this play was built). `control p` / `kill p` carry the same ref
+       *  via their own `nodeRef`; the interpreter binds `nodeRefMap[nodeRef]` to
+       *  this play's live scsynth node so a same-instant control resolves it.
+       *  Build-time (not interpret-time-minted) so it shares ONE ref namespace
+       *  with `fx` — no play-vs-fx counter drift (#560). */
+      nodeRef?: number }
+  | { tag: 'sample'; name: string; opts: Record<string, number>; srcLine?: number;
+      /** #559: build-time node ref for `control`/`kill` of a running sample —
+       *  same mechanism as `play` above. */
+      nodeRef?: number }
   | { tag: 'sleep'; beats: number }
   | { tag: 'useSynth'; name: string }
   | { tag: 'useBpm'; bpm: number }

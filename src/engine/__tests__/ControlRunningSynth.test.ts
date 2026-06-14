@@ -47,6 +47,7 @@ async function drive(engine: SonicPiEngine, targetVt = 4, steps = 8) {
  */
 function createSpyBridge() {
   const synths: Array<{ id: number; params: Record<string, number> }> = []
+  const samples: Array<{ id: number; name: string }> = []
   const controls: Array<{ nodeId: number; params: (string | number)[] }> = []
   let nextNode = 9000
   let nextBus = 16
@@ -60,7 +61,11 @@ function createSpyBridge() {
       synths.push({ id, params: { ...params } })
       return id
     },
-    async playSample() { return nextNode++ },
+    async playSample(name: string, _t: number, _o?: Record<string, number>, _b?: number, nodeId?: number) {
+      const id = nodeId ?? nextNode++
+      samples.push({ id, name })
+      return id
+    },
     async ensureSamplePlaybackDuration() { return 1 },
     sendTimedControl(_time: number, nodeId: number, params: (string | number)[]) {
       controls.push({ nodeId, params })
@@ -74,7 +79,7 @@ function createSpyBridge() {
       return () => undefined
     },
   })
-  return { bridge: proxy, synths, controls }
+  return { bridge: proxy, synths, samples, controls }
 }
 
 function paramsToObj(params: (string | number)[]): Record<string, number> {
@@ -142,6 +147,63 @@ sleep 7`)
     expect(spy.controls.length).toBeGreaterThan(0)
     expect(spy.controls.every((c) => c.nodeId === spy.synths[0].id)).toBe(true)
     expect(paramsToObj(spy.controls[0].params).divisor).toBe(30)
+    engine.dispose()
+  })
+
+  it('control of a running SAMPLE targets the live sample node (#559)', async () => {
+    // `s = sample …; control s, rate: 2` must reach the sample's scsynth node.
+    // Pre-fix: `ProgramBuilder.sample` never set `_lastRef` and the sample
+    // dispatch never bound `nodeRefMap` → control(s) resolved nothing → dropped.
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const spy = createSpyBridge()
+    ;(engine as unknown as { bridge: unknown }).bridge = spy.bridge
+    const r = await engine.evaluate(`live_loop :s do
+  s = sample :loop_amen, rate: 1, sustain: 4
+  control s, rate: 2
+  sleep 1
+end`)
+    expect(r.error).toBeUndefined()
+    engine.play()
+    await drive(engine, 4, 8)
+
+    expect(spy.samples.length).toBeGreaterThan(1)
+    expect(spy.controls.length).toBeGreaterThan(0)
+    // Every control targets a node that is actually a sample this run.
+    const sampleIds = new Set(spy.samples.map((s) => s.id))
+    for (const c of spy.controls) {
+      expect(sampleIds.has(c.nodeId)).toBe(true)
+      expect(paramsToObj(c.params).rate).toBe(2)
+    }
+    engine.dispose()
+  })
+
+  it('control p resolves when a with_fx precedes the controlled play (#560)', async () => {
+    // Pre-fix: the builder counted `with_fx` in its ref namespace but the
+    // interpreter's play-only counter did not → `control p` after a fx
+    // resolved a non-existent ref → DROPPED. Build-time refs (one namespace
+    // shared with fx) fix the drift.
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const spy = createSpyBridge()
+    ;(engine as unknown as { bridge: unknown }).bridge = spy.bridge
+    const r = await engine.evaluate(`play 60
+with_fx :reverb do
+  play 70
+end
+p = play 62, sustain: 4
+control p, amp: 0.1
+sleep 4`)
+    expect(r.error).toBeUndefined()
+    engine.play()
+    await drive(engine, 4, 8)
+
+    // Three synths (60, 70-inside-fx, 62); the control targets the n62 play.
+    const n62 = spy.synths.find((s) => s.params.note === 62)
+    expect(n62).toBeDefined()
+    expect(spy.controls.length).toBeGreaterThan(0)
+    expect(spy.controls.every((c) => c.nodeId === n62!.id)).toBe(true)
+    expect(paramsToObj(spy.controls[0].params).amp).toBe(0.1)
     engine.dispose()
   })
 })

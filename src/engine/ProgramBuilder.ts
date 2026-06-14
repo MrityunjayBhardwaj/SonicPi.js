@@ -230,6 +230,7 @@ export class ProgramBuilder {
       opts: cleanOpts,
       synth: synth ?? this.currentSynth,
       srcLine,
+      nodeRef: this._lastRef,
       ...(noteName !== undefined ? { noteName } : {}),
     })
   }
@@ -268,7 +269,11 @@ export class ProgramBuilder {
     const cleanOpts = { ...this._sampleDefaults, ...opts } as Record<string, number>
     delete (cleanOpts as Record<string, unknown>)._srcLine
     if (!this._argBpmScaling) cleanOpts._argBpmScaling = 0
-    this.steps.push({ tag: 'sample', name, opts: cleanOpts, srcLine })
+    // #559: mint a node ref so `s = sample …; control s, rate: 2` / `kill s`
+    // can target the running sample node — symmetric with `play` above. The
+    // transpiler captures `s = __b.lastRef` for `s = sample …`.
+    this._lastRef = this.nextRef++
+    this.steps.push({ tag: 'sample', name, opts: cleanOpts, srcLine, nodeRef: this._lastRef })
     return this
   }
 
