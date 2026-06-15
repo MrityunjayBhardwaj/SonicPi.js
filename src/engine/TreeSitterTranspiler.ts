@@ -1704,6 +1704,20 @@ function transpileReceiverMethodCall(
     return `{ const ${nTmp} = ${recStr}; for (let ${varName} = 0; ${varName} < ${nTmp}; ${varName}++) {\n${ctx.indent}  __b.__checkBudget__()\n${bodyStr}\n${ctx.indent}} }`
   }
 
+  // N.times used as an ENUMERATOR — NO block of any kind: `8.times.map { }`,
+  // `4.times.to_a`, `3.times.map { }.ring`. Ruby's `N.times` yields 0..N-1, so as
+  // a bare receiver it is an Enumerator that chained `.map`/`.each`/`.to_a`/`.ring`
+  // operate on. WITHOUT this it fell through to the generic receiver-call handler
+  // → `recStr.times()` = `8.times()`, which is INVALID JS (`8.` parses as a float
+  // literal → "Invalid or unexpected token") → the whole program is REJECTED
+  // (ok:false, SV19) → silence (#573, bhairav_tabla). The BLOCK forms
+  // (`N.times do…end` above, and `N.times { }` braces) are handled as for-loops;
+  // only the no-block enumerator form reaches here. Emit the 0..N-1 index array.
+  if (method === 'times' && !blockNode &&
+      !fullNode?.namedChildren?.some((c: any) => c.type === 'block')) {
+    return `Array.from({ length: ${recStr} }, (_, __i) => __i)`
+  }
+
   // .each do |item| ... end  /  .each do |a, b| ... end (destructure)
   // Multi-arg block over a tuple-yielding iterator (e.g. arr.zip(b).each do |a, b|)
   // emits JS array destructure: for (const [a, b] of iter).

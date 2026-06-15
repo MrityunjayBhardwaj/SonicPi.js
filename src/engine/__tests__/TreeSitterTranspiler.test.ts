@@ -90,6 +90,42 @@ end`)
     })
   })
 
+  describe('#573: N.times as an enumerator (no block) is valid JS', () => {
+    it('`N.times.map { }` emits an index array, NOT invalid `N.times()`', () => {
+      const result = treeSitterTranspile('a = 8.times.map { |i| i * 2 }')
+      expect(result.ok).toBe(true)
+      // 8.times() (the bug) is invalid JS — `8.` is a float literal. Must be an array.
+      expect(result.code).not.toMatch(/\b8\.times\(/)
+      expect(result.code).toContain('Array.from({ length: 8 }')
+      expect(result.code).toContain('.map(')
+    })
+
+    it('`N.times.to_a` and `N.times.map { }.ring` transpile ok', () => {
+      expect(treeSitterTranspile('r = 4.times.to_a').ok).toBe(true)
+      expect(treeSitterTranspile('x = 3.times.map { |i| i }.ring').ok).toBe(true)
+    })
+
+    it('block forms are unchanged (still a for-loop)', () => {
+      const brace = treeSitterTranspile('8.times { play 60 }')
+      const doEnd = treeSitterTranspile('8.times do\n  play 60\nend')
+      expect(brace.ok).toBe(true)
+      expect(doEnd.ok).toBe(true)
+      expect(brace.code).toMatch(/for \(let _i = 0; _i < __times_\d+; _i\+\+\)/)
+      expect(doEnd.code).toMatch(/for \(let _i = 0; _i < __times_\d+; _i\+\+\)/)
+    })
+
+    it('the bhairav_tabla shape (`8.times.map { … }.ring` inside define) no longer rejects the program', () => {
+      const result = treeSitterTranspile(`define :pat do
+  8.times.map { tablas.choose }.ring
+end
+live_loop :t do
+  p = pat
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+    })
+  })
+
   describe('Task 1: Setup & Prototype', () => {
     it('parses and transpiles a basic live_loop', () => {
       const ruby = `live_loop :drums do
