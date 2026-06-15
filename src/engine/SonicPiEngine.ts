@@ -158,6 +158,11 @@ export class SonicPiEngine {
   private schedAheadTime: number
   /** Maps DSL nodeRef → SuperSonic nodeId for control messages */
   private nodeRefMap = new Map<number, number>()
+  /** SP153/#567: nodeRef → its /s_new audioTime, so a same-instant `control`
+   *  lands its /n_set strictly after the node's creation (else WASM inits a
+   *  *_slide Lag at the control target). Same lifecycle as nodeRefMap —
+   *  bounded (refs reused per iteration) and cleared on stop/hot-swap. */
+  private nodeCreationTime = new Map<number, number>()
   /** Reusable inner FX nodes — persists across loop iterations. See issue #70.
    *  `killTimer` is the pending virtual-time-scheduled kill handle (SV41) that
    *  frees this FX after kill_delay seconds of virtual time if no follow-up
@@ -1162,6 +1167,7 @@ export class SonicPiEngine {
             schedAheadTime: this.schedAheadTime,
             printHandler: this.printHandler ?? undefined,
             nodeRefMap: this.nodeRefMap,
+            nodeCreationTime: this.nodeCreationTime,
             reusableFx: this.reusableFx,
             globalStore: this.globalStore,
             oscHandler: this.oscHandler ?? undefined,
@@ -2184,6 +2190,7 @@ export class SonicPiEngine {
           //     iteration that re-enters their with_fx Step (existing nodeId
           //     reused via persistentFx.has(scopeId) short-circuit).
           this.nodeRefMap.clear()
+          this.nodeCreationTime.clear() // SP153/#567: same lifecycle as nodeRefMap
         }
 
         // Pre-create persistent FX synchronously before reEvaluate. See
@@ -2359,6 +2366,7 @@ export class SonicPiEngine {
       this.bridge.stopAllLiveAudio()
     }
     this.nodeRefMap.clear()
+    this.nodeCreationTime.clear() // SP153/#567: same lifecycle as nodeRefMap
 
     // Dispose scheduler so next evaluate() starts fresh
     this.scheduler?.dispose()
