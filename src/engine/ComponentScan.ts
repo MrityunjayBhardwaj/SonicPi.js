@@ -60,6 +60,16 @@ const NAME = '([a-zA-Z_][a-zA-Z0-9_]*)'
 const PATTERNS: ReadonlyArray<[keyof ComponentManifest, RegExp]> = [
   ['samples', new RegExp(`\\bsample\\s*\\(?\\s*[:"']${NAME}`, 'g')],
   ['synths', new RegExp(`\\buse_synth\\s*\\(?\\s*[:"']${NAME}`, 'g')],
+  // `with_synth :x do … end` references a synth just like `use_synth :x`, but the
+  // `\bsynth` pattern below CANNOT catch it (the `_` before `synth` kills the word
+  // boundary — same reason it skips `use_synth`). Without its own pattern, a synth
+  // used ONLY inside `with_synth` (e.g. tron_bike's `:dsaw`) is never preloaded →
+  // its first `play` takes the slow `ensureSynthDefLoaded().then()` path, whose
+  // `/s_new` is queued AFTER the iteration's synchronous flush → the first node is
+  // silently dropped (#568). Mirrors the `with_fx` line. `\(?\s*[:"']` after the
+  // name does NOT match `with_synth_defaults …` (the next char is `_`, not a
+  // separator), so that DSL form is correctly ignored.
+  ['synths', new RegExp(`\\bwith_synth\\s*\\(?\\s*[:"']${NAME}`, 'g')],
   ['synths', new RegExp(`\\bsynth\\s*\\(?\\s*[:"']${NAME}`, 'g')],
   ['fx', new RegExp(`\\bwith_fx\\s*\\(?\\s*[:"']${NAME}`, 'g')],
 ]

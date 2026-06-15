@@ -28,6 +28,22 @@ describe('scanComponentNames (#318.3 / #323 static extractor)', () => {
     expect(s('use_synth :tb303')).toEqual({ samples: [], fx: [], synths: ['tb303'] })
   })
 
+  it('collects the synth inside with_synth :x (#568 — else its synthdef never preloads → first /s_new silent)', () => {
+    expect(s('with_synth :dsaw do\n  play :e3\nend')).toEqual({
+      samples: [], fx: [], synths: ['dsaw'],
+    })
+    // tron_bike shape: with_synth is the ONLY reference to :dsaw.
+    expect(s('live_loop :t do\n  with_synth :dsaw do\n    play :e1\n  end\n  sleep 8\nend').synths)
+      .toEqual(['dsaw'])
+  })
+
+  it('does NOT mistake with_synth_defaults for a synth ref (no name after the keyword)', () => {
+    // `\(?\s*[:"']` cannot match the `_` that follows `with_synth` in the _defaults form.
+    expect(s('with_synth_defaults release: 2\nplay :e3')).toEqual({
+      samples: [], fx: [], synths: [],
+    })
+  })
+
   it('deduplicates repeated references', () => {
     expect(s('sample :bd_haus\nsleep 1\nsample :bd_haus').samples).toEqual(['bd_haus'])
   })
