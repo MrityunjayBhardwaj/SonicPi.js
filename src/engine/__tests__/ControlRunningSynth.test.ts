@@ -46,9 +46,9 @@ async function drive(engine: SonicPiEngine, targetVt = 4, steps = 8) {
  * for its /s_new. Records every synth id and every sendTimedControl target.
  */
 function createSpyBridge() {
-  const synths: Array<{ id: number; params: Record<string, number> }> = []
+  const synths: Array<{ id: number; params: Record<string, number>; t: number }> = []
   const samples: Array<{ id: number; name: string }> = []
-  const controls: Array<{ nodeId: number; params: (string | number)[] }> = []
+  const controls: Array<{ nodeId: number; params: (string | number)[]; time: number }> = []
   let nextNode = 9000
   let nextBus = 16
   const impl: Record<string, unknown> = {
@@ -58,7 +58,7 @@ function createSpyBridge() {
     reserveNodeId: () => nextNode++,
     async triggerSynth(_name: string, _t: number, params: Record<string, number>, nodeId?: number) {
       const id = nodeId ?? nextNode++
-      synths.push({ id, params: { ...params } })
+      synths.push({ id, params: { ...params }, t: _t })
       return id
     },
     async playSample(name: string, _t: number, _o?: Record<string, number>, _b?: number, nodeId?: number) {
@@ -68,7 +68,7 @@ function createSpyBridge() {
     },
     async ensureSamplePlaybackDuration() { return 1 },
     sendTimedControl(_time: number, nodeId: number, params: (string | number)[]) {
-      controls.push({ nodeId, params })
+      controls.push({ nodeId, params, time: _time })
     },
     freeNode() { /* no-op */ },
     get audioContext() { return null },
@@ -204,6 +204,74 @@ sleep 4`)
     expect(spy.controls.length).toBeGreaterThan(0)
     expect(spy.controls.every((c) => c.nodeId === n62!.id)).toBe(true)
     expect(paramsToObj(spy.controls[0].params).amp).toBe(0.1)
+    engine.dispose()
+  })
+})
+
+describe('control lands after its node creation so *_slide glides initialise (#567)', () => {
+  beforeEach(() => {
+    delete (globalThis as Record<string, unknown>).SuperSonic
+  })
+
+  it('a same-instant control (no sleep after play) is timestamped strictly after the /s_new', async () => {
+    // SP153/#567: `p = play …, cutoff_slide: 4; control p, cutoff: 100` with no
+    // sleep between would co-bundle /n_set with /s_new at one timestamp; WASM
+    // scsynth then inits the cutoff Lag at the target (100) and skips the glide.
+    // The interpreter must push the /n_set strictly after the node's creation.
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const spy = createSpyBridge()
+    ;(engine as unknown as { bridge: unknown }).bridge = spy.bridge
+    const r = await engine.evaluate(`use_synth :dsaw
+live_loop :t do
+  p = play 50, cutoff: 30, cutoff_slide: 4, release: 8
+  control p, cutoff: 100
+  sleep 8
+end`)
+    expect(r.error).toBeUndefined()
+    engine.play()
+    await drive(engine, 8, 8)
+
+    expect(spy.synths.length).toBeGreaterThan(0)
+    expect(spy.controls.length).toBeGreaterThan(0)
+    // Each control must be timestamped strictly after the synth it targets,
+    // so scsynth latches the cutoff Lag at 30 before the control sets 100.
+    for (const c of spy.controls) {
+      const node = spy.synths.find((s) => s.id === c.nodeId)
+      expect(node).toBeDefined()
+      expect(c.time).toBeGreaterThan(node!.t)
+      expect(paramsToObj(c.params).cutoff).toBe(100)
+    }
+    engine.dispose()
+  })
+
+  it('a control after an elapsed sleep is NOT pushed later (no drift on the common case)', async () => {
+    // The guard only fires when control coincides with creation. A control that
+    // follows a sleep already lands well after the /s_new and must keep its
+    // natural timestamp.
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const spy = createSpyBridge()
+    ;(engine as unknown as { bridge: unknown }).bridge = spy.bridge
+    const r = await engine.evaluate(`use_synth :dsaw
+live_loop :t do
+  p = play 50, cutoff: 30, cutoff_slide: 4, release: 8
+  sleep 1
+  control p, cutoff: 100
+  sleep 7
+end`)
+    expect(r.error).toBeUndefined()
+    engine.play()
+    await drive(engine, 8, 8)
+
+    expect(spy.controls.length).toBeGreaterThan(0)
+    // The control is a full beat (1s) after the play — its timestamp is the
+    // natural scheduled time, ~1s past creation, NOT a tiny offset nudge.
+    for (const c of spy.controls) {
+      const node = spy.synths.find((s) => s.id === c.nodeId)
+      expect(node).toBeDefined()
+      expect(c.time - node!.t).toBeGreaterThan(0.5)
+    }
     engine.dispose()
   })
 })

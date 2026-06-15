@@ -63,6 +63,17 @@ export interface AudioContext {
   printHandler?: (msg: string) => void
   nodeRefMap: Map<number, number>
   /**
+   * audioTime at which each nodeRef's `/s_new` was scheduled this iteration.
+   * SP153/#567: a `control` that follows its `play`/`sample` with NO `sleep`
+   * between (same `task.virtualTime`) would otherwise co-bundle its `/n_set`
+   * with the `/s_new` at an identical timestamp — and SuperSonic's WASM scsynth
+   * then initializes a `*_slide` param's `Lag` UGen at the control TARGET rather
+   * than the play value, skipping the glide. We record the creation time here so
+   * the `control` case can land the `/n_set` strictly AFTER it (mirrors desktop,
+   * whose `/n_set` arrives a control-block after the `/s_new`). Lazily created.
+   */
+  nodeCreationTime?: Map<number, number>
+  /**
    * Live inner FX node instances — keyed by "taskId:fxIndex#nodeId".
    * Since #452 a with_fx inside a live_loop creates a FRESH FX node every
    * iteration (matching desktop SP), so several instances of the same loop
@@ -133,6 +144,20 @@ export interface AudioContext {
  * to the legacy async bind (on the producer's resolved id) when the bridge has
  * no `reserveNodeId` (older mock bridges) or the step carries no ref.
  */
+/**
+ * SP153/#567: minimum gap between a node's `/s_new` and a `control`'s `/n_set`
+ * when they would otherwise share a timestamp (control follows play with no
+ * sleep). Must exceed one scsynth control block (64 samples ≈ 1.3ms @48k) and
+ * the AudioWorklet render quantum (128 samples ≈ 2.7ms @48k) so the creation
+ * bundle is fully processed — the `*_slide` Lag latched at the play value —
+ * before the control sets the target. Empirically WASM scsynth needs ~20ms
+ * here (5ms still skipped the Lag; a 20ms gap recovers it fully) — larger than
+ * native's ~10ms, likely a transport/worklet batching window. 25ms clears the
+ * threshold with margin and is far below any audible slide-onset shift (a 25ms
+ * shift on a multi-second glide is imperceptible).
+ */
+const CONTROL_AFTER_CREATE_OFFSET = 0.025
+
 function dispatchNode(
   ctx: AudioContext,
   nodeRef: number | undefined,
@@ -233,6 +258,11 @@ export async function runProgram(
             (nodeId) => bridge.triggerSynth(synth, audioTime, params, nodeId),
             (err) => ctx.printHandler?.(`Synth '${synth}' failed: ${err.message}`),
           )
+          // SP153/#567: remember when this node was created so a same-instant
+          // `control` lands its `/n_set` strictly after the `/s_new`.
+          if (step.nodeRef !== undefined) {
+            (ctx.nodeCreationTime ??= new Map()).set(step.nodeRef, audioTime)
+          }
 
           // Extend enclosing FX scopes' aliveUntil so the FX bus outlives this
           // synth's audible envelope. Mirrors desktop sound.rb:1817-1822
@@ -286,6 +316,10 @@ export async function runProgram(
             (nodeId) => bridge.playSample(step.name, audioTime, sampleOpts, currentBpm, nodeId),
             (err) => ctx.printHandler?.(`Sample '${step.name}' failed: ${err.message}`),
           )
+          // SP153/#567: see play case — same-instant `control` must land after.
+          if (step.nodeRef !== undefined) {
+            (ctx.nodeCreationTime ??= new Map()).set(step.nodeRef, audioTime)
+          }
 
           // Extend enclosing FX scopes' aliveUntil so the FX bus outlives this
           // sample. SP135/#506: a sample's audible end is its BUFFER PLAYOUT
@@ -380,6 +414,19 @@ export async function runProgram(
         const realNodeId = ctx.nodeRefMap.get(step.nodeRef)
         if (realNodeId && ctx.bridge) {
           const audioTime = task.virtualTime + ctx.schedAheadTime
+          // SP153/#567: if this control targets a node whose `/s_new` was
+          // scheduled at the same (or a later) audioTime — i.e. `control`
+          // follows `play`/`sample` with no `sleep` between — push the `/n_set`
+          // a control-block later. Co-bundling the two at one timestamp makes
+          // SuperSonic's WASM scsynth init a `*_slide` Lag at the control TARGET
+          // instead of the play value, skipping the glide (cutoff_slide etc.).
+          // A control after an elapsed sleep has audioTime > creation, so the
+          // guard is false and the timestamp is untouched (no drift on the
+          // common case). Mirrors desktop, whose `/n_set` lands after `/s_new`.
+          const created = ctx.nodeCreationTime?.get(step.nodeRef)
+          const ctlTime = created !== undefined && audioTime <= created
+            ? created + CONTROL_AFTER_CREATE_OFFSET
+            : audioTime
           const ctlWarn = ctx.printHandler
             ? (m: string) => ctx.printHandler!(`[Warning] control — ${m}`)
             : undefined
@@ -388,7 +435,7 @@ export async function runProgram(
           for (const [k, v] of Object.entries(normalized)) {
             paramList.push(k, v)
           }
-          ctx.bridge.sendTimedControl(audioTime, realNodeId, paramList)
+          ctx.bridge.sendTimedControl(ctlTime, realNodeId, paramList)
         }
         break
       }
