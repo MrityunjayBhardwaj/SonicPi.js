@@ -775,9 +775,20 @@ export class SuperSonicBridge {
     // Slow path: load synthdef first (only happens once per synth name). The
     // returned promise still REJECTS on a CDN miss (SV43/SP89), so the caller's
     // .catch can surface it — the pre-reserved `nodeId` doesn't change that.
-    return this.ensureSynthDefLoaded(fullName).then(() =>
-      this.triggerSynthImmediate(fullName, audioTime, params, nodeId)
-    )
+    return this.ensureSynthDefLoaded(fullName).then(() => {
+      const id = this.triggerSynthImmediate(fullName, audioTime, params, nodeId)
+      // #570: the interpreter's synchronous end-of-iteration `flushMessages()`
+      // already ran (on an empty queue) before this async load resolved — the
+      // interpreter dispatches `play` fire-and-forget (dispatchNode, no await).
+      // Without flushing here, the `/s_new` we just queued waits for the NEXT
+      // flush (next iteration / sleep) and is then sent at THAT flush's later
+      // timetag — so the first node is dropped (a one-shot run has no next
+      // flush → never sent → silent). Flush it now, in its own bundle at the
+      // original `audioTime`. The fast path needs no flush: it queues
+      // synchronously, inside the iteration's own flush window.
+      this.flushMessages()
+      return id
+    })
   }
 
   private triggerSynthImmediate(
@@ -1001,7 +1012,13 @@ export class SuperSonicBridge {
     if (!this.loadedSynthDefs.has(playerName)) {
       await this.ensureSynthDefLoaded(playerName)
     }
-    return this.playSampleImmediate(sampleName, bufNum, playerName, audioTime, opts, bpm, nodeId)
+    const id = this.playSampleImmediate(sampleName, bufNum, playerName, audioTime, opts, bpm, nodeId)
+    // #570: same race as triggerSynth's slow path — the interpreter dispatches
+    // `sample` fire-and-forget (dispatchNode), so its synchronous flush already
+    // ran before this async load resolved. Flush the just-queued `/s_new` now,
+    // in its own bundle at the original audioTime, or the first node is dropped.
+    this.flushMessages()
+    return id
   }
 
   /**

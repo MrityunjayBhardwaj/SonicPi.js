@@ -109,6 +109,39 @@ describe('SuperSonicBridge', () => {
     expect(bundleStr).toContain('sonic-pi-beep')
   })
 
+  it('slow-path triggerSynth (unloaded synthdef) auto-flushes its /s_new — first node not dropped (#570)', async () => {
+    const { mockSonic, bundles } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    // `dsaw` is NOT in COMMON_SYNTHDEFS → slow path (ensureSynthDefLoaded.then).
+    // The interpreter dispatches `play` fire-and-forget, so its synchronous
+    // end-of-iteration flush runs BEFORE this async load resolves. Without the
+    // in-`then` flush (#570), this /s_new would sit unsent until the NEXT flush
+    // (a one-shot run never flushes again → silence). It must auto-flush, so
+    // sendOSC fires with NO explicit flushMessages() call.
+    await bridge.triggerSynth('dsaw', 1.0, { note: 52, amp: 0.5 })
+    expect(mockSonic.sendOSC).toHaveBeenCalledTimes(1)
+    expect(new TextDecoder().decode(bundles[0])).toContain('sonic-pi-dsaw')
+  })
+
+  it('fast-path triggerSynth (preloaded synthdef) does NOT auto-flush — waits for the iteration flush (#570 scope guard)', async () => {
+    const { mockSonic } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    // `beep` IS preloaded → fast path → queues synchronously, sent only on the
+    // interpreter's own flush. The #570 fix must NOT change this (else every
+    // event flushes as its own bundle, breaking same-instant co-bundling that
+    // SP83/#567 rely on).
+    await bridge.triggerSynth('beep', 1.0, { note: 60, amp: 0.5 })
+    expect(mockSonic.sendOSC).not.toHaveBeenCalled()
+  })
+
   it('drops non-finite numeric params before /s_new (#509 — NaN must not reach scsynth)', async () => {
     const { mockSonic, bundles } = createMockSuperSonic()
     ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
