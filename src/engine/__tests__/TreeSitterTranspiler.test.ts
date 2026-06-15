@@ -1261,6 +1261,79 @@ end`)
       expect(result.code).toContain('define("synths", __spdef_synths)')
     })
 
+    it('#575: a define called in expression position (RHS) is invoked, not left bare', () => {
+      // `p = pat` must CALL the define (and use its return value), not leave a
+      // bare reference. The historic gate only transformed statement-position
+      // calls, so `p = pat` produced `p = pat` (undefined) and the loop was silent.
+      const result = treeSitterTranspile(`define :pat do
+  (ring :a, :b, :c)
+end
+live_loop :l do
+  p = pat
+  play (note p.tick)
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      // RHS is the call, not the bare identifier.
+      expect(result.code).toContain('p = __spdef_pat(__b)')
+      expect(result.code).not.toMatch(/\bp = pat\b/)
+    })
+
+    it('#575: a define body returns its last expression (Ruby implicit return)', () => {
+      // Without an explicit return the function evaluates to undefined, so an
+      // expression-position caller gets nothing.
+      const result = treeSitterTranspile(`define :pat do
+  (ring :a, :b, :c)
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toContain('return (__b.ring("a", "b", "c"))')
+    })
+
+    it('#575: a local variable still shadows a same-named define (locals win)', () => {
+      // Ruby: a bare identifier is a local read when a local of that name
+      // exists, else a method call. `pat = 5; play pat` must read 5 even though
+      // `define :pat` exists — the define must NOT be called here.
+      const result = treeSitterTranspile(`define :pat do
+  1
+end
+live_loop :l do
+  pat = 5
+  play pat
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toContain('pat = 5')
+      // play reads the plain local, not the namespaced define call.
+      expect(result.code).toContain('__b.play(pat,')
+      expect(result.code).not.toContain('__b.play(__spdef_pat(__b)')
+    })
+
+    it('#575: a define call as a method receiver works in expression position', () => {
+      // `melody.tick` (no intermediate local) must call the define then tick it.
+      const result = treeSitterTranspile(`define :melody do
+  (ring 60, 62, 64)
+end
+live_loop :l do
+  play melody.tick
+  sleep 1
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).toContain('__spdef_melody(__b)?.at(__b.tick())')
+    })
+
+    it('#575: a define whose last statement is a loop is NOT illegally returned', () => {
+      // A multi-line statement block has no JS-expression value; prefixing
+      // `return` would be a syntax error that fails the whole program (SV19).
+      const result = treeSitterTranspile(`define :spray do
+  4.times do
+    play 60
+    sleep 0.25
+  end
+end`)
+      expect(result.ok).toBe(true)
+      expect(result.code).not.toMatch(/return\s+(\{|for|while)/)
+    })
+
     it('begin/rescue', () => {
       const result = treeSitterTranspile(`live_loop :t do
   begin

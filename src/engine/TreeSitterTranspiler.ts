@@ -178,11 +178,17 @@ export function treeSitterTranspile(ruby: string): TreeSitterTranspileResult {
     errors,
     insideLoop: false,
     definedFunctions: new Set(),
+    localVars: new Set(),
     indent: '',
     inthreadLoopCounter: { n: 0 },
     inthreadGateCounter: { n: 0 },
     fxLoopCounter: { n: 0 },
   }
+
+  // #575/SP157: collect local-variable & parameter names before transpiling, so
+  // a bare define'd-method reference in expression position can be told apart
+  // from a same-named local read (Ruby shadowing).
+  collectLocalVars(tree.rootNode, ctx.localVars!)
 
   const js = transpileNode(tree.rootNode, ctx)
 
@@ -229,6 +235,17 @@ interface TranspileContext {
   errors: string[]
   insideLoop: boolean
   definedFunctions: Set<string>
+  /**
+   * #575/SP157: every name bound as a local variable or parameter anywhere in
+   * the program. Lets a bare identifier that matches a `define`d method be
+   * disambiguated in EXPRESSION position: it is a method call only when the
+   * name is NOT also a local (Ruby locals shadow same-named methods — `pat = 5;
+   * play pat` reads 5 even if `define :pat` exists). Over-approximate &
+   * flow-insensitive (a name assigned anywhere counts as local everywhere): the
+   * SAFE direction, since a false "local" only suppresses a call (reverting to a
+   * read), never turns a local read into a wrong call.
+   */
+  localVars?: Set<string>
   indent: string
   /** Current node's source line (1-based) for _srcLine injection */
   srcLine?: number
@@ -373,6 +390,32 @@ const BUILDER_METHODS = new Set([
 const DEF_PREFIX = '__spdef_'
 function defJsName(name: string): string {
   return DEF_PREFIX + name
+}
+
+/**
+ * #575/SP157: walk the whole tree and collect every name bound as a local
+ * variable (assignment / operator-assignment LHS) or as a block/method
+ * parameter. Used to disambiguate a bare define'd-method reference in
+ * expression position from a same-named local read (Ruby shadowing). Deliberately
+ * over-approximate: collecting a name that is only a parameter default or an
+ * element-assignment index is harmless — it can only suppress a method call
+ * (the safe direction), never produce a wrong call.
+ */
+function collectLocalVars(node: any, out: Set<string>): void {
+  if (!node) return
+  if (node.type === 'assignment' || node.type === 'operator_assignment') {
+    collectIdentifiers(node.namedChildren[0], out)
+  } else if (/parameters$/.test(node.type)) {
+    collectIdentifiers(node, out)
+  }
+  for (const child of node.namedChildren) collectLocalVars(child, out)
+}
+
+/** Add every `identifier` descendant's text to `out` (used by collectLocalVars). */
+function collectIdentifiers(node: any, out: Set<string>): void {
+  if (!node) return
+  if (node.type === 'identifier') { out.add(node.text); return }
+  for (const child of node.namedChildren) collectIdentifiers(child, out)
 }
 
 const TOP_LEVEL_SCOPE = new Set([
@@ -573,14 +616,14 @@ function transpileNode(node: any, ctx: TranspileContext): string {
       if (name === 'true') return 'true'
       if (name === 'false') return 'false'
 
-      // Only transform bare identifiers to calls in statement context
-      const parentType = node.parent?.type
-      const isStatement = parentType === 'body_statement' || parentType === 'program' ||
-                          parentType === 'then' || parentType === 'block_body'
-
       // Bare identifier that matches a user-defined function → call it with __b.
       // Namespaced so a same-named local variable can't shadow the call (#432).
-      if (isStatement && ctx.definedFunctions.has(name)) {
+      // #575/SP157: this fires in EXPRESSION position too (e.g. `p = my_pattern`),
+      // not just statement context — but only when the name is NOT also a local
+      // variable/parameter. Ruby locals shadow same-named methods, so `pat = 5;
+      // play pat` must read the local 5 even when `define :pat` exists. A bare
+      // ref that is a define and NOT a local is always a method call.
+      if (ctx.definedFunctions.has(name) && !ctx.localVars?.has(name)) {
         return `${defJsName(name)}(__b)`
       }
 
@@ -2154,7 +2197,11 @@ function transpileDefine(
     : ''
 
   const bodyCtx: TranspileContext = { ...ctx, insideLoop: true }
-  const bodyStr = transpileBlockBody(blockNode, bodyCtx)
+  // #575/SP157: `return` the last expression (Ruby's implicit return) so a
+  // define called in EXPRESSION position (`p = my_pattern`) yields a value
+  // instead of undefined. Statement-position calls (the historical use) ignore
+  // the return value, so this is backwards-compatible.
+  const bodyStr = transpileReturningBody(blockNode, bodyCtx, ctx.indent)
 
   // For `define`, also call the runtime registrar so the engine persists the
   // function across re-evals (#215). `ndefine` skips this — its semantic is
@@ -3166,6 +3213,33 @@ function transpileBlockBody(blockNode: any, ctx: TranspileContext): string {
   return bodyChildren
     .map((c: any) => ctx.indent + '  ' + transpileNode(c, ctx))
     .join('\n')
+}
+
+/**
+ * #575/SP157: like transpileBlockBody but `return`s the last expression (Ruby's
+ * implicit return). Uses blockBodyChildren so a `body_statement`-wrapped do/end
+ * block is flattened and the true last statement is found. Only a single-line
+ * expression is returned; a multi-line statement block (loop / if / case) has
+ * no JS-expression value and is left as-is — `return for(){}` would be a syntax
+ * error that fails the whole program (SV19).
+ */
+function transpileReturningBody(blockNode: any, ctx: TranspileContext, indent: string): string {
+  const bodyChildren = blockBodyChildren(blockNode)
+  const lastIdx = bodyChildren.length - 1
+  return bodyChildren
+    .map((c: any, i: number) => {
+      const expr = transpileNode(c, ctx)
+      return i === lastIdx && isReturnableExpr(expr)
+        ? `${indent}  return ${expr}`
+        : `${indent}  ${expr}`
+    })
+    .join('\n')
+}
+
+/** A transpiled snippet safe to `return`: a single-line expression, not a multi-line statement block or a leading-keyword statement. */
+function isReturnableExpr(expr: string): boolean {
+  if (/\n/.test(expr)) return false
+  return !/^\s*(for|while|if|switch|const|let|var|return|throw|do|\{)\b/.test(expr)
 }
 
 // ---------------------------------------------------------------------------
