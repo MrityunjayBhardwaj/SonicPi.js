@@ -414,19 +414,25 @@ export async function runProgram(
         const realNodeId = ctx.nodeRefMap.get(step.nodeRef)
         if (realNodeId && ctx.bridge) {
           const audioTime = task.virtualTime + ctx.schedAheadTime
-          // SP153/#567: if this control targets a node whose `/s_new` was
-          // scheduled at the same (or a later) audioTime — i.e. `control`
-          // follows `play`/`sample` with no `sleep` between — push the `/n_set`
-          // a control-block later. Co-bundling the two at one timestamp makes
-          // SuperSonic's WASM scsynth init a `*_slide` Lag at the control TARGET
-          // instead of the play value, skipping the glide (cutoff_slide etc.).
-          // A control after an elapsed sleep has audioTime > creation, so the
-          // guard is false and the timestamp is untouched (no drift on the
-          // common case). Mirrors desktop, whose `/n_set` lands after `/s_new`.
+          // SP153/#567: a `control` that follows `play`/`sample` with no `sleep`
+          // between (same virtualTime) targets a node whose `/s_new` is still in
+          // this iteration's pending message queue. The bridge flushes the whole
+          // queue as ONE OSC bundle sharing ONE timetag, so `/s_new` and `/n_set`
+          // would execute at the SAME scsynth time — and WASM scsynth then inits a
+          // `*_slide` Lag at the control TARGET, skipping the glide (cutoff_slide).
+          // An OSC bundle has a single timetag, so separating their execution
+          // times requires separate bundles: flush now (emit the node's `/s_new`
+          // at its creation time), then queue the `/n_set` at creation+offset so
+          // it flushes later, in its own bundle, strictly after the node exists.
+          // This mirrors what `sleep` does between play and control (the only
+          // thing that previously rendered the slide correctly). A control after
+          // an elapsed sleep has audioTime > creation → guard false → untouched.
           const created = ctx.nodeCreationTime?.get(step.nodeRef)
-          const ctlTime = created !== undefined && audioTime <= created
-            ? created + CONTROL_AFTER_CREATE_OFFSET
-            : audioTime
+          const coincident = created !== undefined && audioTime <= created
+          if (coincident && typeof ctx.bridge.flushMessages === 'function') {
+            ctx.bridge.flushMessages(created)
+          }
+          const ctlTime = coincident ? created! + CONTROL_AFTER_CREATE_OFFSET : audioTime
           const ctlWarn = ctx.printHandler
             ? (m: string) => ctx.printHandler!(`[Warning] control — ${m}`)
             : undefined

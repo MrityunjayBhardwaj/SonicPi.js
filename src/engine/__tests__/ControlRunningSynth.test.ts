@@ -48,9 +48,10 @@ async function drive(engine: SonicPiEngine, targetVt = 4, steps = 8) {
 function createSpyBridge() {
   const synths: Array<{ id: number; params: Record<string, number>; t: number }> = []
   const samples: Array<{ id: number; name: string }> = []
-  const controls: Array<{ nodeId: number; params: (string | number)[]; time: number }> = []
+  const controls: Array<{ nodeId: number; params: (string | number)[]; time: number; synthsFlushedBefore: number }> = []
   let nextNode = 9000
   let nextBus = 16
+  let flushedSynthCount = 0
   const impl: Record<string, unknown> = {
     allocateBus: () => nextBus++,
     createFxGroup: () => nextNode++,
@@ -68,8 +69,11 @@ function createSpyBridge() {
     },
     async ensureSamplePlaybackDuration() { return 1 },
     sendTimedControl(_time: number, nodeId: number, params: (string | number)[]) {
-      controls.push({ nodeId, params, time: _time })
+      // Record the snapshot of synths flushed BEFORE this control so a test can
+      // assert the node's /s_new was emitted (separate bundle) first (#567).
+      controls.push({ nodeId, params, time: _time, synthsFlushedBefore: flushedSynthCount })
     },
+    flushMessages() { flushedSynthCount = synths.length },
     freeNode() { /* no-op */ },
     get audioContext() { return null },
   }
@@ -234,12 +238,15 @@ end`)
 
     expect(spy.synths.length).toBeGreaterThan(0)
     expect(spy.controls.length).toBeGreaterThan(0)
-    // Each control must be timestamped strictly after the synth it targets,
-    // so scsynth latches the cutoff Lag at 30 before the control sets 100.
+    // Each control must (a) be timestamped strictly after the synth it targets
+    // AND (b) have had the pending queue flushed first, so the node's /s_new
+    // went out in its OWN bundle before the /n_set — a single shared-timetag
+    // bundle would make WASM scsynth init the Lag at the target (the real bug).
     for (const c of spy.controls) {
       const node = spy.synths.find((s) => s.id === c.nodeId)
       expect(node).toBeDefined()
       expect(c.time).toBeGreaterThan(node!.t)
+      expect(c.synthsFlushedBefore).toBeGreaterThan(0) // /s_new flushed before /n_set
       expect(paramsToObj(c.params).cutoff).toBe(100)
     }
     engine.dispose()
