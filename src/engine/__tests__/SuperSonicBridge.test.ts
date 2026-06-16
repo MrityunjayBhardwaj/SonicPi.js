@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SuperSonicBridge } from '../SuperSonicBridge'
+import { MIXER } from '../config'
 
 /** Extract the OSC address string from a raw OSC bundle (starts after 16-byte header + 4-byte size). */
 function extractBundleAddress(bundle: Uint8Array): string {
@@ -88,6 +89,47 @@ describe('SuperSonicBridge', () => {
     expect(mockSonic.loadSynthDef).toHaveBeenCalledWith('sonic-pi-mixer')
     expect(mockSonic.sync).toHaveBeenCalled()
     expect(mockSonic.node.connect).toHaveBeenCalled()
+  })
+
+  // #579 — set_volume! over-attenuated web ~50×. Two compounding bugs:
+  // (1) the engine divided the 0-5 value by 5 (unity 1.0 → 0.2); (2) this
+  // method scaled BOTH scsynth pre_amp AND the Web Audio masterGainNode by the
+  // value, multiplying them (≈v²). The fix: 1.0 = unity, drive ONE stage
+  // (scsynth pre_amp), leave masterGainNode at unity.
+  it('setMasterVolume drives ONLY scsynth pre_amp, 1.0 = unity, no masterGain double-apply (#579)', async () => {
+    const { mockSonic, sent } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    // masterGainNode is the single GainNode created during init.
+    const gainNode = mockSonic.audioContext.createGain.mock.results[0].value
+
+    const lastPreAmp = (): number => {
+      const calls = sent.filter((c) => c.address === '/n_set' && c.args.includes('pre_amp'))
+      const args = calls[calls.length - 1].args
+      return args[args.indexOf('pre_amp') + 1] as number
+    }
+
+    // 1.0 = unity → pre_amp stays at the baseline (no-op).
+    bridge.setMasterVolume(1.0)
+    expect(lastPreAmp()).toBeCloseTo(MIXER.PRE_AMP, 6)
+
+    // 0.5 = half → pre_amp halved (NOT squared / collapsed).
+    bridge.setMasterVolume(0.5)
+    expect(lastPreAmp()).toBeCloseTo(MIXER.PRE_AMP * 0.5, 6)
+
+    // Boost (>1) is allowed up to 5 — a boost, not the old ÷5 attenuation.
+    bridge.setMasterVolume(2)
+    expect(lastPreAmp()).toBeCloseTo(MIXER.PRE_AMP * 2, 6)
+    bridge.setMasterVolume(10)
+    expect(lastPreAmp()).toBeCloseTo(MIXER.PRE_AMP * 5, 6) // clamped to 5
+
+    // The Web Audio masterGainNode must stay at unity — never driven by volume
+    // (it is UI-feedback-only). Driving it too caused the ≈v² collapse.
+    expect(gainNode.gain.setTargetAtTime).not.toHaveBeenCalled()
+    expect(gainNode.gain.value).toBe(1)
   })
 
   it('triggerSynth queues message, flushMessages sends bundle', async () => {

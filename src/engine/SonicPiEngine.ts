@@ -677,7 +677,11 @@ export class SonicPiEngine {
       let currentVolume = 1
       const set_volume = (vol: number) => {
         currentVolume = Math.max(0, Math.min(5, vol))
-        this.bridge?.setMasterVolume(currentVolume / 5) // normalize 0-5 → 0-1
+        // Pass the 0-5 value straight through: setMasterVolume treats 1.0 as
+        // unity (no-op) and scales the mixer pre_amp by it. The old `/5` mapped
+        // unity to 0.2 and (with the bridge double-apply) collapsed audio to
+        // near-silence (#579).
+        this.bridge?.setMasterVolume(currentVolume)
       }
       // Used by AudioInterpreter's setVolume step — same body as set_volume,
       // but exposed as a stable reference so the interpreter can update the

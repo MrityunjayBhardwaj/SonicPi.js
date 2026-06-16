@@ -712,7 +712,9 @@ export async function runProgram(
         if (ctx.onVolumeChange) {
           ctx.onVolumeChange(vol)
         } else {
-          ctx.bridge?.setMasterVolume(vol / 5)
+          // Fallback when the engine didn't wire onVolumeChange: 1.0 = unity,
+          // pass the 0-5 value through (no `/5` — see #579).
+          ctx.bridge?.setMasterVolume(vol)
         }
         break
       }

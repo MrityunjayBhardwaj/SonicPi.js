@@ -385,18 +385,26 @@ export class SuperSonicBridge {
     return null
   }
 
-  /** Set master volume (0-1). Controls both scsynth mixer pre_amp and Web Audio gain. */
+  /**
+   * Set master volume. Range mirrors desktop `set_volume!`: 0–5 where **1.0 =
+   * unity** (the no-op baseline), not 1/5 of max. The UI slider's 0–1 range is
+   * a subset (1 = full). Boost (>1) is allowed up to 5 and is tamed by the
+   * mixer's `Limiter.ar(0.99)`, exactly as desktop does.
+   *
+   * Drives a SINGLE gain stage — the scsynth mixer `pre_amp` (the documented
+   * primary volume control, upstream of the limiter and the recording tap).
+   * It deliberately does NOT also scale the Web Audio `masterGainNode`: that
+   * node is UI-feedback-only and stays at unity. Driving both multiplied the
+   * value (≈v²) and collapsed the output to near-silence (#579).
+   */
   setMasterVolume(volume: number): void {
-    const clamped = Math.max(0, Math.min(1, volume))
+    const clamped = Math.max(0, Math.min(5, volume))
     this.currentMasterVolume = clamped
     // pre_amp on the wire = master volume × user-pref pre_amp baseline.
-    // The pref baseline lets users dial in headroom independent of volume.
+    // The pref baseline lets users dial in headroom independent of volume;
+    // volume 1.0 leaves it at the baseline (unity / no-op).
     const scaledPreAmp = clamped * this.currentMixerPreAmp
     this.sonic?.send('/n_set', this.mixerNodeId, 'pre_amp', scaledPreAmp)
-    // Web Audio gain for UI slider feedback (not the primary volume control)
-    if (this.masterGainNode) {
-      this.masterGainNode.gain.setTargetAtTime(clamped, this.masterGainNode.context.currentTime, 0.02)
-    }
   }
 
   /** Set mixer amp (final gain stage). Live — sends /n_set immediately if
