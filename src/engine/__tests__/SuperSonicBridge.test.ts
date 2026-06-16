@@ -413,7 +413,7 @@ describe('SuperSonicBridge', () => {
     expect(applied).toEqual(['hpf'])
   })
 
-  it('resetMixer /n_sets all five MIXER defaults plus three bypass clears', async () => {
+  it('resetMixer /n_sets all MIXER defaults, bypass clears, and slide clears (#582)', async () => {
     const { mockSonic, sent } = createMockSuperSonic()
     ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
     const bridge = new SuperSonicBridge()
@@ -424,13 +424,54 @@ describe('SuperSonicBridge', () => {
 
     const sets = sent.filter(m => m.address === '/n_set')
     expect(sets.length).toBe(1)
-    // All eight params packed into one /n_set call.
+    // All params packed into one /n_set call: 5 values + 3 bypass clears +
+    // 4 slide clears (#582 — slides reset to 0 so the reset snaps).
     const args = sets[0].args as Array<string | number>
     const paramNames = args.filter((_, i) => i > 0 && i % 2 === 1)
     expect(paramNames).toEqual([
       'amp', 'pre_amp', 'hpf', 'lpf', 'limiter_bypass',
       'hpf_bypass', 'lpf_bypass', 'leak_dc_bypass',
+      'pre_amp_slide', 'amp_slide', 'hpf_slide', 'lpf_slide',
     ])
+  })
+
+  // #581 — set_mixer_control! must accept *_slide glide times, else a sweep
+  // (`set_mixer_control! lpf: 30, lpf_slide: 16`) snaps instead of gliding.
+  it('setMixerControl accepts *_slide params (#581)', async () => {
+    const { mockSonic, sent } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+    sent.length = 0
+
+    const applied = bridge.setMixerControl({ lpf: 30, lpf_slide: 16, pre_amp_slide: 0.5 })
+    expect(applied).toEqual(['lpf', 'lpf_slide', 'pre_amp_slide'])
+    const sets = sent.filter(m => m.address === '/n_set')
+    expect(sets.map(s => s.args[1])).toEqual(['lpf', 'lpf_slide', 'pre_amp_slide'])
+  })
+
+  // #582 — resetMixer must reset the CACHED gain state, not just the wire.
+  // Otherwise a UI pre-amp slider drag (setMixerPreAmp) after set_volume! +
+  // reset_mixer! re-multiplies by the stale currentMasterVolume.
+  it('resetMixer clears stale master volume so a later setMixerPreAmp is not re-attenuated (#582)', async () => {
+    const { mockSonic, sent } = createMockSuperSonic()
+    ;(globalThis as Record<string, unknown>).SuperSonic = vi.fn(() => mockSonic)
+    const bridge = new SuperSonicBridge()
+    await bridge.init()
+
+    const lastPreAmp = (): number => {
+      const calls = sent.filter((c) => c.address === '/n_set' && c.args.includes('pre_amp'))
+      const args = calls[calls.length - 1].args
+      return args[args.indexOf('pre_amp') + 1] as number
+    }
+
+    bridge.setMasterVolume(0.5)          // currentMasterVolume = 0.5
+    bridge.resetMixer()                  // must reset currentMasterVolume → 1
+    expect(lastPreAmp()).toBeCloseTo(MIXER.PRE_AMP, 6) // composed 1 × baseline, not 0.5×
+
+    // The UI pre-amp slider now lands at its raw value, not 0.5× of it.
+    bridge.setMixerPreAmp(0.5)
+    expect(lastPreAmp()).toBeCloseTo(0.5, 6) // 1 × 0.5, NOT stale 0.5 × 0.5 = 0.25
   })
 
   it('getScsynthInfo returns a config dict with sample-rate-derived fields', async () => {

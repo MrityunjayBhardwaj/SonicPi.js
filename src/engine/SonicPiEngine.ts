@@ -2525,12 +2525,16 @@ export class SonicPiEngine {
   }
 
   /**
-   * Set master volume. Range: 0 (silent) to 1 (full).
-   * Safe to call before `init()` — applied when the audio bridge is ready.
+   * Set master volume. Range 0–5 where **1.0 = unity** (matches the `set_volume!`
+   * DSL); the UI slider's 0–1 is a subset (1 = full). Values >1 boost and are
+   * tamed by the mixer limiter. Clamped here to [0,5] so the public contract is
+   * self-documenting and a future caller can't silently re-introduce the #579
+   * `/5` mis-map. Safe to call before `init()` — applied when the bridge is ready.
    */
   setVolume(volume: number): void {
-    this.pendingVolume = volume
-    this.bridge?.setMasterVolume(volume)
+    const clamped = Math.max(0, Math.min(5, volume))
+    this.pendingVolume = clamped
+    this.bridge?.setMasterVolume(clamped)
   }
 
   /** Set mixer amp (0.5–6 typical). Live — propagates to scsynth /n_set

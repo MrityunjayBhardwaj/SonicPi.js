@@ -431,15 +431,22 @@ export class SuperSonicBridge {
   /**
    * Set arbitrary mixer params (Tier C PR #3 #255 — set_mixer_control! DSL).
    * The allowlist matches the sonic-pi-mixer synthdef's parameter vocabulary
-   * (pre_amp/amp/hpf/lpf and four bypass flags). Param names not in this
-   * set are silently dropped by scsynth, so we filter + surface a console
-   * warning instead — making the parameter-name boundary loud rather than
-   * quiet. Returns the names actually applied for telemetry / test assertion.
+   * (pre_amp/amp/hpf/lpf, their *_slide glide times, and four bypass flags).
+   * Param names not in this set are silently dropped by scsynth, so we filter
+   * + surface a console warning instead — making the parameter-name boundary
+   * loud rather than quiet. Returns the names actually applied for telemetry.
    */
   setMixerControl(opts: Record<string, number>): string[] {
     if (!this.sonic) return []
     const ALLOWED = new Set([
       'pre_amp', 'amp', 'hpf', 'lpf',
+      // *_slide glide-time params — paired 1:1 with the four control params.
+      // Desktop's canonical example is `set_mixer_control! lpf: 30, lpf_slide:
+      // 16` (sound.rb:1035); the sonic-pi-mixer synthdef declares these
+      // (synthinfo.rb:5637-5660, default 0.02). Without them a mixer sweep
+      // snaps instead of gliding (#581). force_mono/invert_stereo are separate
+      // mixer features — deferred.
+      'pre_amp_slide', 'amp_slide', 'hpf_slide', 'lpf_slide',
       'hpf_bypass', 'lpf_bypass', 'limiter_bypass', 'leak_dc_bypass',
     ])
     const applied: string[] = []
@@ -459,18 +466,34 @@ export class SuperSonicBridge {
    * Reset mixer to MIXER config defaults (Tier C PR #3 #255 — reset_mixer! DSL).
    * Mirrors the initialization sequence in connect() so a sweep can be
    * undone in one call.
+   *
+   * Resets the CACHED gain state (currentMasterVolume / currentMixerPreAmp /
+   * currentMixerAmp) as well as the wire, and sends a COMPOSED pre_amp
+   * (mirroring connect() :301 and setMixerPreAmp :426). Without this, the wire
+   * was reset but the cached fields stayed stale, so a later UI pre-amp slider
+   * drag (setMixerPreAmp) or a mixer re-init re-multiplied by the stale
+   * master volume (#582). Slides are reset to 0 so the reset SNAPS rather than
+   * gliding over any slide armed via set_mixer_control! (#581).
    */
   resetMixer(): void {
     if (!this.sonic) return
+    this.currentMasterVolume = 1
+    this.currentMixerPreAmp = MIXER.PRE_AMP
+    this.currentMixerAmp = MIXER.AMP
     this.sonic.send('/n_set', this.mixerNodeId,
-      'amp', MIXER.AMP,
-      'pre_amp', MIXER.PRE_AMP,
+      'amp', this.currentMixerAmp,
+      'pre_amp', this.currentMasterVolume * this.currentMixerPreAmp,
       'hpf', MIXER.HPF,
       'lpf', MIXER.LPF,
       'limiter_bypass', MIXER.LIMITER_BYPASS,
       'hpf_bypass', 0,
       'lpf_bypass', 0,
       'leak_dc_bypass', 0,
+      // Clear any slide armed by set_mixer_control! so the reset is instant.
+      'pre_amp_slide', 0,
+      'amp_slide', 0,
+      'hpf_slide', 0,
+      'lpf_slide', 0,
     )
   }
 
