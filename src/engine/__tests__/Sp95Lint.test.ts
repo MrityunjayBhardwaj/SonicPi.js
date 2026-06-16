@@ -123,4 +123,20 @@ describe('Sp95Lint — deprecation warnings (loud-not-silent, SV50/SV60 channel)
   it('does NOT warn when with_tempo only appears in a comment', () => {
     expect(detectSp95Limitations('play 60 # with_tempo is the old name')).toEqual([])
   })
+
+  it('warns on no-bang set_volume (NoMethodError on desktop — silent) — #586', () => {
+    const w = detectSp95Limitations('set_volume 0.5\nsample :bd_fat')
+    expect(w).toHaveLength(1)
+    expect(w[0].pattern).toBe('set_volume')
+    expect(w[0].message).toMatch(/set_volume!/)
+  })
+
+  it('does NOT warn on the valid set_volume! (with bang) form — #586', () => {
+    expect(detectSp95Limitations('set_volume! 0.5\nsample :bd_fat')).toEqual([])
+  })
+
+  it('does NOT warn on set_volume in a comment, nor on longer identifiers — #586', () => {
+    expect(detectSp95Limitations('play 60 # set_volume vs set_volume!')).toEqual([])
+    expect(detectSp95Limitations('set_volume_target = 0.5')).toEqual([])
+  })
 })

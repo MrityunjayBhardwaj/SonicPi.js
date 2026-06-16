@@ -61,6 +61,27 @@ export function detectSp95Limitations(src: string): Sp95Warning[] {
     })
   }
 
+  // `set_volume` (no bang) is NOT a Sonic Pi function — desktop has only
+  // `set_volume!` (mixer.rb / lang.rb `set_volume!`) and RAISES a NoMethodError
+  // on the bangless form, halting the program (silence). Our transpiler strips
+  // the Ruby bang BEFORE matching (`set_volume!` → `set_volume`, line ~1494),
+  // so by the time the call resolves both forms are indistinguishable and the
+  // engine leniently runs the no-bang form too. This source-level lint runs
+  // BEFORE the strip, so it can fire on the no-bang form ONLY — making the
+  // divergence-from-desktop loud rather than silent (#586, loud-not-silent /
+  // SV50). Negative lookahead `(?![!\w])` excludes the valid `set_volume!`
+  // form and longer identifiers (`set_volume_foo`); the `^[^#\n]*` guard skips
+  // comment lines and inline `# … set_volume` comments.
+  if (/^[^#\n]*\bset_volume(?![!\w])/m.test(src)) {
+    warnings.push({
+      pattern: 'set_volume',
+      title: 'set_volume is not a Sonic Pi function',
+      message:
+        'Did you mean `set_volume!`? Running the no-bang `set_volume` as `set_volume!`. ' +
+        'Desktop Sonic Pi has only `set_volume!` (with bang) and errors on `set_volume`.',
+    })
+  }
+
   // `with_tempo` is deprecated since Sonic Pi v2.0 — desktop RAISES a
   // DeprecationError (core.rb:3641-3642). We keep the user's code running by
   // aliasing it to `with_bpm` (transpiler) and surface this warning so the
