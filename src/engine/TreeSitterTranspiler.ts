@@ -1130,6 +1130,35 @@ function extractLiteralSynthArg(callNode: any): string | null {
   return null
 }
 
+// #585: is a non-literal `use_synth` arg SELF-CONTAINED — i.e. references no free
+// top-level variable, only literals + DSL function calls (choose/ring/scale/…)?
+// Only such an expr may be hoisted to an eager top-level draw, because a free var
+// (e.g. `synths` in `choose(synths)`) is assigned in DEFERRED bareCode and would
+// be `undefined` at eager-draw time (a throw, or a wrong synth). An identifier is
+// allowed only when it is the `method` name of a call; any value-position
+// identifier marks the expr var-dependent → leave it deferred (current :beep
+// fallback, no regression). This also sidesteps the harder mid-PRNG-sequence
+// fixtures (e.g. 40_choose_generator) whose draw order can't be preserved by a
+// pure eager hoist — those need deferred loop registration (out of scope here).
+function isSelfContainedSynthExpr(node: any): boolean {
+  // web-tree-sitter returns DISTINCT JS wrappers for the same underlying node via
+  // childForFieldName vs namedChildren, so identity must be by position, not ref.
+  const posKey = (n: any): string => `${n.startIndex}:${n.endIndex}`
+  const methodKeys = new Set<string>()
+  const idNodes: any[] = []
+  const walk = (n: any): void => {
+    if (!n) return
+    if (n.type === 'call' || n.type === 'method_call') {
+      const mn = n.childForFieldName('method')
+      if (mn) methodKeys.add(posKey(mn))
+    }
+    if (n.type === 'identifier') idNodes.push(n)
+    for (const ch of n.namedChildren ?? []) walk(ch)
+  }
+  walk(node)
+  return idNodes.every(id => methodKeys.has(posKey(id)))
+}
+
 // #421/SV55: a numeric literal (incl. signed) — the only arg shape we will
 // hoist into an eager prefix for use_transpose / use_synth_defaults. Runtime
 // expressions (vars, rrand) are NOT hoisted: re-emitting them before the loop
@@ -1228,8 +1257,20 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   // parity, runtime.rb:1067). `blockSynth` tags each registration-capturing
   // block with the synth that was current when it appeared. use_synth still
   // flows to bareCode (deferred) for bare-play interleave — this only records.
-  let currentTopSynth: string | null = null
-  const blockSynth = new Map<any, string | null>()
+  // #585: a top-level synth tag is either a LITERAL name (`use_synth :tri` →
+  // emit `use_synth("tri")`) or a HOISTED VAR for a non-literal arg
+  // (`use_synth choose(...)` → draw once into `__sy_N` in topJS, then
+  // `use_synth(__sy_N)`). The var form is what extends the #419/#421 eager-prefix
+  // family to dynamic synth args without dropping them (→ stale `:beep`).
+  type TopSynth = { lit: string } | { var: string } | null
+  let currentTopSynth: TopSynth = null
+  const blockSynth = new Map<any, TopSynth>()
+  // #585: non-literal `use_synth` hoists. Each maps the use_synth CALL node to a
+  // generated var + its arg node. The var is assigned ONCE in topJS (eager draw,
+  // before any loop registers); a loop tagged with {var} emits `use_synth(var)`;
+  // the bareCode use_synth is rewritten to reuse the var (no second PRNG draw).
+  let nonLiteralSynthCounter = 0
+  const synthHoistByNode = new Map<any, { varName: string; argNode: any }>()
   // #421/SV55: same source-order tracking for use_transpose / use_synth_defaults
   // (also fork-snapshotted thread-locals in desktop, sound.rb:1481-1484/:4139).
   // We store the CALL NODE (re-transpiled into the eager prefix) when its args
@@ -1262,9 +1303,26 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
       : null
 
     // #419/SV55: a top-level `use_synth` advances the source-order synth. A
-    // non-literal arg yields null (unknowable at build time → no eager prefix).
+    // literal arg tags blocks with the name; a non-literal arg (#585) is hoisted
+    // to a top-level var so the loop still gets the chosen synth (was dropped →
+    // stale `:beep`), drawn exactly once.
     if (method === 'use_synth') {
-      currentTopSynth = extractLiteralSynthArg(child)
+      const lit = extractLiteralSynthArg(child)
+      if (lit !== null) {
+        currentTopSynth = { lit }
+      } else {
+        const argNode = child.childForFieldName('arguments')?.namedChildren?.[0]
+        if (argNode && isSelfContainedSynthExpr(argNode)) {
+          const varName = `__sy_${nonLiteralSynthCounter++}`
+          synthHoistByNode.set(child, { varName, argNode })
+          currentTopSynth = { var: varName }
+        } else {
+          // var-dependent / mid-PRNG-sequence arg, or bare `use_synth` — cannot
+          // hoist safely; leave it deferred in bareCode (no eager prefix; the
+          // loop keeps the prior default — unchanged from before #585).
+          currentTopSynth = null
+        }
+      }
     }
     // #421/SV55: same for use_transpose / use_synth_defaults (literal args only;
     // a non-literal arg → null → no eager prefix, stays deferred in __run_once).
@@ -1355,6 +1413,25 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   // Transpile top-level settings
   const topJS = topLevel.map(c => transpileNode(c, ctx)).filter(Boolean)
 
+  // #585: emit the eager draw for each non-literal `use_synth` that a
+  // loop-registering block actually inherited (tagged via blockSynth). The draw
+  // runs ONCE here in topJS — before any loop registers — so the loop's
+  // `use_synth(__sy_N)` eager prefix (below) sees the chosen synth instead of the
+  // stale default (`:beep`). The bareCode copy is rewritten to reuse the var (no
+  // second PRNG draw). A non-literal use_synth that no loop follows is left
+  // untouched in bareCode (draws normally at its source position). NOTE: the draw
+  // moves to evaluate-time (ahead of any PRNG draws still inside __run_once); for
+  // the common `use_synth <dynamic>` BEFORE the loop (no preceding bare draw) the
+  // order matches desktop. The reuse var keeps bare-play interleave correct.
+  const consumedSynthVars = new Set<string>()
+  for (const tag of blockSynth.values()) if (tag && 'var' in tag) consumedSynthVars.add(tag.var)
+  const synthReuseInBare = new Map<any, string>() // use_synth node → var (bareCode rewrite)
+  for (const [node, { varName, argNode }] of synthHoistByNode) {
+    if (!consumedSynthVars.has(varName)) continue
+    topJS.push(`${varName} = ${transpileNode(argNode, ctx)}`)
+    synthReuseInBare.set(node, varName)
+  }
+
   // Transpile bare code inside an implicit in_thread (runs once, not forever)
   // Desktop SP runs bare code once — thread terminates at end.
   // SP95(d): bare top-level code runs inside an async `__run_once` live_loop,
@@ -1365,9 +1442,15 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     // in_thread's source position — `__run_once` reaches it at the accumulated
     // cursor vtime, so the waiting in_thread forks there. (cue is non-blocking,
     // unlike sync — no build deadlock; SP118 trap (c).)
-    .map(c => (c && (c as any).__sgMarker)
-      ? `  __b.cue(${JSON.stringify((c as any).__sgMarker)})`
-      : '  ' + transpileNode(c, bareCtx))
+    .map(c => {
+      if (c && (c as any).__sgMarker) return `  __b.cue(${JSON.stringify((c as any).__sgMarker)})`
+      // #585: a non-literal `use_synth` whose value a loop inherited was drawn
+      // eagerly into `__sy_N` in topJS — reuse it here so the bare-play interleave
+      // stays correct WITHOUT a second PRNG draw.
+      const reuseVar = synthReuseInBare.get(c)
+      if (reuseVar) return `  __b.use_synth(${reuseVar})`
+      return '  ' + transpileNode(c, bareCtx)
+    })
     .filter(s => s.trim())
 
   // Transpile block-level constructs. Top-level bare `loop do … end` blocks
@@ -1405,9 +1488,15 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     const isLoopRegister = m === 'live_loop' || m === 'loop' || m === 'in_thread' || m === 'with_fx'
     const tagged = blockSynth.get(c) ?? null
     let eagerPrefix = ''
-    if (tagged !== null && isLoopRegister && tagged !== lastEagerSynth) {
-      eagerPrefix = `use_synth(${JSON.stringify(tagged)})\n`
-      lastEagerSynth = tagged
+    if (tagged && isLoopRegister) {
+      // {lit} → use_synth("name"); {var} → use_synth(__sy_N) (#585, the var was
+      // drawn once in topJS). Dedup by the emitted arg text (defaultSynth persists
+      // across registrations, so a run of loops on the same synth emits once).
+      const arg = 'lit' in tagged ? JSON.stringify(tagged.lit) : tagged.var
+      if (arg !== lastEagerSynth) {
+        eagerPrefix = `use_synth(${arg})\n`
+        lastEagerSynth = arg
+      }
     }
     // #421/SV55: transpose / synth_defaults eager prefixes — re-transpile the
     // recorded literal call node at top level (a bare call → topLevelUseTranspose

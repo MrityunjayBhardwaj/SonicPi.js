@@ -197,4 +197,36 @@ when 2 # second case
 end`
     assertTreeSitterSuccess(code, 'case/when with inline comments')
   })
+
+  // #585: a non-literal `use_synth` before a loop must reach the loop (was dropped
+  // → stale `:beep`). A SELF-CONTAINED arg (literals + DSL calls only) is hoisted
+  // to a single eager top-level draw; a VAR-dependent arg safely stays deferred.
+  describe('#585 — non-literal use_synth before a loop', () => {
+    it('self-contained choose([...]) is hoisted: drawn once, eager prefix, bareCode reuse', () => {
+      const r = autoTranspileDetailed('use_synth choose([:tri, :saw])\nloop do\n  play 60\n  sleep 0.5\nend')
+      expect(r.hasError).toBe(false)
+      // drawn ONCE into a hoist var at top level (before the loop registers)
+      expect(r.code).toMatch(/__sy_0 = choose\(\["tri", "saw"\]\)/)
+      // eager prefix carries it into the loop registration (not :beep)
+      expect(r.code).toMatch(/use_synth\(__sy_0\)/)
+      // bareCode reuses the var — NO second choose() draw
+      expect((r.code.match(/choose\(/g) ?? []).length).toBe(1)
+    })
+
+    it('var-dependent choose(synths) is NOT hoisted (no undefined-var read, stays deferred)', () => {
+      const r = autoTranspileDetailed('synths = [:tri, :saw]\nuse_synth choose(synths)\nloop do\n  play 60\n  sleep 0.5\nend')
+      expect(r.hasError).toBe(false)
+      // no eager hoist var — the free var `synths` lives in deferred bareCode
+      expect(r.code).not.toMatch(/__sy_\d+ = /)
+      // the use_synth stays inline in bareCode with its original expression
+      expect(r.code).toMatch(/__b\.use_synth\(__b\.choose\(synths\)\)/)
+    })
+
+    it('literal use_synth :tri still emits the eager string prefix (unchanged)', () => {
+      const r = autoTranspileDetailed('use_synth :tri\nloop do\n  play 60\n  sleep 0.5\nend')
+      expect(r.hasError).toBe(false)
+      expect(r.code).toMatch(/use_synth\("tri"\)/)
+      expect(r.code).not.toMatch(/__sy_\d+/)
+    })
+  })
 })
