@@ -45,6 +45,35 @@ describe('compareEvent (cueevent.rb:64-74 — t then idPath)', () => {
     expect(compareEvent({ t: 0.5, idPath: [0] }, { t: 0.5, idPath: [0] })).toBe(0)
     expect(compareEvent({ t: 0.5, idPath: [0] }, { t: 0.5 + 1e-12, idPath: [0] })).toBe(-1)
   })
+  it('#588 — orders by priority BETWEEN t and idPath (heartbeat -100 < set 0)', () => {
+    // Same t + same idPath: the live_loop heartbeat (priority -100) sorts BELOW a
+    // set/cue (priority 0), matching desktop cueevent.rb:67-68.
+    expect(compareEvent({ t: 1, idPath: [0], priority: -100 }, { t: 1, idPath: [0], priority: 0 })).toBe(-1)
+    expect(compareEvent({ t: 1, idPath: [0], priority: 0 }, { t: 1, idPath: [0], priority: -100 })).toBe(1)
+    // priority defaults to 0 when omitted (reader ge probe / pre-priority callers).
+    expect(compareEvent({ t: 1, idPath: [0] }, { t: 1, idPath: [0], priority: -100 })).toBe(1)
+    // t still dominates priority (a later heartbeat outranks an earlier set).
+    expect(compareEvent({ t: 2, idPath: [0], priority: -100 }, { t: 1, idPath: [0], priority: 0 })).toBe(1)
+  })
+})
+
+describe('EventHistory #588 — a co-t live_loop heartbeat must NOT win get over a set', () => {
+  it('getMostRecent returns the set value, not the lower-priority heartbeat, at equal t', () => {
+    const h = new EventHistory()
+    // A loop NAMED :mixer that also `set :mixer` — heartbeat and set land on the
+    // union read at the SAME t, same writer idPath. The set (priority 0) must win.
+    h.insert('/live_loop/mixer', 1, [0, 0], { args: [], bpm: 45 }, -100)
+    h.insert('/set/mixer', 1, [0, 0], [0, 2, 1], 0)
+    // The union read `get :mixer` scans /{cue,set,live_loop}/mixer.
+    const hit = h.getMostRecent('/{cue,set,live_loop}/mixer', 5, [0, 0])
+    expect(hit!.value).toEqual([0, 2, 1])
+  })
+  it('the heartbeat still wins when it is the ONLY event (sync :loop heartbeat intact)', () => {
+    const h = new EventHistory()
+    h.insert('/live_loop/mixer', 1, [0, 0], { args: [], bpm: 45 }, -100)
+    const hit = h.getMostRecent('/{cue,set,live_loop}/mixer', 5, [0, 0])
+    expect(hit!.value).toEqual({ args: [], bpm: 45 })
+  })
 })
 
 describe('EventHistory.insert — descending (t, idPath) order', () => {

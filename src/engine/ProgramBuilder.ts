@@ -73,6 +73,13 @@ export class ProgramBuilder {
   private _currentBuildSeconds: number = 0
   private _currentBeat: number = 0
   private _schedAheadTime: number = 0
+  // #588: ABSOLUTE iteration-start time (task.virtualTime, NOT #364-rebased).
+  // timeStateClock() uses this directly so set/get stamp the shared store in the
+  // scheduler's ABSOLUTE cue/heartbeat frame WITHOUT a subtract-then-add-origin
+  // round-trip (which introduced float noise that occasionally put a set's t an
+  // epsilon BELOW its co-located heartbeat, losing the priority tiebreak).
+  // Defaults to _iterationStartAudioTime when unset (unwired builders, origin 0).
+  private _iterationStartAbsolute: number = 0
   // SP95(d) #393: scheduler access for build-time sync resolution. When set
   // (the audio build path wires it before builderFn), `sync` awaits the
   // scheduler-resolved cue payload mid-build instead of pushing a runtime
@@ -462,12 +469,17 @@ export class ProgramBuilder {
    *    body still overrides per-step.
    * (#226)
    */
-  setIterationContext(audioTime: number, beat: number, schedAhead: number, bpm?: number): void {
+  setIterationContext(audioTime: number, beat: number, schedAhead: number, bpm?: number, absoluteStartTime?: number): void {
     this._iterationStartAudioTime = audioTime
     this._currentBeat = beat
     this._currentBuildSeconds = 0
     this._schedAheadTime = schedAhead
     if (bpm !== undefined) this._currentBpm = bpm
+    // #588: the UN-rebased iteration start (the scheduler's absolute
+    // task.virtualTime). Used by timeStateClock() so set/get stamp the shared
+    // store in the same ABSOLUTE frame as cue/sync/live_loop heartbeats — passed
+    // directly (not reconstructed from audioTime + origin) to avoid float noise.
+    this._iterationStartAbsolute = absoluteStartTime ?? audioTime
   }
 
   /**
@@ -530,6 +542,22 @@ export class ProgramBuilder {
    */
   current_time(): number {
     return this._iterationStartAudioTime + this._currentBuildSeconds
+  }
+
+  /**
+   * The ABSOLUTE virtual time used to stamp coordination-store writes/reads
+   * (`set`/`get`). #588: `current_time()` is rebased per-Run (#364 — subtract
+   * `_spiderTimeOrigin` for desktop-equivalent user-facing seconds), but the
+   * shared EventHistory ALSO holds `cue`/`sync`/`live_loop`-heartbeat events,
+   * which the scheduler stamps with the ABSOLUTE `task.virtualTime`. A `get :foo`
+   * reads the `/{cue,set,live_loop}/foo` union, so its `set` writes MUST live in
+   * the same frame as those cue/heartbeat entries — otherwise a loop NAMED `:foo`
+   * that also `set :foo`s has its heartbeat (absolute, ~`origin`s ahead) beat the
+   * set in a fractional-vt read. Adding `_spiderTimeOrigin` back undoes the #364
+   * rebase for the STORE only; `current_time()`/`vt()` stay rebased for the user.
+   */
+  private timeStateClock(): number {
+    return this._iterationStartAbsolute + this._currentBuildSeconds
   }
 
   /** Engine's schedule-ahead window in seconds. (#226) */
@@ -1145,14 +1173,14 @@ export class ProgramBuilder {
   set(key: string | symbol, value: unknown): this {
     // GAP A2: tag the write with the owning task's idPath so a same-vt reader
     // resolves it by the (t, idPath) total order (#400).
-    this._timeState?.set(key, value, this.current_time(), this._ownerIdPath)
+    this._timeState?.set(key, value, this.timeStateClock(), this._ownerIdPath)
     // #498: desktop's EventHistory.set runs @event_matchers.match after the
     // insert (event_history.rb:204), so a `set` wakes an already-parked `sync`,
     // not just the set-before-sync case the history-first scan covers. The eager
     // write above already landed `value` in the shared store; notifySet only runs
     // the match. Audio path only (the scheduler is the sole waiter holder); the
     // capture / query builders never wire it, so an S3 sync there can't be woken.
-    this._syncScheduler?.notifySet?.(String(key), this.current_time(), this._ownerIdPath, value)
+    this._syncScheduler?.notifySet?.(String(key), this.timeStateClock(), this._ownerIdPath, value)
     this.steps.push({ tag: 'set', key, value })
     return this
   }
@@ -1177,7 +1205,7 @@ export class ProgramBuilder {
       if (!this._timeState) return null
       // GAP A2: read at the owning task's idPath so the (t, idPath) tiebreak
       // resolves a same-vt cross-loop write by writer-idPath ≤ reader-idPath (#400).
-      return this._timeState.get(key, this.current_time(), this._ownerIdPath) ?? null
+      return this._timeState.get(key, this.timeStateClock(), this._ownerIdPath) ?? null
     }
     return new Proxy(read, {
       apply(_target, _thisArg, args) {

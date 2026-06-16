@@ -60,6 +60,16 @@ export interface CueEvent {
   idPath: number[]
   /** The payload — cue args (an array) or a `set` value. */
   value: unknown
+  /**
+   * Desktop `CueEvent#priority` (`cueevent.rb:29,67-68`), the equal-`t` tiebreak
+   * BEFORE `idPath`. Normal `cue`/`set` writes use 0; a live_loop's auto-cue
+   * heartbeat uses `-100` (`__live_loop_cue`, core.rb:4504) so it always sorts
+   * BELOW a co-`t` `set`/`cue` — guaranteeing `get`/`sync :foo` resolve to the
+   * user's value, not the heartbeat, even when a live_loop is NAMED `:foo` and
+   * a reader samples at a fractional vt (e.g. inside a `density` block). Defaults
+   * to 0 when omitted (a reader's `ge` probe and pre-priority callers). (#588)
+   */
+  priority?: number
 }
 
 /**
@@ -81,25 +91,37 @@ export function compareIdPath(a: number[], b: number[]): -1 | 0 | 1 {
 
 /**
  * Total order over events — a port of the user-thread-relevant fields of
- * `CueEvent#<=>` (`cueevent.rb:64-74`): `t` first, then `idPath`. `priority`
- * (always 0) and `delta` (GAP D) are omitted. Returns -1 | 0 | 1.
+ * `CueEvent#<=>` (`cueevent.rb:64-74`): `t` first, then `priority`, then
+ * `idPath`. `delta` (GAP D) is omitted. Returns -1 | 0 | 1.
+ *
+ * `priority` (#588) sits BETWEEN `t` and `idPath`, exactly as desktop orders
+ * `time_r < priority < thread_id < delta`. It defaults to 0 when absent — both
+ * for a reader's `ge` probe (a normal thread reads at priority 0) and for any
+ * pre-priority caller. Only the live_loop heartbeat sets it (`-100`), so this is
+ * a no-op for every pair of normal `cue`/`set` events and changes ordering ONLY
+ * where a heartbeat shares a `t` with a `set`/`cue` — making the heartbeat sort
+ * below it (the desktop guarantee that `get :foo` ≠ the `live_loop :foo` beat).
  *
  * The `t` compare is EXACT — desktop compares `time_r` (an exact Rational,
  * `cueevent.rb:28`), so genuinely-simultaneous events (e.g. a synced waiter that
  * INHERITED the cuer's vt, or a top-level fork sharing a bit-exact launch origin)
- * compare equal on `t` and fall through to the idPath tiebreak. The old fireCue
- * `+ 1e-9` epsilon was a web-only float-noise guard that broke the exact
+ * compare equal on `t` and fall through to the priority/idPath tiebreaks. The old
+ * fireCue `+ 1e-9` epsilon was a web-only float-noise guard that broke the exact
  * "last ≤ t" boundary (a write at vt 0.5 must NOT be visible to a get at
  * 0.5 − 1e-9); the faithful order is exact. (Float-accumulation drift between
  * two independently-summed cursors is a known edge desktop sidesteps via
  * Rational — out of scope here.)
  */
 export function compareEvent(
-  a: { t: number; idPath: number[] },
-  b: { t: number; idPath: number[] },
+  a: { t: number; idPath: number[]; priority?: number },
+  b: { t: number; idPath: number[]; priority?: number },
 ): -1 | 0 | 1 {
   if (a.t < b.t) return -1
   if (a.t > b.t) return 1
+  const ap = a.priority ?? 0
+  const bp = b.priority ?? 0
+  if (ap < bp) return -1
+  if (ap > bp) return 1
   return compareIdPath(a.idPath, b.idPath)
 }
 
@@ -200,8 +222,8 @@ export class EventHistory {
    * list is trimmed: the desktop age trim ({@link trimHistory}) then the
    * `maxPerKey` hard ceiling — both drop the tail (oldest) of the descending list.
    */
-  insert(key: string | symbol, t: number, idPath: number[], value: unknown): void {
-    const ce: CueEvent = { t, idPath, value }
+  insert(key: string | symbol, t: number, idPath: number[], value: unknown, priority = 0): void {
+    const ce: CueEvent = { t, idPath, value, priority }
     const events = this.store.get(key)
     if (!events) {
       this.store.set(key, [ce])

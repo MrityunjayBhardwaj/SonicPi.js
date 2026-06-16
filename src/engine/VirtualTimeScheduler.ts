@@ -513,11 +513,17 @@ export class VirtualTimeScheduler {
     // `/{cue,set,live_loop}/foo`, so it matches whichever root the writer used.
     const firedPath = toWritePath(name, op)
 
-    // Record the cue in the (t, idPath)-ordered history so a late or
+    // Record the cue in the (t, priority, idPath)-ordered history so a late or
     // forked-sibling syncer resolves it correctly (replaces the single-entry
     // cueMap). Value carries the cuer's BPM for sync_bpm waiters (#236).
+    // #588: a live_loop heartbeat is registered at priority -100 (desktop
+    // `__live_loop_cue`, core.rb:4504) so it sorts BELOW a co-`t` `set`/`cue`.
+    // Without this, `get :foo` inside a loop NAMED `:foo` (sampling at a
+    // fractional vt, e.g. in a `density` block) can resolve to the heartbeat
+    // `{args:[],bpm}` instead of the user's `set :foo, value`.
     const value = { args, bpm: cueBpm }
-    this.cueHistory.insert(firedPath, cueVirtualTime, cueIdPath, value)
+    const priority = op === 'live_loop' ? -100 : 0
+    this.cueHistory.insert(firedPath, cueVirtualTime, cueIdPath, value, priority)
 
     // Emit cue event for UI (CueLog panel)
     this.emitEvent({

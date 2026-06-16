@@ -93,6 +93,38 @@ describe('Time State — engine-level cross-loop set/get (SV47 / #350)', () => {
     engine.dispose()
   })
 
+  it('#588 — a loop NAMED its own set key reads its set value, NOT the auto-cue heartbeat', async () => {
+    // A live_loop :mixer auto-cues `:mixer` each iteration (the heartbeat that
+    // `sync :mixer` waits on). It ALSO `set :mixer`s. Both land on the
+    // /{cue,set,live_loop}/mixer read union; the heartbeat's priority -100 must
+    // lose to the set so a cross-loop `get(:mixer)` reads the array. Before the
+    // fix the heartbeat (fired post-iteration, later vt + no priority) won, so
+    // `get(:mixer)[0]` was undefined and the gated play never fired.
+    const engine = new SonicPiEngine()
+    await engine.init()
+    const events: SoundEvent[] = []
+    engine.components.streaming!.eventStream.on((e) => events.push(e))
+    await engine.evaluate(`
+      use_bpm 120
+      set :mixer, [1]
+      live_loop :mixer do
+        set :mixer, [1]
+        sleep 1
+      end
+      live_loop :reader do
+        play 72 if get(:mixer)[0] == 1
+        sleep 1
+      end
+    `)
+    engine.play()
+    await drive(engine, 5, 5)
+    const played = midiNotes(events, 'reader')
+    // get(:mixer) resolves to [1] (not the heartbeat {args,bpm}) → the gate fires.
+    expect(played.length).toBeGreaterThanOrEqual(2)
+    expect(played.every((n) => n === 72)).toBe(true)
+    engine.dispose()
+  })
+
   it('(e) reversed: player declared BEFORE director — reads desktop {52,57} (GAP A2 / #400)', async () => {
     // DESKTOP-PARITY gate (was a documented divergence; SV47 Slice 3 / #400).
     // Source order now matters via the (t, idPath) total order: player declared

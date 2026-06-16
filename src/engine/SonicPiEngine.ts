@@ -1079,6 +1079,13 @@ export class SonicPiEngine {
             this.loopBeats.get(name) ?? 0,
             this.schedAheadTime,
             task.bpm,
+            // #588: pass the ABSOLUTE (un-rebased) iteration start so the builder
+            // stamps set/get STORE writes (timeStateClock) in the scheduler's
+            // absolute cue/heartbeat frame — even though current_time() stays
+            // per-Run rebased. Passed directly (not origin + audioTime) so a set
+            // co-located with a same-iteration live_loop heartbeat shares its exact
+            // t and the heartbeat's priority -100 loses the tie (get returns the set).
+            task.virtualTime,
           )
           // Enter per-loop scope so variable writes are isolated.
           // Track build-phase nesting depth so any `live_loop` call that
@@ -1139,6 +1146,22 @@ export class SonicPiEngine {
             this.loopDelayed.add(name)
             if (delayBeats > 0) builder.sleep(delayBeats)
           }
+          // Auto-cue the loop name at the START of each iteration (#588).
+          // In Sonic Pi, `live_loop :foo` auto-cues `:foo` each iteration so that
+          // `live_loop :bar, sync: :foo` can synchronize to it (core.rb:2308 —
+          // `__live_loop_cue name` runs BEFORE the body `send(ll_name, res)`).
+          // Firing it HERE — before builderFn, at task.virtualTime = the iteration
+          // start — co-locates the heartbeat's vt with this iteration's eager
+          // `b.set` writes (same task cursor). Combined with its priority -100
+          // (fireCue), a co-`t` `set :foo` always wins `get`/`sync :foo`, so a
+          // loop NAMED `:foo` that also `set :foo`s reads its own value, not the
+          // heartbeat `{args:[],bpm}`. (Was fired AFTER runProgram — at the loop's
+          // run-ahead vt, ~schedAhead seconds past the set's frame — so the
+          // heartbeat could lead the set and win a fractional-vt read, e.g. inside
+          // a `density` block. #588 / SV62 family.)
+          // GAP M1c: heartbeat writes the `/live_loop/foo` root; a `sync :foo`
+          // reads the `/{cue,set,live_loop}/foo` union and still matches.
+          scheduler.fireCue(name, name, [], 'live_loop')
           try {
             // SP95(d) #393: await so an S3 body can suspend on a scheduler-resolved
             // sync mid-build. For today's synchronous S1/S2 bodies this `await` is
@@ -1179,13 +1202,11 @@ export class SonicPiEngine {
             onVolumeChange: setVolumeShared,
             onRecordingEvent: recordingHandler,
           })
-
-          // Auto-cue the loop name after each iteration.
-          // In Sonic Pi, `live_loop :foo` auto-cues `:foo` on each iteration
-          // so that `live_loop :bar, sync: :foo` can synchronize to it.
-          // GAP M1c: heartbeat writes the `/live_loop/foo` root; a `sync :foo`
-          // reads the `/{cue,set,live_loop}/foo` union and still matches.
-          scheduler.fireCue(name, name, [], 'live_loop')
+          // (#588) The live_loop heartbeat is now auto-cued at the START of this
+          // iteration — before builderFn, above — matching desktop's
+          // `__live_loop_cue` order and co-locating its vt with the eager `b.set`
+          // writes. It is NO LONGER fired here (post-runProgram), where the loop's
+          // run-ahead cursor put it ahead of the set's frame.
         }
 
         // SP72: when this registration fires from inside a parent builderFn
