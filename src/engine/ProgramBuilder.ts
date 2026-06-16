@@ -192,7 +192,20 @@ export class ProgramBuilder {
     // Chord: Ring or array — push one play step per note (all at the same virtual time).
     if (noteVal instanceof Ring || Array.isArray(noteVal)) {
       const notes: number[] = noteVal instanceof Ring ? noteVal.toArray() : noteVal
-      for (const n of notes) this._pushPlayStep(n, opts)
+      // #577: a chord/array is played at 1/notes.size the amplitude so it isn't
+      // N× louder than a single note. Mirrors desktop `sound.rb:3580` trigger_chord
+      // (`args_h[:amp] = (amp || 1.0) / notes.size`). The RESOLVED amp is divided —
+      // explicit opt, else use_synth_defaults, else 1.0 — then applied per note as
+      // an explicit amp (overrides the default re-merged in _pushPlayStep). Divide
+      // by the full array length: rests still count toward the divisor (desktop
+      // divides by notes.size before skipping nils).
+      if (notes.length > 0) {
+        const baseAmp = (opts?.amp as number | undefined)
+          ?? (this._synthDefaults.amp as number | undefined)
+          ?? 1.0
+        const chordOpts = { ...opts, amp: baseAmp / notes.length }
+        for (const n of notes) this._pushPlayStep(n, chordOpts)
+      }
       return this
     }
     this._pushPlayStep(noteVal, opts)

@@ -583,6 +583,37 @@ describe('Pattern helpers (#211 Tier A)', () => {
     expect(steps.filter(s => s.tag === 'sleep').length).toBe(0)
   })
 
+  it('#577: a chord/array scales amp by 1/notes.size (desktop trigger_chord parity)', () => {
+    const b = new ProgramBuilder()
+    b.play([60, 64, 67], { amp: 0.3 })
+    const plays = b.build().filter(s => s.tag === 'play') as Array<{ opts: Record<string, number> }>
+    expect(plays.length).toBe(3)
+    // amp 0.3 / 3 notes = 0.1 per note (not the full 0.3, which would be 3× too loud)
+    for (const p of plays) expect(p.opts.amp).toBeCloseTo(0.1, 6)
+  })
+
+  it('#577: a chord with no explicit amp divides the default 1.0 across notes', () => {
+    const b = new ProgramBuilder()
+    b.play([60, 64, 67, 72])
+    const plays = b.build().filter(s => s.tag === 'play') as Array<{ opts: Record<string, number> }>
+    for (const p of plays) expect(p.opts.amp).toBeCloseTo(0.25, 6) // 1.0 / 4
+  })
+
+  it('#577: a single-note play is NOT amp-divided', () => {
+    const b = new ProgramBuilder()
+    b.play(60, { amp: 0.3 })
+    const play = b.build().find(s => s.tag === 'play') as { opts: Record<string, number> }
+    expect(play.opts.amp).toBeCloseTo(0.3, 6)
+  })
+
+  it('#577: a chord divides the resolved use_synth_defaults amp', () => {
+    const b = new ProgramBuilder()
+    b.use_synth_defaults({ amp: 0.6 })
+    b.play([60, 64, 67])
+    const plays = b.build().filter(s => s.tag === 'play') as Array<{ opts: Record<string, number> }>
+    for (const p of plays) expect(p.opts.amp).toBeCloseTo(0.2, 6) // 0.6 / 3
+  })
+
   it('play_pattern_timed cycles through times array (sleeps after every note, #404)', () => {
     const b = new ProgramBuilder()
     b.play_pattern_timed([60, 64, 67, 72], [0.25, 0.5])
