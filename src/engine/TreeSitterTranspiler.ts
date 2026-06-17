@@ -266,6 +266,16 @@ interface TranspileContext {
    * propagate into a block's body (a nested in_thread must not inherit it).
    */
   startGate?: string
+  /**
+   * #591: name of the `__sy_N` draw var for a var-dependent / mid-PRNG `use_synth`
+   * (e.g. `choose(synths)`) that this loop source-follows. The var is drawn ONCE in
+   * `__run_once` at its source position (the value is unknown at the loop's eager
+   * registration); the loop carries a `__synthThunk: () => __sy_N` in its opts that
+   * the engine calls at its FIRST iteration build to seed the loop's synth. A thunk
+   * (not the engine defaultSynth) so two dynamic synths before two loops stay
+   * per-loop correct. Set per-block; never propagates into the body.
+   */
+  synthThunkVar?: string
   /** Hoisted-loop counter for `loop do` inside `with_fx` (issue #426/SP111). */
   fxLoopCounter?: { n: number }
   /**
@@ -1262,9 +1272,24 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
   // (`use_synth choose(...)` → draw once into `__sy_N` in topJS, then
   // `use_synth(__sy_N)`). The var form is what extends the #419/#421 eager-prefix
   // family to dynamic synth args without dropping them (→ stale `:beep`).
-  type TopSynth = { lit: string } | { var: string } | null
+  // #591: a third variant — {dynamicVar} — for a NON-self-contained arg
+  // (var-dependent like `choose(synths)`, or mid-PRNG-sequence) that CANNOT be
+  // hoisted to topJS (its value lives in deferred bareCode, drawn at a precise
+  // seeded position). It is drawn ONCE in __run_once at its source position into a
+  // `__sy_N` var; a following loop reads that var lazily via a per-loop
+  // `__synthThunk` (no eager prefix — the var is undefined at eager-registration
+  // time). This replaces the old `:beep` drop for such args.
+  type TopSynth = { lit: string } | { var: string } | { dynamicVar: string } | null
   let currentTopSynth: TopSynth = null
   const blockSynth = new Map<any, TopSynth>()
+  // #591: maps a var-dependent use_synth CALL node → its generated draw var + arg
+  // node. Rendered in bareCode (__run_once) at source position as a single draw
+  // into the var + a builder-local use_synth (bare-play interleave). The following
+  // loop reads the var via its `__synthThunk` opt at first build.
+  const synthDynamicByNode = new Map<any, { varName: string; argNode: any }>()
+  // #591: loop blocks that source-follow a {dynamicVar} use_synth — they carry a
+  // per-loop `__synthThunk: () => __sy_N` reading the var __run_once drew.
+  const blockStateSnapshot = new Set<any>()
   // #585: non-literal `use_synth` hoists. Each maps the use_synth CALL node to a
   // generated var + its arg node. The var is assigned ONCE in topJS (eager draw,
   // before any loop registers); a loop tagged with {var} emits `use_synth(var)`;
@@ -1316,10 +1341,19 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
           const varName = `__sy_${nonLiteralSynthCounter++}`
           synthHoistByNode.set(child, { varName, argNode })
           currentTopSynth = { var: varName }
+        } else if (argNode) {
+          // #591: var-dependent (`choose(synths)`) or mid-PRNG-sequence arg —
+          // cannot hoist to topJS (the var lives in deferred bareCode; an eager
+          // draw would read undefined or reorder the seeded stream). Draw it in
+          // __run_once at source position into a var; a following loop reads it via
+          // a per-loop `__synthThunk` at first build. Was a silent `:beep` drop
+          // before. The var is only emitted if a following loop actually consumes
+          // it (else the use_synth renders normally).
+          const varName = `__sy_${nonLiteralSynthCounter++}`
+          synthDynamicByNode.set(child, { varName, argNode })
+          currentTopSynth = { dynamicVar: varName }
         } else {
-          // var-dependent / mid-PRNG-sequence arg, or bare `use_synth` — cannot
-          // hoist safely; leave it deferred in bareCode (no eager prefix; the
-          // loop keeps the prior default — unchanged from before #585).
+          // Bare `use_synth` with no arg — nothing to propagate.
           currentTopSynth = null
         }
       }
@@ -1380,6 +1414,21 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
         blockGate.set(child, gate)
         bareCode.push({ __sgMarker: gate })
       }
+      // #591: a top-level `live_loop` / bare `loop` that source-follows a
+      // {dynamicVar} use_synth reads the `__sy_N` var (drawn in __run_once AFTER
+      // this loop registered) via a per-loop `__synthThunk` at its first iteration.
+      // This needs NO cue: __run_once's build runs before the loop's first build at
+      // the same vt (the SV70/SV21 invariant — the loop's body already reads bare
+      // top-level vars __run_once set, e.g. `play c`), so __sy_N is set by then. A
+      // cue CAN'T signal this anyway — __run_once and an __inline loop share idPath
+      // [0], and an equal-(t,idPath) cue does not deliver (cueDelivers strict).
+      // Scoped to live_loop / bare loop (the synth-bearing shapes); in_thread /
+      // with_fx stay on the existing eager path (40_choose_generator's in_thread
+      // plays only samples — no synth dependence — so no regression).
+      const followsDynamicSynth = currentTopSynth !== null && 'dynamicVar' in currentTopSynth
+      if (followsDynamicSynth && (method === 'live_loop' || isBareLoopNode)) {
+        blockStateSnapshot.add(child)
+      }
     } else {
       bareCode.push(child)
       // #448/SP118: arm the gate once a vtime-ADVANCING bare statement appears.
@@ -1431,6 +1480,15 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     topJS.push(`${varName} = ${transpileNode(argNode, ctx)}`)
     synthReuseInBare.set(node, varName)
   }
+  // #591: a {dynamicVar} use_synth is consumed iff a thunk-carrying loop follows
+  // it. Only then do we rewrite its bareCode emission to draw into the var (the
+  // following loop reads it via its `__synthThunk`). An unconsumed dynamic
+  // use_synth (no following loop) renders normally — draws at its source position,
+  // same as before, no propagation needed.
+  const consumedDynamicVars = new Set<string>()
+  for (const [block, tag] of blockSynth) {
+    if (tag && 'dynamicVar' in tag && blockStateSnapshot.has(block)) consumedDynamicVars.add(tag.dynamicVar)
+  }
 
   // Transpile bare code inside an implicit in_thread (runs once, not forever)
   // Desktop SP runs bare code once — thread terminates at end.
@@ -1449,6 +1507,17 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
       // stays correct WITHOUT a second PRNG draw.
       const reuseVar = synthReuseInBare.get(c)
       if (reuseVar) return `  __b.use_synth(${reuseVar})`
+      // #591: a {dynamicVar} use_synth consumed by a following loop — draw the arg
+      // ONCE into the var at this source position (correct seeded position, no
+      // extra draw) and set the builder-local synth (bare-play interleave). The
+      // loop reads this var lazily via its `__synthThunk: () => __sy_N` opt at its
+      // first build — per-loop, so two dynamic synths stay independent (no global
+      // defaultSynth write).
+      const dyn = synthDynamicByNode.get(c)
+      if (dyn && consumedDynamicVars.has(dyn.varName)) {
+        return `  ${dyn.varName} = ${transpileNode(dyn.argNode, bareCtx)}\n` +
+               `  __b.use_synth(${dyn.varName})`
+      }
       return '  ' + transpileNode(c, bareCtx)
     })
     .filter(s => s.trim())
@@ -1488,7 +1557,10 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     const isLoopRegister = m === 'live_loop' || m === 'loop' || m === 'in_thread' || m === 'with_fx'
     const tagged = blockSynth.get(c) ?? null
     let eagerPrefix = ''
-    if (tagged && isLoopRegister) {
+    // #591: {dynamicVar} gets NO eager prefix — its var is drawn in __run_once at
+    // source position (undefined at this eager-registration point); the loop picks
+    // it up via its per-loop `__synthThunk` instead (blockStateSnapshot).
+    if (tagged && isLoopRegister && !('dynamicVar' in tagged)) {
       // {lit} → use_synth("name"); {var} → use_synth(__sy_N) (#585, the var was
       // drawn once in topJS). Dedup by the emitted arg text (defaultSynth persists
       // across registrations, so a run of loops on the same synth emits once).
@@ -1526,10 +1598,15 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
         const gate = blockGate.get(c)
         // GAP A: a hoisted bare `loop do` runs INLINE in the main thread (desktop
         // never forks it) → `__inline: true` ⇒ idPath `[0]`. Merge with the
-        // optional start-gate cue.
-        const optsArg = gate
-          ? `{__startGate: ${JSON.stringify(gate)}, __inline: true}, `
-          : `{__inline: true}, `
+        // optional start-gate cue. #591: `__synthThunk` lazily reads the var a
+        // {dynamicVar} use_synth drew in __run_once (after this loop registered).
+        const dynTag = blockSynth.get(c)
+        const optsBits = ['__inline: true']
+        if (gate) optsBits.unshift(`__startGate: ${JSON.stringify(gate)}`)
+        if (blockStateSnapshot.has(c) && dynTag && 'dynamicVar' in dynTag) {
+          optsBits.push(`__synthThunk: () => ${dynTag.dynamicVar}`)
+        }
+        const optsArg = `{${optsBits.join(', ')}}, `
         return `${eagerPrefix}live_loop("${name}", ${optsArg}async (__b) => {\n${bodyStr}\n${ctx.indent}})`
       }
     }
@@ -1537,7 +1614,12 @@ function transpileProgram(node: any, ctx: TranspileContext): string {
     // ctx so transpileInThread emits `__startGate` in its registration opts. The
     // gate is consumed by THIS construct only — transpileInThread must not leak
     // it into the body (a nested in_thread must not inherit it).
-    const blockCtx: TranspileContext = blockGate.has(c) ? { ...ctx, startGate: blockGate.get(c) } : ctx
+    const dynTagBlk = blockSynth.get(c)
+    const thunkVar = (blockStateSnapshot.has(c) && dynTagBlk && 'dynamicVar' in dynTagBlk)
+      ? dynTagBlk.dynamicVar : undefined
+    const blockCtx: TranspileContext = (blockGate.has(c) || thunkVar)
+      ? { ...ctx, startGate: blockGate.get(c), synthThunkVar: thunkVar }
+      : ctx
     return eagerPrefix + transpileNode(c, blockCtx)
   }).filter(Boolean)
 
@@ -2254,6 +2336,10 @@ function transpileLiveLoop(
   if (syncName) optsParts.push(`sync: "${syncName}"`)
   optsParts.push(...extraOpts)
   if (startGateName !== null) optsParts.push(`__startGate: ${JSON.stringify(startGateName)}`)
+  // #591: lazily read the var a {dynamicVar} use_synth drew in __run_once (its
+  // value is unknown at this loop's eager registration). The engine calls the
+  // thunk at the first iteration build to seed the loop's synth.
+  if (ctx.synthThunkVar) optsParts.push(`__synthThunk: () => ${ctx.synthThunkVar}`)
   const optsArg = optsParts.length > 0 ? `{${optsParts.join(', ')}}, ` : ''
 
   return `live_loop("${name}", ${optsArg}async (__b) => {\n${bodyStr}\n${ctx.indent}})`

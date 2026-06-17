@@ -226,6 +226,14 @@ export class SonicPiEngine {
    */
   private startGated = new Set<string>()
   /**
+   * #591: loops that have already called their first-iteration `__synthThunk`.
+   * Creation-only, like startGated — the thunk picks up the var-dependent synth
+   * __run_once drew after the loop registered; once task.currentSynth holds it,
+   * every later iteration re-seeds from it. Cleared on teardown / per-loop on
+   * removal, alongside startGated.
+   */
+  private stateSnapshotted = new Set<string>()
+  /**
    * Build-phase nesting depth (issue #198). Incremented around each
    * synchronous builderFn invocation. > 0 means we are currently
    * building one live_loop's iteration step array; any `live_loop`
@@ -873,6 +881,13 @@ export class SonicPiEngine {
         // (`live_loop`/`in_thread`/`at`) → idPath `[0, n]`. Explicit marker, not
         // name-sniffing (mirrors `__startGate`; PARITY-GAPS GAP A §2 decision).
         let isInline = false
+        // #591: lazy synth source for a var-dependent / mid-PRNG `use_synth` (e.g.
+        // `choose(synths)`) this loop source-follows. The transpiler draws the synth
+        // ONCE into a `__sy_N` var in __run_once (after this loop registered, so the
+        // eager task.currentSynth is the stale default) and passes a thunk reading
+        // it. Called ONCE at the first iteration build — by then __run_once has run
+        // (SV70/SV21: same ordering that makes `play c` see __run_once's `c`).
+        let synthThunk: (() => string) | null = null
         // SP131/#481: a one-shot top-level in_thread (set by topLevelInThread).
         // Such a thread builds its ENTIRE body in ONE pass, so the build-time
         // `sync` await (which suspends the build until the cue) would batch every
@@ -895,6 +910,8 @@ export class SonicPiEngine {
           delayBeats = typeof builderFnOrOpts.delay === 'number' ? builderFnOrOpts.delay : 0
           startGate = (builderFnOrOpts.__startGate as string) ?? null
           isInline = builderFnOrOpts.__inline === true
+          synthThunk = typeof builderFnOrOpts.__synthThunk === 'function'
+            ? (builderFnOrOpts.__synthThunk as () => string) : null
           oneShotThread = builderFnOrOpts.__oneShotThread === true
           builderFn = maybeFn!
         }
@@ -1020,6 +1037,21 @@ export class SonicPiEngine {
 
           const task = scheduler.getTask(name)
           if (!task) return
+
+          // #591: a var-dependent / mid-PRNG `use_synth` (e.g. `choose(synths)`)
+          // is drawn in __run_once at its source position — AFTER this loop
+          // registered, so the eager `task.currentSynth` snapshot is the stale
+          // default (beep). The thunk reads the `__sy_N` var __run_once drew; by
+          // the first iteration build __run_once has run (SV70/SV21 — the same
+          // ordering that makes `play c` see __run_once's `c`). Call it ONCE and
+          // seed the task; the per-iteration build below
+          // (`builder.use_synth(task.currentSynth)`) then applies it every cycle.
+          // A falsy result (var still unset) leaves the prior default — safe.
+          if (synthThunk && !this.stateSnapshotted.has(name)) {
+            this.stateSnapshotted.add(name)
+            const drawn = synthThunk()
+            if (drawn) task.currentSynth = drawn
+          }
 
           // Persistent top-level FX: create FX nodes on first iteration only.
           // Loops under the same with_fx scope share one FX chain (keyed by scope ID).
@@ -2196,6 +2228,7 @@ export class SonicPiEngine {
           this.loopSynced.delete(name)
           this.loopDelayed.delete(name)
           this.startGated.delete(name)
+          this.stateSnapshotted.delete(name) // #591
         }
 
         // Pause ticking so no old events fire during transition
@@ -2470,6 +2503,7 @@ export class SonicPiEngine {
     this.loopSynced.clear()
     this.loopDelayed.clear()
     this.startGated.clear()
+    this.stateSnapshotted.clear() // #591
     // Time State (set/get) intentionally NOT cleared on Stop. Desktop Sonic
     // Pi creates @event_history once per session (runtime.rb:1450) and never
     // clears it on Stop — `get` is documented "deterministic across Runs".

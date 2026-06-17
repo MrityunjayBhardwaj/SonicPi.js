@@ -213,13 +213,44 @@ end`
       expect((r.code.match(/choose\(/g) ?? []).length).toBe(1)
     })
 
-    it('var-dependent choose(synths) is NOT hoisted (no undefined-var read, stays deferred)', () => {
+    it('#591 var-dependent choose(synths): drawn once in __run_once, loop reads it via __synthThunk', () => {
       const r = autoTranspileDetailed('synths = [:tri, :saw]\nuse_synth choose(synths)\nloop do\n  play 60\n  sleep 0.5\nend')
       expect(r.hasError).toBe(false)
-      // no eager hoist var — the free var `synths` lives in deferred bareCode
-      expect(r.code).not.toMatch(/__sy_\d+ = /)
-      // the use_synth stays inline in bareCode with its original expression
-      expect(r.code).toMatch(/__b\.use_synth\(__b\.choose\(synths\)\)/)
+      // NOT hoisted to topJS (the free var `synths` lives in deferred bareCode) —
+      // instead drawn at source position INSIDE __run_once into a var
+      expect(r.code).toMatch(/__sy_0 = __b\.choose\(synths\)/)
+      // builder-local set for bare-play interleave (no global defaultSynth write)
+      expect(r.code).toMatch(/__b\.use_synth\(__sy_0\)/)
+      // ONE draw only — no second choose() of synths
+      expect((r.code.match(/__b\.choose\(synths\)/g) ?? []).length).toBe(1)
+      // the loop carries a per-loop thunk reading __sy_0 lazily at first build
+      expect(r.code).toMatch(/__synthThunk: \(\) => __sy_0/)
+    })
+
+    it('#591 mid-PRNG sequence (40_choose_generator shape): synth drawn at its seeded position, no extra draw', () => {
+      // use_random_seed/use_bpm(rrand) hoist to topJS (draw #1 = rrand); the
+      // var-dependent use_synth draws at its source position INSIDE __run_once
+      // (draw #2), preserving the seeded stream; the bare loop reads it via thunk.
+      const r = autoTranspileDetailed(
+        'use_random_seed 0\nuse_bpm rrand(90, 130)\nsynths = [:piano, :saw, :tri]\nuse_synth choose(synths)\nc = choose([:c4, :e4])\nloop do\n  play c\n  sleep 0.5\nend')
+      expect(r.hasError).toBe(false)
+      // synth drawn once in __run_once; the bare loop reads it via __synthThunk
+      expect(r.code).toMatch(/__sy_0 = __b\.choose\(synths\)/)
+      expect(r.code).toMatch(/__synthThunk: \(\) => __sy_0/)
+      // exactly ONE choose(synths) — no eager re-draw that would desync the stream
+      expect((r.code.match(/__b\.choose\(synths\)/g) ?? []).length).toBe(1)
+      // the seed/bpm stay hoisted (topJS) — unchanged
+      expect(r.code).toMatch(/use_random_seed\(0\)/)
+      expect(r.code).toMatch(/use_bpm\(rrand\(90, 130\)\)/)
+    })
+
+    it('#591 var-dependent use_synth before a live_loop also gets a per-loop __synthThunk', () => {
+      // trailing bare `sleep` forces the __run_once wrapper, so the use_synth is
+      // deferred (without it, use_synth runs eagerly at top level — no #591 path).
+      const r = autoTranspileDetailed('opts = [:tri, :saw]\nuse_synth choose(opts)\nlive_loop :m do\n  play 60\n  sleep 0.5\nend\nsleep 0.1')
+      expect(r.hasError).toBe(false)
+      expect(r.code).toMatch(/__sy_0 = __b\.choose\(opts\)/)
+      expect(r.code).toMatch(/live_loop\("m".*__synthThunk: \(\) => __sy_0/)
     })
 
     it('literal use_synth :tri still emits the eager string prefix (unchanged)', () => {
