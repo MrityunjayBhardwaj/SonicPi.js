@@ -188,6 +188,25 @@ export class SonicPiEngine {
    * one stream). Cleared/derived on the same lifecycle as loopTicks.
    */
   private loopRngState = new Map<string, { seed: number; idx: number; source: RandSource }>()
+  /**
+   * #593/SV75: the most recently registered `__inline` construct in the current
+   * evaluate's registration pass (reset to null before each `sandbox.execute`).
+   * Inline constructs (`__run_once`, a top-level bare `loop`) all model desktop's
+   * SINGLE continuous main-thread stream. The FIRST one snapshots topLevelBuilder;
+   * each LATER one must continue the SAME stream AFTER the earlier one's draws —
+   * see `inlineRngInheritFrom`.
+   */
+  private lastInlineConstruct: string | null = null
+  /**
+   * #593/SV75: a deferred-seed link `loopName → previous-inline-construct`. A
+   * later inline construct does NOT snapshot topLevelBuilder at registration
+   * (that state is unchanged by the earlier construct's separate per-build
+   * builder, so it would REPLAY those draws). Instead it inherits the previous
+   * inline construct's POST-build rng state at its FIRST build (once only),
+   * relying on the SV70/SV21/SP165 build-order guarantee. Cleared with
+   * loopRngState on a fresh Run.
+   */
+  private inlineRngInheritFrom = new Map<string, string>()
   /** Per-loop tick counters — persisted across iterations so ring.tick() advances correctly */
   private loopTicks = new Map<string, Map<string, number>>()
   /** Per-loop beat counter — persisted across iterations so current_beat keeps growing (#226) */
@@ -613,6 +632,7 @@ export class SonicPiEngine {
 
         this.loopBuilders.clear()
         this.loopRngState.clear()
+        this.inlineRngInheritFrom.clear() // #593: deferred inline-seed links
       }
 
       // Transpile: Ruby DSL → JS builder chain (TreeSitter only).
@@ -944,8 +964,26 @@ export class SonicPiEngine {
           // main thread's own stream, and (worse) consumed a gen_idx that the real
           // sibling loops then skipped — desyncing every default-seed piece.
           if (isInline) {
-            const st = topLevelBuilder.getRandomState()
-            this.loopRngState.set(name, { seed: st.seed, idx: st.idx, source: st.source })
+            if (this.lastInlineConstruct === null) {
+              // First inline construct of this evaluate (`__run_once`, or a lone
+              // top-level bare `loop`): continue the top-level stream from its
+              // eager-draw state. Snapshot topLevelBuilder now.
+              const st = topLevelBuilder.getRandomState()
+              this.loopRngState.set(name, { seed: st.seed, idx: st.idx, source: st.source })
+            } else {
+              // #593/SV75: a LATER inline construct (a bare `loop` after
+              // __run_once's bare draws) must continue the SAME main-thread
+              // stream AFTER those draws. topLevelBuilder is NOT advanced by
+              // __run_once's separate per-build builder, so re-snapshotting it
+              // here would REPLAY __run_once's draws. Defer: inherit the previous
+              // inline construct's POST-build rng state at this loop's first build
+              // (asyncFn below). The SV70/SV21/SP165 build order guarantees
+              // __run_once builds and saves its rng before this loop's first
+              // build — the same ordering that lets the loop body read bare
+              // top-level vars like `play c`.
+              this.inlineRngInheritFrom.set(name, this.lastInlineConstruct)
+            }
+            this.lastInlineConstruct = name
           } else {
             const childSeed = topLevelBuilder.deriveChildSeed()
             this.loopRngState.set(name, {
@@ -1030,6 +1068,18 @@ export class SonicPiEngine {
             }
           }
 
+          // #593/SV75: a deferred inline construct inherits the previous inline
+          // construct's POST-build rng state at its FIRST build (once only). By
+          // now __run_once has built and saved its rng (line ~1200), so this
+          // continues the single main-thread stream AFTER the bare-code draws
+          // instead of replaying them. The `!has(name)` guard makes it once-only
+          // (subsequent iterations use this loop's own persisted, advanced state)
+          // and a no-op on hot-swap (a running loop keeps its stream).
+          const inheritFrom = this.inlineRngInheritFrom.get(name)
+          if (inheritFrom && !this.loopRngState.has(name)) {
+            const prev = this.loopRngState.get(inheritFrom)
+            if (prev) this.loopRngState.set(name, { seed: prev.seed, idx: prev.idx, source: prev.source })
+          }
           // EPIC #531 Phase 3: restore this loop's persistent random stream so it
           // advances CONTINUOUSLY across iterations (desktop live_loop = one
           // thread, one stream — no per-iteration re-seed). Saved back after the
@@ -1141,11 +1191,23 @@ export class SonicPiEngine {
           }
           try {
             // SP95(d) #393: await so an S3 body can suspend on a scheduler-resolved
-            // sync mid-build. For today's synchronous S1/S2 bodies this `await` is
-            // identity (await on a non-thenable void). The single-field
-            // currentBuildBuilder above stays safe until sync actually awaits — the
-            // re-entrancy hardening is tracked in #395.
-            await builderFn(builder)
+            // sync mid-build. Calling the (async) builderFn runs a synchronous
+            // S1/S2 body to COMPLETION before it returns the promise — only an
+            // actual `sync` inside suspends. The single-field currentBuildBuilder
+            // above stays safe until sync actually awaits — the re-entrancy
+            // hardening is tracked in #395.
+            const buildResult = builderFn(builder)
+            // #593/SV75: publish an inline construct's post-draw rng state
+            // SYNCHRONOUSLY — before the `await` below yields a microtask. The
+            // scheduler may run a LATER inline construct's FIRST build during that
+            // yield; that successor inherits this rng (inlineRngInheritFrom) and
+            // must see the CONTINUED main-thread stream, not the pre-build
+            // snapshot. Without this early publish the save below lands one
+            // microtask too late and the successor replays these draws (the #593
+            // bug). The unconditional save after the try still handles
+            // across-iteration continuity.
+            if (isInline) this.loopRngState.set(name, builder.getRandomState())
+            await buildResult
           } finally {
             this.currentBuildBuilder = prevBuildBuilder
             this.currentBuildTaskVt = prevBuildTaskVt
@@ -2081,6 +2143,11 @@ export class SonicPiEngine {
           this.fxScopeChains.clear()
           this.fxScopeRefs.clear() // #511: rebuilt by the new program's with_fx blocks
         }
+        // #593/SV75: reset the inline-construct chain tail before this
+        // evaluate's registration pass — the first inline construct registered
+        // (below, via wrappedLiveLoop) snapshots topLevelBuilder, later ones
+        // defer-inherit. Reset per evaluate so a hot-swap re-derives correctly.
+        this.lastInlineConstruct = null
         await sandbox.execute(...dslValues)
       } finally {
         this.inTopLevelEval = prevInTopLevelEval
