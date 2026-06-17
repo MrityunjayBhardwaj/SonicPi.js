@@ -124,3 +124,29 @@ describe('Sp95Lint — deprecation warnings (loud-not-silent, SV50/SV60 channel)
     expect(detectSp95Limitations('play 60 # with_tempo is the old name')).toEqual([])
   })
 })
+
+describe('Sp95Lint — bang-only DSL functions (loud-not-silent, SV50) — #594', () => {
+  it('warns on no-bang set_mixer_control (NoMethodError on desktop — silent)', () => {
+    const w = detectSp95Limitations('set_mixer_control lpf: 30\nsleep 1')
+    expect(w).toHaveLength(1)
+    expect(w[0].pattern).toBe('set_mixer_control')
+    expect(w[0].message).toMatch(/set_mixer_control!/)
+  })
+
+  it('warns on no-bang reset_mixer (NoMethodError on desktop — silent)', () => {
+    const w = detectSp95Limitations('reset_mixer\nplay 60')
+    expect(w).toHaveLength(1)
+    expect(w[0].pattern).toBe('reset_mixer')
+    expect(w[0].message).toMatch(/reset_mixer!/)
+  })
+
+  it('does NOT warn on the valid bang forms', () => {
+    expect(detectSp95Limitations('set_mixer_control! lpf: 30')).toEqual([])
+    expect(detectSp95Limitations('reset_mixer!')).toEqual([])
+  })
+
+  it('does NOT warn on comments nor longer identifiers', () => {
+    expect(detectSp95Limitations('play 60 # set_mixer_control vs reset_mixer')).toEqual([])
+    expect(detectSp95Limitations('reset_mixers = 1\nset_mixer_controls = 2')).toEqual([])
+  })
+})
