@@ -706,6 +706,21 @@ describe('spread (Euclidean rhythm)', () => {
     expect(spread(4, 4).toArray()).toEqual([true, true, true, true])
   })
 
+  it('spread(s-1, s) places the lone rest at index 1, matching desktop (#597)', () => {
+    // Desktop core.rb `redistribute` (unshift/prepend) puts the single rest at
+    // index 1 — `X.XXX…` — NOT at the end (`XXX…X.` of a textbook Bjorklund).
+    // The wrong placement desynced the PRNG stream when a conditional draw was
+    // guarded by `spread(rrand_i, n).look` (#597 / SP167).
+    expect(spread(15, 16).toArray()).toEqual([
+      true, false, true, true, true, true, true, true,
+      true, true, true, true, true, true, true, true,
+    ])
+    expect(spread(2, 3).toArray()).toEqual([true, false, true])
+    expect(spread(7, 8).toArray()).toEqual([
+      true, false, true, true, true, true, true, true,
+    ])
+  })
+
   it('spread with rotation shifts the pattern', () => {
     const base = spread(3, 8).toArray()
     const rotated = spread(3, 8, 1).toArray()
