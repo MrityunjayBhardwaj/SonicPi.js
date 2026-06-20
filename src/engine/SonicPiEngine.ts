@@ -14,7 +14,8 @@ import { createIsolatedExecutor, validateCode, type ScopeHandle } from './Sandbo
 import { autoTranspileDetailed } from './TreeSitterTranspiler'
 import { detectSp95Limitations } from './Sp95Lint'
 import { getExample, type Example } from './examples'
-import { initTreeSitter } from './TreeSitterTranspiler'
+import { initTreeSitter, isTreeSitterReady } from './TreeSitterTranspiler'
+import { CDN_DEFAULTS } from './cdn-manifest'
 
 /**
  * Matches SoundLayer.validateAndClamp output:
@@ -360,17 +361,27 @@ export class SonicPiEngine {
   constructor(options?: {
     bridge?: SuperSonicBridgeOptions
     schedAheadTime?: number
-    /** URL of the frozen rand stream (EPIC #531). Defaults to the Vite-served
-     *  `/rand-stream.wav`; a library consumer serving it elsewhere overrides this,
-     *  mirroring the tree-sitter wasm URL override. */
+    /** URL of the frozen rand stream (EPIC #531). #604/SV80: defaults to the
+     *  pinned CDN copy so a bare consumer needs no asset hosting; a consumer that
+     *  serves it locally (e.g. the app at `/rand-stream.wav`) overrides this. */
     randStreamUrl?: string
+    /** URL of the tree-sitter core WASM runtime (#604/SV80). Defaults to the
+     *  pinned CDN copy; override to serve it same-origin. */
+    treeSitterWasmUrl?: string
+    /** URL of the compiled Ruby grammar WASM (#604/SV80). Defaults to the pinned
+     *  CDN copy; override to serve it same-origin. */
+    rubyWasmUrl?: string
   }) {
     this.bridgeOptions = options?.bridge ?? {}
     this.schedAheadTime = options?.schedAheadTime ?? DEFAULT_SCHED_AHEAD_TIME
-    this.randStreamUrl = options?.randStreamUrl ?? '/rand-stream.wav'
+    this.randStreamUrl = options?.randStreamUrl ?? CDN_DEFAULTS.randStream
+    this.treeSitterWasmUrl = options?.treeSitterWasmUrl ?? CDN_DEFAULTS.treeSitterWasm
+    this.rubyWasmUrl = options?.rubyWasmUrl ?? CDN_DEFAULTS.rubyWasm
   }
 
   private readonly randStreamUrl: string
+  private readonly treeSitterWasmUrl: string
+  private readonly rubyWasmUrl: string
 
   /**
    * Initialize the engine. Must be called once before `evaluate()`.
@@ -414,9 +425,14 @@ export class SonicPiEngine {
 
     // Only init tree-sitter in browser environments where WASM is served via HTTP.
     // In Node (tests), tree-sitter must be initialized explicitly with file paths.
+    // #604/SV80: the engine drives tree-sitter init itself with CDN-default URLs,
+    // so a bare consumer needs no asset hosting. init() awaits this promise below,
+    // so by the time init() resolves the transpiler is ready (SV81) — the old
+    // per-consumer warm-up retry loop is no longer needed.
     const isBrowser = typeof window !== 'undefined'
     const treeSitterInit = isBrowser
-      ? initTreeSitter().catch(() => { /* Non-fatal — regex fallback */ })
+      ? initTreeSitter({ treeSitterWasmUrl: this.treeSitterWasmUrl, rubyWasmUrl: this.rubyWasmUrl })
+          .catch(() => { /* Non-fatal — evaluate() surfaces a clear error if used */ })
       : Promise.resolve()
 
     // EPIC #531: load desktop's frozen rand stream before any builder is built.
@@ -457,6 +473,17 @@ export class SonicPiEngine {
   /** Whether audio output is available. False when SuperSonic failed to initialize. */
   get hasAudio(): boolean {
     return this.bridge !== null
+  }
+
+  /**
+   * Whether the Ruby→JS transpiler is ready (#604/SV81). Because `init()` awaits
+   * tree-sitter, this is true once `init()` resolves in a browser with the wasm
+   * reachable. A consumer that wants to gate "Run" on transpile-readiness checks
+   * this instead of warm-up-looping `evaluate('# warmup')` — a ready signal must
+   * reflect COMPLETION, not resource existence.
+   */
+  get transpilerReady(): boolean {
+    return isTreeSitterReady()
   }
 
   // Matches `use_sample_bpm`/`with_sample_bpm`/`sample_duration` followed by a

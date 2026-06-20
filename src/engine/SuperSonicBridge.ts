@@ -130,6 +130,9 @@ const STOP_FADE_MARGIN_MS = 10
 // Gain staging, I/O, and safety parameters are centralized in config.ts.
 // See config.ts SECTION 1 (MIXER) for the full A/B calibration history.
 import { MIXER, AUDIO_IO } from './config'
+// #604 / SV80: single source of truth for the runtime CDN URLs the engine
+// loads itself when a consumer supplies no override.
+import { CDN_DEFAULTS, SUPERSONIC_VERSION } from './cdn-manifest'
 
 export class SuperSonicBridge {
   private sonic: SuperSonic | null = null
@@ -231,12 +234,29 @@ export class SuperSonicBridge {
   }
 
   async init(): Promise<void> {
-    // Try constructor passed via options, then global scope
-    const SuperSonicClass = this.options.SuperSonicClass
+    // Try constructor passed via options, then global scope.
+    let SuperSonicClass = this.options.SuperSonicClass
       ?? (globalThis as Record<string, unknown>).SuperSonic as SuperSonicConstructor | undefined
+    // #604 / SV80: self-sufficiency. When no class is supplied and we're in a
+    // browser, the engine loads SuperSonic itself from the pinned CDN. This is a
+    // dynamic `import()` of a runtime URL string — esbuild/Vite never bundle it,
+    // so the GPL scsynth core stays out of our (MIT) bundle while a bare consumer
+    // still gets audio with zero wiring. Node/test contexts skip this (no window,
+    // no audio) and fall through to the throw below.
+    if (!SuperSonicClass && typeof window !== 'undefined') {
+      try {
+        const mod = await import(/* @vite-ignore */ CDN_DEFAULTS.superSonicModule) as Record<string, unknown>
+        SuperSonicClass = (mod.SuperSonic ?? mod.default) as SuperSonicConstructor | undefined
+      } catch (err) {
+        throw new Error(
+          `SuperSonic failed to load from ${CDN_DEFAULTS.superSonicModule}. ` +
+          `Pass options.SuperSonicClass to load it yourself, or check network/CSP. (${String(err)})`
+        )
+      }
+    }
     if (!SuperSonicClass) {
       throw new Error(
-        'SuperSonic not found. Pass it via options.SuperSonicClass or load via CDN.'
+        'SuperSonic not found. Pass it via options.SuperSonicClass or load via CDN (browser only).'
       )
     }
     this.SuperSonicClass = SuperSonicClass
@@ -244,17 +264,18 @@ export class SuperSonicBridge {
     this.oscEncoder = SuperSonicClass.osc ?? { encodeSingleBundle: fallbackEncodeSingleBundle }
 
     // SuperSonic constructor options — URLs for workers, WASM, synthdefs, samples.
-    // Workers and JS live in the main package; WASM in the core package.
-    // EXP-006: pinned to v0.57.0 to test if pre-faff87a (2026-03-03) MdaPiano build restores :piano
-    const pkgBase = 'https://unpkg.com/supersonic-scsynth@0.57.0/dist/'
-    const coreBase = 'https://unpkg.com/supersonic-scsynth-core@0.57.0/'
-    this.resolvedSampleBaseURL = this.options.sampleBaseURL ?? 'https://unpkg.com/supersonic-scsynth-samples@0.57.0/samples/'
+    // Workers and JS live in the main package; WASM in the core package. All four
+    // packages are version-locked to SUPERSONIC_VERSION (SV22) — derived here so a
+    // version bump only edits cdn-manifest.ts, not these literals.
+    const pkgBase = `https://unpkg.com/supersonic-scsynth@${SUPERSONIC_VERSION}/dist/`
+    const coreBase = `https://unpkg.com/supersonic-scsynth-core@${SUPERSONIC_VERSION}/`
+    this.resolvedSampleBaseURL = this.options.sampleBaseURL ?? `https://unpkg.com/supersonic-scsynth-samples@${SUPERSONIC_VERSION}/samples/`
     this.sonic = new SuperSonicClass({
       baseURL: this.options.baseURL ?? pkgBase,
       workerBaseURL: this.options.baseURL ?? `${pkgBase}workers/`,
       wasmBaseURL: this.options.coreBaseURL ?? `${coreBase}wasm/`,
       coreBaseURL: this.options.coreBaseURL ?? coreBase,
-      synthdefBaseURL: this.options.synthdefBaseURL ?? 'https://unpkg.com/supersonic-scsynth-synthdefs@0.57.0/synthdefs/',
+      synthdefBaseURL: this.options.synthdefBaseURL ?? `https://unpkg.com/supersonic-scsynth-synthdefs@${SUPERSONIC_VERSION}/synthdefs/`,
       sampleBaseURL: this.resolvedSampleBaseURL,
       autoConnect: false,
       scsynthOptions: { numOutputBusChannels: NUM_OUTPUT_CHANNELS },

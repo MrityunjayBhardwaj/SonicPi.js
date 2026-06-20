@@ -41,6 +41,43 @@
 
 export const SUPERSONIC_VERSION = '0.57.0' as const
 
+/**
+ * Transpiler runtime (#604 / SV80). The engine auto-loads these so a bare
+ * consumer needs zero wiring. tree-sitter wasm comes from the upstream npm
+ * packages (already on the CDN); the Ruby grammar lives in `tree-sitter-wasms`.
+ * Keep these pinned in lock-step with the `web-tree-sitter` / `tree-sitter-wasms`
+ * dependency versions in package.json.
+ */
+export const WEB_TREE_SITTER_VERSION = '0.24.3' as const
+export const TREE_SITTER_WASMS_VERSION = '0.1.13' as const
+
+/**
+ * The frozen PRNG table (EPIC #531 / SV69) is OUR asset, not a published npm
+ * package. It is immutable by construction, so we serve it from the repo via
+ * jsdelivr pinned to a commit SHA (immutable, cacheable forever). Bump only if
+ * the frozen table itself is ever regenerated.
+ */
+export const RAND_STREAM_REPO = 'MrityunjayBhardwaj/SonicPiWeb' as const
+export const RAND_STREAM_PIN = '68cf288' as const
+
+/**
+ * Default runtime URLs the engine loads itself when a consumer supplies no
+ * override (#604 / SV80). This is the single source of truth for "where does
+ * the engine fetch its runtime deps from by default" — App.ts, the docs player,
+ * and the dashboards all inherit these instead of re-deriving the wiring.
+ */
+export const CDN_DEFAULTS = {
+  /** SuperSonic (GPL scsynth WASM) ESM entry — dynamic-import()ed, never bundled. */
+  superSonicModule: `https://unpkg.com/supersonic-scsynth@${SUPERSONIC_VERSION}`,
+  /** tree-sitter core WASM runtime. */
+  treeSitterWasm: `https://cdn.jsdelivr.net/npm/web-tree-sitter@${WEB_TREE_SITTER_VERSION}/tree-sitter.wasm`,
+  /** Compiled Ruby grammar WASM. */
+  rubyWasm: `https://cdn.jsdelivr.net/npm/tree-sitter-wasms@${TREE_SITTER_WASMS_VERSION}/out/tree-sitter-ruby.wasm`,
+  /** Frozen white-noise PRNG table (EPIC #531). The 4 distribution tables sit
+   *  alongside it; the engine derives their base by stripping this filename. */
+  randStream: `https://cdn.jsdelivr.net/gh/${RAND_STREAM_REPO}@${RAND_STREAM_PIN}/public/rand-stream.wav`,
+} as const
+
 export const CDN_DEPENDENCIES = {
   '@codemirror/view': {
     version: '6.36.5',
