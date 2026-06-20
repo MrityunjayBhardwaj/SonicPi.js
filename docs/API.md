@@ -44,6 +44,20 @@ engine.stop()
 engine.dispose()
 ```
 
+No wiring required: the engine loads its own runtime dependencies — SuperSonic
+(the GPL scsynth WASM core, loaded from CDN, never bundled), the tree-sitter
+transpiler WASM, and the frozen PRNG table. Override any of them via the
+constructor options below to serve them yourself (e.g. same-origin).
+
+> **No bundler?** For a direct `<script type="module">` / CDN import with no
+> build step, use the self-contained browser entry, which inlines the
+> transpiler:
+> ```ts
+> import { SonicPiEngine } from '@mjayb/sonicpijs/browser'
+> ```
+> The main entry (`@mjayb/sonicpijs`) is code-split and meant to run through a
+> bundler.
+
 The engine accepts Sonic Pi's Ruby DSL directly. It auto-detects the language, transpiles Ruby to JS, builds a `Program`, and runs it through the `VirtualTimeScheduler` and `SuperSonicBridge`.
 
 ---
@@ -58,19 +72,25 @@ The top-level facade. Manages the scheduler, audio bridge, transpiler, and event
 new SonicPiEngine(options?: {
   bridge?: SuperSonicBridgeOptions
   schedAheadTime?: number
+  treeSitterWasmUrl?: string
+  rubyWasmUrl?: string
+  randStreamUrl?: string
 })
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `options.bridge` | `SuperSonicBridgeOptions` | `{}` | SuperSonic CDN URLs and constructor override. |
+| `options.bridge` | `SuperSonicBridgeOptions` | `{}` | SuperSonic CDN URLs and constructor override. When `bridge.SuperSonicClass` is omitted, the engine dynamic-imports SuperSonic from the pinned CDN itself. |
 | `options.schedAheadTime` | `number` | `0.1` | Lookahead time in seconds for scheduling audio events ahead of real time. |
+| `options.treeSitterWasmUrl` | `string` | CDN | URL of the tree-sitter core WASM runtime. Override to serve it same-origin. |
+| `options.rubyWasmUrl` | `string` | CDN | URL of the compiled Ruby grammar WASM. Override to serve it same-origin. |
+| `options.randStreamUrl` | `string` | CDN | URL of the frozen PRNG table (`rand-stream.wav`). The 4 distribution tables are resolved alongside it. Override to serve it same-origin. |
 
 ### Methods
 
 #### `init(): Promise<void>`
 
-Initialize the audio engine. Must be called before `evaluate()`. Loads SuperSonic from CDN, initializes WebAudio, and pre-loads common SynthDefs. Safe to call multiple times (no-ops after first).
+Initialize the audio engine. Must be called before `evaluate()`. Loads SuperSonic from CDN, initializes WebAudio, pre-loads common SynthDefs, and loads the tree-sitter transpiler. Safe to call multiple times (no-ops after first). Once it resolves in the browser, [`transpilerReady`](#transpilerready-boolean) is `true` — no warm-up loop needed.
 
 ```ts
 await engine.init()
@@ -121,6 +141,19 @@ Full teardown. Stops playback, destroys the audio bridge, clears the event strea
 
 ```ts
 engine.dispose()
+```
+
+#### `hasAudio: boolean`
+
+Read-only. `true` once SuperSonic initialized successfully. `false` when audio is unavailable (e.g. WebAssembly blocked, or running in a non-browser test environment) — the scheduler and `capture` queries still work without audio.
+
+#### `transpilerReady: boolean`
+
+Read-only. `true` once the tree-sitter transpiler is loaded. Because `init()` awaits tree-sitter, this is `true` as soon as `init()` resolves in a browser with the WASM reachable — gate "Run" on this instead of warm-up-looping a no-op `evaluate()`.
+
+```ts
+await engine.init()
+if (engine.hasAudio && engine.transpilerReady) enableRunButton()
 ```
 
 #### `setRuntimeErrorHandler(handler: (err: Error) => void): void`
