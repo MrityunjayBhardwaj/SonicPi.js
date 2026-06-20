@@ -11,6 +11,10 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./browser": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/browser.mjs"
     }
   },
   "bin": {
@@ -22,6 +26,8 @@
     "dist/index.js.map",
     "dist/index.cjs",
     "dist/index.cjs.map",
+    "dist/browser.mjs",
+    "dist/browser.mjs.map",
     "dist/types"
   ],
   "scripts": {
@@ -35,7 +41,9 @@
     "dev": "vite",
     "build": "vite build",
     "build:single": "vite build --config vite.build.config.ts",
-    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json && npm run build:browser",
+    "build:browser": "node tools/build-browser-bundle.mjs",
+    "verify:604": "tsx tools/verify-604-bare-consumer.ts",
     "docs:assets": "cp -f public/rand-stream.wav docs/public/rand-stream.wav",
     "build:docs": "npm run docs:assets && vitepress build docs",
     "dev:docs": "npm run docs:assets && vitepress dev docs",
