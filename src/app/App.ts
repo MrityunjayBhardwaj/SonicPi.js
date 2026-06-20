@@ -898,6 +898,13 @@ export class App {
       this.engine = new SonicPiEngine({
         bridge: SuperSonicClass ? { SuperSonicClass: SuperSonicClass as never } : {},
         schedAheadTime: typeof savedPrefs.schedAheadTime === 'number' ? savedPrefs.schedAheadTime as number : undefined,
+        // #604/SV80: the engine now defaults these to the CDN so bare consumers
+        // need zero wiring. The live editor ships its own copies in /public, so
+        // keep loading them same-origin — no third-party CDN dependency for the
+        // transpiler or the frozen PRNG table on the production site.
+        treeSitterWasmUrl: '/tree-sitter.wasm',
+        rubyWasmUrl: '/tree-sitter-ruby.wasm',
+        randStreamUrl: '/rand-stream.wav',
       })
 
       this.engine.setRuntimeErrorHandler((err) => {
