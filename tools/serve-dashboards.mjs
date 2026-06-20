@@ -7,8 +7,11 @@
 // Every dashboard with a per-fixture dir (community, e2e, examples-sweep,
 // book-examples-sweep, gate-detail) was affected. This server serves the
 // requested path LITERALLY — exactly what the dashboards' relative links expect
-// — and roots test_results/ at `/` so the engine's `/tree-sitter.wasm`,
-// `/rand-stream.wav`, and `/spw-engine.mjs` resolve (the inline-audio runtime).
+// — and roots test_results/ at `/` so the same-origin `/spw-engine.mjs` resolves.
+// #604/SV80: the engine self-loads SuperSonic / tree-sitter / rand-stream from
+// the CDN, so only the engine bundle is hosted here. It also sends the
+// cross-origin-isolation headers SuperSonic's AudioWorklet needs (SharedArrayBuffer)
+// so inline audio works locally, not just on Vercel.
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { join, extname, normalize } from 'node:path'
@@ -36,6 +39,10 @@ const server = createServer(async (req, res) => {
     const buf = await readFile(target)
     res.setHeader('Content-Type', MIME[extname(target).toLowerCase()] || 'application/octet-stream')
     res.setHeader('Cache-Control', 'no-cache')
+    // Cross-origin isolation for SuperSonic's AudioWorklet/WASM (SharedArrayBuffer).
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
     res.end(buf)
   } catch {
     res.statusCode = 404
