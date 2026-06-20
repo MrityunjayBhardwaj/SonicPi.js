@@ -2,67 +2,32 @@
 // Build the runtime needed to make the parity dashboards' code snippets
 // PLAYABLE in-place (the Run/Stop control in audio-controls.js).
 //
-// Why a local bundle and not the npm CDN: the published @mjayb/sonicpijs is a
-// code-split *library* — its dist/index.js dynamically imports a tree-sitter
-// chunk that isn't even in the package, so a raw CDN load can init audio but
-// never transpiles (verified: warmup → "parser not available"). esbuild-ing
-// src/engine into ONE same-origin file inlines that chunk, so the transpiler
-// comes alive (verified: warmup error=none, hasAudio=true).
+// Why a local bundle and not the npm CDN: the published @mjayb/sonicpijs's
+// dist/index.js is a code-split *library* — it dynamically imports a tree-sitter
+// chunk that isn't even in the package, so a raw CDN load inits audio but never
+// transpiles ("parser not available"). We reuse the SAME self-contained browser
+// bundle the package ships (#604, tools/build-browser-bundle.mjs) — esbuild
+// inlines that chunk, so the transpiler comes alive from one same-origin import.
 //
-// SuperSonic (GPL) is NEVER bundled — audio-controls.js injects it from the CDN
-// at runtime, exactly as the app and the docs player do.
+// #604/SV80: the engine is self-sufficient — it loads SuperSonic (GPL, never
+// bundled), the tree-sitter wasm, and the frozen rand-stream from the CDN itself.
+// So this script ships ONLY the engine bundle; no wasm/wav copies are needed.
 //
-// Output (all gitignored — regenerate with `npm run dashboard:audio`):
-//   test_results/spw-engine.mjs        the same-origin engine bundle
-//   test_results/tree-sitter.wasm      tree-sitter runtime  (engine fetches /tree-sitter.wasm)
-//   test_results/tree-sitter-ruby.wasm Ruby grammar          (engine fetches /tree-sitter-ruby.wasm)
-//   test_results/rand-stream*.wav      frozen PRNG tables (EPIC #531)
+// Output (gitignored — regenerate with `npm run dashboard:audio`):
+//   test_results/spw-engine.mjs   the same-origin, self-contained engine bundle
 //
-// Inline audio therefore requires the dashboards to be SERVED with test_results/
-// as the web root (npm run dashboard:serve, or the Vercel publish bundle). Opened
-// via file:// the engine can't fetch /tree-sitter.wasm, so audio-controls.js shows
-// only the "open in sonicpi.cc" link there — by design.
+// Inline audio still requires the dashboards to be SERVED over http (test_results/
+// as the web root: `npm run dashboard:serve`, or the Vercel publish bundle) — a
+// file:// page can't load the ES-module bundle. There audio-controls.js shows
+// only the "open in sonicpi.cc" link, by design.
 
-import { build } from 'esbuild'
-import { copyFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { buildEngineBundle } from './build-browser-bundle.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const out = join(root, 'test_results')
 
-// web-tree-sitter has dead Node-only branches (`require("fs")`/`require("path")`)
-// guarded by environment detection. They never run in the browser; stub them to
-// an empty module so esbuild's browser build resolves.
-const stubNodeBuiltins = {
-  name: 'stub-node-builtins',
-  setup(b) {
-    b.onResolve({ filter: /^(fs|path|module)$/ }, (a) => ({ path: a.path, namespace: 'stub' }))
-    b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export default {}', loader: 'js' }))
-  },
-}
+await buildEngineBundle({ outfile: join(out, 'spw-engine.mjs') })
 
-await build({
-  entryPoints: [join(root, 'src/engine/index.ts')],
-  bundle: true,
-  format: 'esm',
-  platform: 'browser',
-  target: 'es2020',
-  outfile: join(out, 'spw-engine.mjs'),
-  plugins: [stubNodeBuiltins],
-  logLevel: 'warning',
-})
-
-for (const f of [
-  'tree-sitter.wasm',
-  'tree-sitter-ruby.wasm',
-  'rand-stream.wav',
-  'rand-stream-pink.wav',
-  'rand-stream-light-pink.wav',
-  'rand-stream-dark-pink.wav',
-  'rand-stream-perlin.wav',
-]) {
-  copyFileSync(join(root, 'public', f), join(out, f))
-}
-
-console.log('dashboard audio runtime → test_results/{spw-engine.mjs, tree-sitter*.wasm, rand-stream*.wav}')
+console.log('dashboard audio runtime → test_results/spw-engine.mjs (engine self-loads wasm/wav from CDN)')

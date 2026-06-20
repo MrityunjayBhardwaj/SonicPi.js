@@ -1,30 +1,11 @@
 import { defineConfig } from 'vitepress'
 import { fileURLToPath, URL } from 'node:url'
-import { createReadStream, existsSync } from 'node:fs'
-import { join } from 'node:path'
 
 // Repo root — so the docs theme can import the engine from ../src.
+// #604/SV80: the engine self-loads its tree-sitter wasm + rand-stream from the
+// CDN, so the docs no longer host those at the root (the old serve-root-wasm dev
+// middleware + the docs:assets rand-stream copy are gone).
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
-
-// Dev only: the engine fetches /tree-sitter*.wasm at the ROOT, but VitePress dev
-// serves under /docs/. Serve those two files from /public at root so tree-sitter
-// loads (in production the main app at the domain root already serves them).
-const serveRootWasm = {
-  name: 'serve-root-wasm',
-  configureServer(server: any) {
-    server.middlewares.use((req: any, res: any, next: any) => {
-      if (req.url === '/tree-sitter.wasm' || req.url === '/tree-sitter-ruby.wasm') {
-        const f = join(repoRoot, 'public', req.url.slice(1))
-        if (existsSync(f)) {
-          res.setHeader('Content-Type', 'application/wasm')
-          createReadStream(f).pipe(res)
-          return
-        }
-      }
-      next()
-    })
-  },
-}
 
 export default defineConfig({
   title: 'SonicPi.js',
@@ -34,7 +15,6 @@ export default defineConfig({
 
   vite: {
     server: { fs: { allow: [repoRoot] } },
-    plugins: [serveRootWasm],
   },
 
   head: [

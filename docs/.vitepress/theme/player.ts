@@ -30,32 +30,14 @@ async function getEngine(): Promise<Engine> {
   if (engine) return engine
   if (!enginePromise) {
     enginePromise = (async () => {
-      // Same engine as the live editor + the @mjayb/sonicpijs package.
+      // Same engine as the live editor + the @mjayb/sonicpijs package. #604/SV80:
+      // the engine is self-sufficient — it loads SuperSonic (GPL, never bundled),
+      // the tree-sitter wasm, and the frozen PRNG table from the CDN itself. So
+      // the docs need no SuperSonic wiring, no asset hosting, and no warm-up loop:
+      // init() resolves only once the transpiler is ready.
       const mod: any = await import('../../../src/engine')
-      // SuperSonic (scsynth WASM) is GPL — never bundled. Load the class from
-      // the CDN at runtime and hand it to the engine, exactly as the app does.
-      let SuperSonicClass: unknown
-      try {
-        const ss: any = await import(/* @vite-ignore */ 'https://unpkg.com/supersonic-scsynth@0.57.0')
-        SuperSonicClass = ss.SuperSonic ?? ss.default
-      } catch { /* no audio — engine still runs + logs events */ }
-      // Frozen PRNG table (EPIC #531) — served from the docs' own /public so it
-      // resolves under the /docs/ base in dev and in production.
-      const randStreamUrl = `${import.meta.env.BASE_URL}rand-stream.wav`
-      const e: Engine = new mod.SonicPiEngine({
-        randStreamUrl,
-        ...(SuperSonicClass ? { bridge: { SuperSonicClass } } : {}),
-      })
+      const e: Engine = new mod.SonicPiEngine()
       await e.init()
-      // Transpiler (tree-sitter) initializes in parallel and may not be ready
-      // the instant init() resolves — esp. in dev where its wasm 404s and it
-      // falls back to regex after a timeout. Warm it with a no-op evaluate,
-      // retrying until the parser/fallback is live, so the first real Run works.
-      for (let i = 0; i < 25; i++) {
-        const { error } = await e.evaluate('# warmup')
-        if (!error || !/parser not available|still be loading/i.test(error.message)) break
-        await new Promise((r) => setTimeout(r, 300))
-      }
       engine = e
       if (typeof window !== 'undefined') (window as any).__spwEngine = e
       return e

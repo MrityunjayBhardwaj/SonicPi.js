@@ -3,22 +3,21 @@
 // snippet two controls:
 //
 //   ▶ Run / ■ Stop      plays the snippet in-page through ONE shared engine
-//                        (same-origin spw-engine.mjs + SuperSonic from the CDN).
-//                        Only shown when the page is SERVED over http(s) — the
-//                        engine fetches /tree-sitter.wasm and /rand-stream.wav at
-//                        the web root, which file:// can't satisfy.
+//                        (same-origin spw-engine.mjs). #604/SV80: the engine is
+//                        self-sufficient — it loads SuperSonic, the tree-sitter
+//                        wasm, and the rand-stream from the CDN itself, so the
+//                        dashboard hosts nothing but the engine bundle. Only
+//                        shown over http(s); file:// can't load an ES module.
 //   ↗ Open in sonicpi.cc opens the snippet in the live editor, ready to run.
 //                        Pure link, no deps — shown everywhere (file:// included).
 //
-// The engine bundle + wasm + wav are produced by `npm run dashboard:audio` and
-// served from test_results/ as the web root (`npm run dashboard:serve`, or the
-// Vercel publish bundle). Without them the Run button surfaces a clear error;
-// the link always works.
+// The engine bundle is produced by `npm run dashboard:audio` and served from
+// test_results/ as the web root (`npm run dashboard:serve`, or the Vercel publish
+// bundle). Without it the Run button surfaces a clear error; the link always works.
 (function () {
   'use strict'
 
   var SONICPI_CC = 'https://sonicpi.cc/'
-  var SUPERSONIC_CDN = 'https://unpkg.com/supersonic-scsynth@0.57.0'
 
   // Resolve sibling assets relative to THIS script (currentScript is only valid
   // during synchronous top-level execution — capture it now, not in callbacks).
@@ -27,8 +26,9 @@
     return new URL('.', s ? s.src : location.href).href
   })()
 
-  // Inline play needs http(s); the engine's root-absolute wasm/wav fetches fail
-  // on file://. There we offer only the link.
+  // Inline play needs http(s): browsers block ES-module imports (the same-origin
+  // spw-engine.mjs) from file://, and the engine's WASM needs cross-origin
+  // isolation a file:// page can't get. There we offer only the link.
   var HTTP_SERVED = location.protocol === 'http:' || location.protocol === 'https:'
 
   // --- share-link encoder (must stay byte-identical to src/app/ShareLink.ts) ---
@@ -52,24 +52,12 @@
     if (!enginePromise) {
       enginePromise = (async function () {
         var mod = await import(BASE + 'spw-engine.mjs')
-        // SuperSonic (scsynth WASM) is GPL — never bundled. Load from the CDN at
-        // runtime and hand the class to the engine, exactly as the app does.
-        var SuperSonicClass
-        try {
-          var ss = await import(/* webpackIgnore: true */ SUPERSONIC_CDN)
-          SuperSonicClass = ss.SuperSonic || ss.default
-        } catch (e) { /* no audio — engine still runs + logs events */ }
-        var opts = { randStreamUrl: BASE + 'rand-stream.wav' }
-        if (SuperSonicClass) opts.bridge = { SuperSonicClass }
-        var e = new mod.SonicPiEngine(opts)
+        // #604/SV80: the engine self-loads SuperSonic (GPL, never bundled), the
+        // tree-sitter wasm, and the rand-stream from the CDN — no wiring, no asset
+        // hosting, no warm-up loop. init() resolves only once the transpiler is
+        // ready, so the first Run works immediately.
+        var e = new mod.SonicPiEngine()
         await e.init()
-        // Tree-sitter inits in parallel and may lag init(); warm it with a no-op
-        // evaluate until the parser (or its regex fallback) is live.
-        for (var i = 0; i < 25; i++) {
-          var w = await e.evaluate('# warmup')
-          if (!w.error || !READINESS_RE.test(w.error.message)) break
-          await new Promise(function (r) { setTimeout(r, 300) })
-        }
         engine = e
         window.__spwEngine = e
         return e
@@ -82,27 +70,6 @@
       })
     }
     return enginePromise
-  }
-
-  // The engine reports "not ready" two ways while it is still coming up: before
-  // init() finishes (`SonicPiEngine not initialized`) and while the tree-sitter
-  // transpiler is still loading (`parser not available` / `still be loading`).
-  // Neither is a fault in the user's snippet — we keep the spinner and poll
-  // rather than surfacing them as errors.
-  var READINESS_RE = /not initialized|parser not available|still be loading|engine.*not.*ready/i
-
-  // Evaluate, but treat a readiness error as "engine still warming up": keep
-  // retrying (button stays in the loading/spinner state) until the engine can
-  // actually run the code, or a hard cap elapses. Only a genuine code error (or
-  // a readiness error that never clears) is returned to the caller.
-  async function evaluateWhenReady(e, code) {
-    var deadline = Date.now() + 30000
-    for (;;) {
-      var res = await e.evaluate(code)
-      if (!res.error || !READINESS_RE.test(res.error.message)) return res
-      if (Date.now() > deadline) return res
-      await new Promise(function (r) { setTimeout(r, 250) })
-    }
   }
 
   function setState(btn, state) {
@@ -142,9 +109,11 @@
     clearError(bar)
     setState(btn, 'loading')
     try {
+      // getEngine() awaits init(), which (#604/SV80) resolves only once the
+      // engine is fully ready — SuperSonic, tree-sitter, and rand-stream all
+      // loaded. So the first evaluate runs for real; no readiness retry needed.
       var e = await getEngine()
-      // Spinner stays up while the engine warms; only a real snippet error stops it.
-      var res = await evaluateWhenReady(e, btn.__spwCode)
+      var res = await e.evaluate(btn.__spwCode)
       if (res.error) { setState(btn, 'error'); showError(bar, res.error.message || String(res.error)); return }
       e.play()
       currentBtn = btn
@@ -254,9 +223,9 @@
     document.head.appendChild(el)
   }
 
-  // Opened from disk (file://), browsers block the ES-module engine load and its
-  // wasm/wav fetches, so only the "open in sonicpi.cc" link works. Show a one-time
-  // banner explaining how to get the in-page Run/Stop controls.
+  // Opened from disk (file://), browsers block the ES-module engine load, so only
+  // the "open in sonicpi.cc" link works. Show a one-time banner explaining how to
+  // get the in-page Run/Stop controls.
   function injectFileHintOnce() {
     if (HTTP_SERVED || document.getElementById('spw-file-hint')) return
     var bar = document.createElement('div')
