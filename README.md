@@ -109,6 +109,11 @@ await engine.evaluate(`
 engine.play()
 ```
 
+No wiring needed — the engine loads SuperSonic (the GPL scsynth WASM core, from
+CDN, never bundled), the tree-sitter transpiler, and its PRNG table itself.
+Using a `<script type="module">` with **no bundler**? Import the self-contained
+browser entry instead: `import { SonicPiEngine } from '@mjayb/sonicpijs/browser'`.
+
 ---
 
 ## What's included

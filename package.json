@@ -28,6 +28,10 @@
     "dist/index.cjs.map",
     "dist/browser.mjs",
     "dist/browser.mjs.map",
+    "dist/tree-sitter-*.js",
+    "dist/tree-sitter-*.js.map",
+    "dist/tree-sitter-*.cjs",
+    "dist/tree-sitter-*.cjs.map",
     "dist/types"
   ],
   "scripts": {
