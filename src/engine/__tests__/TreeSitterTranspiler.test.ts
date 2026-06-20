@@ -43,6 +43,14 @@ function __spMul(a: unknown, b: unknown): unknown {
   if (typeof a === 'number' && __spIsRing(b)) return (b as Ring<any>).repeat(a)
   return (a as number) * (b as number)
 }
+// SP169/#603 — mirror of the Sandbox __spSize helper.
+function __spSize(x: any): number | undefined {
+  if (x == null) return 0
+  if (typeof x === 'string' || Array.isArray(x)) return x.length
+  if (__spIsRing(x)) return (x as Ring<any>).length
+  if (typeof x === 'object') return Object.keys(x).length
+  return x.length
+}
 // Resolve WASM paths for Node.js test environment
 const base = new URL('../../..', import.meta.url).pathname
 const tsWasm = base + 'node_modules/web-tree-sitter/tree-sitter.wasm'
@@ -2689,6 +2697,41 @@ end`)
       // The cue/gate machinery is top-level only (SP118); the inner in_thread
       // keeps the un-gated path.
       expect(r.code).not.toContain('__startGate')
+    })
+  })
+
+  describe('SP169/#603: .length/.size/.count route through __spSize (Hash literals)', () => {
+    it('emits __spSize(...) for .length / .size / .count, not raw .length', () => {
+      for (const m of ['length', 'size', 'count']) {
+        const r = treeSitterTranspile(`x = h.${m}`)
+        expect(r.ok).toBe(true)
+        expect(r.code).toContain('__spSize(h)')
+        // The old raw-.length emission (`h.length`) must be gone.
+        expect(r.code).not.toMatch(/\bh\.length\b/)
+      }
+    })
+
+    it('__spSize counts Hash pairs (the bug: a JS object has no .length)', () => {
+      const hash = { a: 1, b: 2, c: 3 }
+      // Raw .length on the lowered object is undefined → NaN downstream (SP169).
+      expect((hash as any).length).toBeUndefined()
+      expect(__spSize(hash)).toBe(3)
+      // The 39_blues_machine chain: `g_max = g_licks.length - 1` must be finite.
+      expect(__spSize(hash)! - 1).toBe(2)
+    })
+
+    it('__spSize keeps Array / Ring / String semantics (the 3 receiver types that already worked)', () => {
+      expect(__spSize([10, 20, 30])).toBe(3)
+      expect(__spSize(ring(1, 2, 3, 4))).toBe(4)
+      expect(__spSize('hello')).toBe(5)
+    })
+
+    it('__spSize is silent-safe on nil and counts pairs even for a {length:} hash', () => {
+      expect(__spSize(null)).toBe(0)
+      expect(__spSize(undefined)).toBe(0)
+      // A Hash whose key happens to be :length → Ruby #length is the PAIR count,
+      // not the stored value. __spSize routes any non-Array/Ring object to keys.
+      expect(__spSize({ length: 5, other: 1 })).toBe(2)
     })
   })
 })

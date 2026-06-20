@@ -212,6 +212,20 @@ export function createIsolatedExecutor(
     '  if (typeof a === "number" && typeof b === "string") return b.repeat(Math.max(0, Math.floor(a)));',
     '  return a * b;',
     '}',
+    // Ruby collection size — `.length`/`.size`/`.count` (SP169/#603). The
+    // transpiler lowers a Ruby Hash literal `{a:…}` to a JS OBJECT, which has
+    // no `.length` → `undefined` → NaN → loop crash. Dispatch by receiver type:
+    // Array/String/Ring keep `.length` (numeric); ANY other object is a Hash →
+    // count its pairs via Object.keys (so even a `{length: 5}` hash returns its
+    // pair count, matching Ruby, not the stored value). nil → 0 (Ruby raises,
+    // but silent-safe beats crashing a live loop, cf. __spIsA).
+    'function __spSize(x) {',
+    '  if (x == null) return 0;',
+    '  if (typeof x === "string" || Array.isArray(x)) return x.length;',
+    '  if (__spIsRing(x)) return x.length;',
+    '  if (typeof x === "object") return Object.keys(x).length;',
+    '  return x.length;',
+    '}',
     // Ruby x.kind_of?(Class) / x.is_a?(Class) — dispatch by class name.
     // Class arg comes in as a string (the transpiler JSON-encodes the
     // constant name) so we can match without needing the runtime to have

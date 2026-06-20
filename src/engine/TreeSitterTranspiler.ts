@@ -2093,9 +2093,13 @@ function transpileReceiverMethodCall(
     return `Number(${recStr})`
   }
 
-  // .length / .size / .count → .length
+  // .length / .size / .count → __spSize (SP169/#603). A raw `.length` is correct
+  // for Array/Ring/String but `undefined` on a Hash literal (lowered to a JS
+  // object with no `.length`) → NaN → loop crash. __spSize dispatches by receiver
+  // type at runtime. (No-arg form only; `.count(x)`/`.count { }` selective-count
+  // is unchanged — still out of scope, as before this fix.)
   if (method === 'length' || method === 'size' || method === 'count') {
-    return `${recStr}.length`
+    return `__spSize(${recStr})`
   }
 
   // .abs → Math.abs
