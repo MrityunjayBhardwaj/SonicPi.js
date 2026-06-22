@@ -1,10 +1,10 @@
-# Contributing to SonicPi.js
+# Contributing to SonicWeb
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/MrityunjayBhardwaj/SonicPiWeb
-cd SonicPi.js
+git clone https://github.com/MrityunjayBhardwaj/SonicWeb
+cd SonicWeb
 npm install
 npm run dev        # starts dev server at localhost:5173
 npm test           # runs vitest (703 tests)

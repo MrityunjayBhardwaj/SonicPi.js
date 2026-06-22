@@ -1,4 +1,4 @@
-## Project: Sonic Pi Web
+## Project: Sonic Web
 
 Browser-native reimplementation of Sonic Pi's temporal scheduling model in JavaScript.
 This has never been done before. You are building the first one.
@@ -89,7 +89,7 @@ Phase A (VirtualTimeScheduler) is the hard part. Get it rock-solid before moving
 
 Global AnviDev workflow applies. These are the project-specific additions:
 
-- **GitHub Project board:** "SonicPi.js Roadmap"
+- **GitHub Project board:** "SonicWeb Roadmap"
 - **Labels:** Priority (`P0`–`P4`) + area (`area: audio`, `area: scheduler`, `area: transpiler`)
 - **ROADMAP.md** is the strategic view. Issues are tactical.
 

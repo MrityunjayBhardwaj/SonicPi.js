@@ -2,7 +2,7 @@
 
 ## v1.5.0-beta.2
 
-**Prerelease.** Two PRs since v1.5.0-beta.0 — transpiler stability work (#165) and four new features from the Desktop Sonic Pi tutorial (#166). Installed via `npm install @mjayb/sonicpijs@beta`.
+**Prerelease.** Two PRs since v1.5.0-beta.0 — transpiler stability work (#165) and four new features from the Desktop Sonic Pi tutorial (#166). Installed via `npm install @mjayb/sonicweb@beta`.
 
 ### New features
 
@@ -37,13 +37,13 @@ The 56 real-world compositions from the beta.0 regression set still pass end-to-
 - `use_real_time` latency reduction is wired through the scheduler but hasn't been measured against real MIDI hardware — perceptual verification is still owed.
 - `synth :sound_in` has been verified to reach scsynth end-to-end and real mic passthrough works in manual testing, but an automated fidelity test (known tone in → known tone out with FFT verification) is still owed.
 
-Bug reports welcome on [GitHub issues](https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues). The in-app **Report Bug** button pre-fills the version, browser, and current code.
+Bug reports welcome on [GitHub issues](https://github.com/MrityunjayBhardwaj/SonicWeb/issues). The in-app **Report Bug** button pre-fills the version, browser, and current code.
 
 ---
 
 ## v1.5.0-beta.0
 
-**Prerelease.** This is the first public beta of v1.5.0. Installed via `npm install @mjayb/sonicpijs@beta`; the default `latest` tag still points to `v1.4.0`. Bug reports welcome on [GitHub issues](https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues) — the in-app **Report Bug** button pre-fills the version, browser, and current code.
+**Prerelease.** This is the first public beta of v1.5.0. Installed via `npm install @mjayb/sonicweb@beta`; the default `latest` tag still points to `v1.4.0`. Bug reports welcome on [GitHub issues](https://github.com/MrityunjayBhardwaj/SonicWeb/issues) — the in-app **Report Bug** button pre-fills the version, browser, and current code.
 
 ### Engine audit — 33 bugs fixed
 
@@ -108,7 +108,7 @@ Found during a multi-round audit against MagPi book chapters, official Sonic Pi 
 
 ### UI
 
-- Version label in the menu bar displays `v1.5.0-beta.0` (top-right, muted). Click to copy the full `SonicPi.js v1.5.0-beta.0` string to clipboard. Pre-filled into the Report Bug URL so every bug report is tagged to a specific build.
+- Version label in the menu bar displays `v1.5.0-beta.0` (top-right, muted). Click to copy the full `SonicWeb v1.5.0-beta.0` string to clipboard. Pre-filled into the Report Bug URL so every bug report is tagged to a specific build.
 
 ### Release engineering
 
@@ -182,7 +182,7 @@ See [`KNOWN_LIMITATIONS.md`](./KNOWN_LIMITATIONS.md) for the current list. The l
 - `version` aligned with git tag convention
 - `private: true` removed — package is now publishable
 - `main` field removed — it was pointing at TypeScript source, which is wrong for a CLI package
-- `vite` moved from `devDependencies` to `dependencies` — the CLI requires it at runtime; `npx sonicpijs` was silently broken in fresh installs
+- `vite` moved from `devDependencies` to `dependencies` — the CLI requires it at runtime; `npx @mjayb/sonicweb` was silently broken in fresh installs
 - `files` whitelist added — prevents publishing `artifacts/`, `tests/`, `.anvi/`, etc.
 - `engines` field added: Node ≥ 18.0.0
 - `repository`, `bugs`, `homepage` fields added
@@ -227,7 +227,7 @@ See [`KNOWN_LIMITATIONS.md`](./KNOWN_LIMITATIONS.md) for the current list. The l
 
 ## v1.0.0
 
-The first public release of Sonic Pi Web — a browser-native reimplementation of Sonic Pi with SuperCollider synthesis via WebAssembly.
+The first public release of Sonic Web — a browser-native reimplementation of Sonic Pi with SuperCollider synthesis via WebAssembly.
 
 ### Standalone App
 - Responsive layout: editor (left) + scope + console (right)
@@ -237,7 +237,7 @@ The first public release of Sonic Pi Web — a browser-native reimplementation o
 - 10 built-in examples grouped by difficulty
 - 10 buffer tabs with localStorage persistence
 - Volume slider, BPM display, recording to WAV
-- `npx sonicpijs` CLI launcher
+- `npx @mjayb/sonicweb` CLI launcher
 - Single HTML file deployment (87KB, 27KB gzipped)
 - Mobile-friendly with touch-sized controls
 
@@ -279,7 +279,7 @@ The first public release of Sonic Pi Web — a browser-native reimplementation o
 - Ctrl+Shift+S to export signed session log
 
 ### Developer API
-- `@mjayb/sonicpijs` engine embeddable in any app
+- `@mjayb/sonicweb` engine embeddable in any app
 - ProgramBuilder fluent API for building music programs
 - AudioInterpreter + QueryInterpreter dual-interpreter architecture
 - Full TypeScript types exported

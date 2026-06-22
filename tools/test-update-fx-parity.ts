@@ -160,7 +160,7 @@ async function main() {
   // Sanity — same check as capture.ts
   const isSonicPi = await page.evaluate(() => Boolean(document.querySelector('#app')))
   if (!isSonicPi) {
-    throw new Error(`[update-fx-parity] ${BASE_URL} doesn't look like Sonic Pi Web (no #app mount)`)
+    throw new Error(`[update-fx-parity] ${BASE_URL} doesn't look like Sonic Web (no #app mount)`)
   }
 
   // Paste the snippet

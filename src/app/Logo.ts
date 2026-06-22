@@ -19,7 +19,7 @@ export function createLogo(): HTMLElement {
     text-shadow: 0 0 12px ${theme.accentHover};
   `
   const text = document.createElement('span')
-  text.textContent = 'Sonic Pi Web'
+  text.textContent = 'Sonic Web'
   text.style.cssText = `
     font-weight: 700; font-size: 0.95rem; color: ${theme.fg};
     letter-spacing: 0.5px;

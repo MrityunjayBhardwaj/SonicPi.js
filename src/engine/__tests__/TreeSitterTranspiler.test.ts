@@ -2405,7 +2405,7 @@ end`)
       expect(r.errors.length).toBeGreaterThan(0)
       expect(r.errors[0]).toContain('scope_resolution')
       expect(r.errors[0]).toContain('MyNamespace::Something')
-      expect(r.errors[0]).toContain('github.com/MrityunjayBhardwaj/SonicPi.js/issues/new')
+      expect(r.errors[0]).toContain('github.com/MrityunjayBhardwaj/SonicWeb/issues/new')
     })
 
     it('error includes line number and code snippet', () => {

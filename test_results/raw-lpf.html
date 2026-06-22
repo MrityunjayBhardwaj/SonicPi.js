@@ -301,7 +301,7 @@
           <audio id="audio-desktop" controls preload="metadata" src="raw-lpf/desktop-raw.wav"></audio>
         </div>
         <div class="card">
-          <h3>SonicPi.js (web) <span id="w-stats">loading…</span></h3>
+          <h3>SonicWeb (web) <span id="w-stats">loading…</span></h3>
           <audio id="audio-web" controls preload="metadata" src="raw-lpf/web-raw.wav"></audio>
         </div>
       </div>
@@ -691,7 +691,7 @@
           <tr>
             <th>Metric</th>
             <th class="num">Desktop SP</th>
-            <th class="num">SonicPi.js (web @ AMP=3)</th>
+            <th class="num">SonicWeb (web @ AMP=3)</th>
             <th class="num">Ratio (web/desktop)</th>
           </tr>
         </thead>
@@ -778,7 +778,7 @@
         </thead>
         <tbody>
           <tr><td>Desktop SP</td><td class="num">~1.51 s (Sonic Pi bracketing)</td><td class="num">1.511 s</td><td class="num">4.971 s</td><td class="num">3.46 s</td><td class="num"><b>14</b></td></tr>
-          <tr><td>SonicPi.js (web)</td><td class="num">~1.02 s (ScriptProcessor tap)</td><td class="num">1.023 s</td><td class="num">5.632 s</td><td class="num">4.61 s</td><td class="num"><b>19</b></td></tr>
+          <tr><td>SonicWeb (web)</td><td class="num">~1.02 s (ScriptProcessor tap)</td><td class="num">1.023 s</td><td class="num">5.632 s</td><td class="num">4.61 s</td><td class="num"><b>19</b></td></tr>
         </tbody>
       </table>
       <div class="lede" style="font-size: 12px; color: var(--text-mute); margin-bottom: 8px">
@@ -1508,7 +1508,7 @@ await sonic.send(<span class="str">"/s_new"</span>, <span class="str">"sonic-pi-
         compensate for any residual loudness mismatch on their hardware.
       </div>
 
-      <h3>Comparison: Sam's vs Tau's vs our SonicPiWeb chain</h3>
+      <h3>Comparison: Sam's vs Tau's vs our SonicWeb chain</h3>
       <table class="metrics" style="margin-bottom: 14px">
         <thead>
           <tr><th>Project</th><th>FX chain shape</th><th>Master-stage Limiter?</th><th>User volume control?</th><th>Behavior with WASM 0.6× deficit + feedback over-amp</th></tr>
@@ -1529,7 +1529,7 @@ await sonic.send(<span class="str">"/s_new"</span>, <span class="str">"sonic-pi-
             <td>Limiter clamps over-amplified peaks. User compensates loudness manually. Tau output stays bounded for all FX classes; users adjust to taste.</td>
           </tr>
           <tr>
-            <td><b>SonicPiWeb</b><br /><small>(<code>SuperSonicBridge.ts:247</code>, <code>config.ts:64–90</code>)</small></td>
+            <td><b>SonicWeb</b><br /><small>(<code>SuperSonicBridge.ts:247</code>, <code>config.ts:64–90</code>)</small></td>
             <td><code>(arbitrary user FX) → <b>fx_mixer</b> → bus 0</code></td>
             <td><span class="ratio-good">Yes</span><br /><small>Limiter.ar(0.99)</small></td>
             <td><span class="ratio-mid">Not yet</span><br /><small>(MIXER.AMP is engine-internal, not user-facing)</small></td>
@@ -1761,7 +1761,7 @@ bridge.<span class="addr">preloadSample</span>(<span class="str">&quot;sn_dub&qu
       <h2>Stats</h2>
       <table class="metrics">
         <thead>
-          <tr><th>Metric</th><th>Desktop SP</th><th>SonicPi.js (web)</th><th>ratio (web / desktop)</th></tr>
+          <tr><th>Metric</th><th>Desktop SP</th><th>SonicWeb (web)</th><th>ratio (web / desktop)</th></tr>
         </thead>
         <tbody id="stats-body"></tbody>
       </table>

@@ -120,7 +120,7 @@ export class MenuBar {
 
     // GitHub source link — takes the slot the version label used to occupy
     const githubBtn = document.createElement('a')
-    githubBtn.href = 'https://github.com/MrityunjayBhardwaj/SonicPi.js'
+    githubBtn.href = 'https://github.com/MrityunjayBhardwaj/SonicWeb'
     githubBtn.target = '_blank'
     githubBtn.rel = 'noopener noreferrer'
     githubBtn.title = 'View source on GitHub'
@@ -747,7 +747,7 @@ export class MenuBar {
   private openBugReport(): void {
     const data = this.getReportData?.()
     const browser = navigator.userAgent
-    const url = new URL('https://github.com/MrityunjayBhardwaj/SonicPi.js/issues/new')
+    const url = new URL('https://github.com/MrityunjayBhardwaj/SonicWeb/issues/new')
     url.searchParams.set('template', 'bug_report.yml')
     url.searchParams.set('labels', 'bug,reported-via-app,needs-triage')
 

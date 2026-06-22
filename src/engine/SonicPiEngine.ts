@@ -2011,7 +2011,7 @@ export class SonicPiEngine {
         },
         // Tier B PR #3 — eval_file / run_file (#236). Both stubs throw an
         // informative error redirecting users to the working alternatives.
-        // Sonic Pi Web has no filesystem; on desktop these read a .rb file
+        // Sonic Web has no filesystem; on desktop these read a .rb file
         // from disk. We surface that limitation explicitly rather than
         // silently no-op'ing, so user-error from copy-pasted desktop code
         // gets a useful message in the editor's runtime-error overlay.

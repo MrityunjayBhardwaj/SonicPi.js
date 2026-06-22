@@ -2,4 +2,4 @@
 
 Internal development artifacts are stored locally at `~/.anvideck/projects/sonicPiWeb/`, not in this repo.
 
-If you're contributing to Sonic Pi Web, you can safely ignore this directory.
+If you're contributing to Sonic Web, you can safely ignore this directory.

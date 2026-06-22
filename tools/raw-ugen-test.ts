@@ -143,7 +143,7 @@ async function main() {
   await page.goto(BASE_URL)
   await page.waitForTimeout(1500)
   if (!(await page.evaluate(() => Boolean(document.querySelector('#app'))))) {
-    throw new Error(`${BASE_URL} is not the SonicPi.js app (run npm run dev first).`)
+    throw new Error(`${BASE_URL} is not the SonicWeb app (run npm run dev first).`)
   }
 
   // Boot the engine (init happens on first Run). Run a silent snippet.

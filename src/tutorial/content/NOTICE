@@ -8,7 +8,7 @@ ShareAlike scope
 ------------------------------------------------------------------------
 The markdown files in this directory, and the prose carried from them into
 the generated src/tutorial/tutorialData.ts, are licensed CC BY-SA 4.0.
-This does NOT relicense the Sonic Pi Web engine or application code —
+This does NOT relicense the Sonic Web engine or application code —
 CC BY-SA 4.0 attaches to the tutorial content only (T0 determination,
 issue #310).
 

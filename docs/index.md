@@ -2,12 +2,12 @@
 layout: home
 
 hero:
-  name: SonicPi.js
+  name: SonicWeb
   text: Sonic Pi in the browser.
   tagline: Real SuperCollider synthesis via WebAssembly. No install. Just open and play.
   image:
     src: /docs/favicon.svg
-    alt: SonicPi.js
+    alt: SonicWeb
   actions:
     - theme: brand
       text: Try it at sonicweb.cc
@@ -27,5 +27,5 @@ features:
   - title: ~95% DSL compatible
     details: live_loop, sync/cue, with_fx, use_bpm, density, time_warp, and more — Ruby syntax transpiled automatically.
   - title: Embeddable library
-    details: Use the engine in your own app via npm install @mjayb/sonicpijs with full TypeScript types.
+    details: Use the engine in your own app via npm install @mjayb/sonicweb with full TypeScript types.
 ---

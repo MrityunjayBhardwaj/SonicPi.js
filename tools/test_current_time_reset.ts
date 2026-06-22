@@ -26,7 +26,7 @@ async function main() {
   await page.goto('http://localhost:5173')
   await page.waitForTimeout(2000)
   if (!(await page.evaluate(() => Boolean(document.querySelector('#app'))))) {
-    throw new Error('Not the SonicPi.js app')
+    throw new Error('Not the SonicWeb app')
   }
 
   // Install the engine hook BEFORE Run (capture.ts pattern, #221).

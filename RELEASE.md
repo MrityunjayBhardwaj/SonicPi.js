@@ -1,6 +1,6 @@
 # Release Runbook
 
-This document is the sole source of truth for cutting a SonicPi.js release. Follow it top-to-bottom. Every step is observable — don't trust that commands "worked," verify what the consumer actually sees.
+This document is the sole source of truth for cutting a SonicWeb release. Follow it top-to-bottom. Every step is observable — don't trust that commands "worked," verify what the consumer actually sees.
 
 Full rationale for the criteria below lives in dharana §10 (Release Engineering Boundary) — this file is the executable procedure, the dharana entry is the theory.
 
@@ -189,7 +189,7 @@ gh release create v1.X.Y-beta.N \
 2. Runs `npm pack --dry-run` to surface what will be shipped
 3. Detects `github.event.release.prerelease` and runs `npm publish --access public --tag beta` (prereleases) OR `npm publish --access public` (stable)
 4. Sleeps 10s for npm registry propagation
-5. Verifies `npm view @mjayb/sonicpijs@beta version` matches the tagged version — fails the workflow if not
+5. Verifies `npm view @mjayb/sonicweb@beta version` matches the tagged version — fails the workflow if not
 
 **DO NOT manually run `npm publish`.** The CI workflow owns the publish boundary. Manual publishing conflicts with the automation (npm rejects republishing the same version) and bypasses the verification steps. If you need to publish from your local machine (disaster recovery only), see the "Recovery" section below.
 
@@ -202,14 +202,14 @@ Wait for all steps green. Pay special attention to the "Verify dist-tags match e
 
 ### 12. Verify what npm actually serves (redundant but cheap)
 ```bash
-npm view @mjayb/sonicpijs dist-tags
+npm view @mjayb/sonicweb dist-tags
 # Expected output for a beta release:
 #   { latest: '1.X.(Y-1)', beta: '1.X.Y-beta.N' }
 #
 # Expected output for a stable release:
 #   { latest: '1.X.Y', beta: '1.X.Y-rc.M' }  # or whatever the last prerelease was
 ```
-**If `latest` moved on a prerelease, STOP and fix.** Recovery: `npm dist-tag add @mjayb/sonicpijs@<previous-stable> latest`.
+**If `latest` moved on a prerelease, STOP and fix.** Recovery: `npm dist-tag add @mjayb/sonicweb@<previous-stable> latest`.
 
 ### 13. Verify sonicweb.cc deploy
 - Open sonicweb.cc in a fresh **incognito** window (your normal browser may serve a cached build)
@@ -232,12 +232,12 @@ Drafts for these live in `~/.anvideck/projects/sonicPiWeb/drafts/` (outside the 
 ## Recovery procedures
 
 ### If CI publish failed mid-flight
-If `publish.yml` ran `npm publish` successfully but the dist-tag verification step failed (e.g., slow propagation), the package IS published but the verification didn't confirm it. Manually verify with `npm view @mjayb/sonicpijs dist-tags`. If correct, ignore the CI failure. If wrong, use dist-tag recovery below.
+If `publish.yml` ran `npm publish` successfully but the dist-tag verification step failed (e.g., slow propagation), the package IS published but the verification didn't confirm it. Manually verify with `npm view @mjayb/sonicweb dist-tags`. If correct, ignore the CI failure. If wrong, use dist-tag recovery below.
 
 ### Prerelease accidentally became `latest`
 ```bash
-npm dist-tag add @mjayb/sonicpijs@<previous-stable> latest
-npm dist-tag add @mjayb/sonicpijs@<new-prerelease> beta
+npm dist-tag add @mjayb/sonicweb@<previous-stable> latest
+npm dist-tag add @mjayb/sonicweb@<new-prerelease> beta
 ```
 Replace the placeholders with actual versions. This reassigns tags without republishing. Then file a post-mortem — this shouldn't happen with the current `publish.yml` but if it does, investigate the workflow logs.
 
@@ -248,7 +248,7 @@ npm run build:lib
 npm publish --access public --tag beta    # for prereleases
 # OR
 npm publish --access public                # for stable
-npm view @mjayb/sonicpijs dist-tags        # verify
+npm view @mjayb/sonicweb dist-tags        # verify
 ```
 Then immediately fix `publish.yml` and commit the fix. This path should be used at most once per incident.
 
@@ -303,7 +303,7 @@ Post-merge (after this PR is squash-merged to main):
 - [ ] Release notes extracted from CHANGELOG.md to /tmp/release-notes.md
 - [ ] gh release create --prerelease (triggers publish.yml automatically)
 - [ ] publish.yml workflow watched to completion, all steps green
-- [ ] Post-publish dist-tag check: npm view @mjayb/sonicpijs dist-tags
+- [ ] Post-publish dist-tag check: npm view @mjayb/sonicweb dist-tags
       (latest unchanged, beta points to new version)
 - [ ] sonicweb.cc incognito check — menu bar footer shows new version
 - [ ] Announcement (separate step — drafts in ~/.anvideck/.../drafts/)

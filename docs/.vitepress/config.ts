@@ -8,7 +8,7 @@ import { fileURLToPath, URL } from 'node:url'
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 
 export default defineConfig({
-  title: 'SonicPi.js',
+  title: 'SonicWeb',
   description: 'Browser-native Sonic Pi with real SuperCollider synthesis via WebAssembly.',
   base: '/docs/',
   outDir: '../dist/docs',
@@ -22,12 +22,12 @@ export default defineConfig({
   ],
 
   themeConfig: {
-    logo: { src: '/docs/favicon.svg', alt: 'SonicPi.js' },
+    logo: { src: '/docs/favicon.svg', alt: 'SonicWeb' },
 
     nav: [
       { text: 'Try it', link: 'https://sonicweb.cc' },
-      { text: 'npm', link: 'https://www.npmjs.com/package/@mjayb/sonicpijs' },
-      { text: 'GitHub', link: 'https://github.com/MrityunjayBhardwaj/SonicPi.js' },
+      { text: 'npm', link: 'https://www.npmjs.com/package/@mjayb/sonicweb' },
+      { text: 'GitHub', link: 'https://github.com/MrityunjayBhardwaj/SonicWeb' },
     ],
 
     sidebar: [
@@ -48,7 +48,7 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/MrityunjayBhardwaj/SonicPi.js' },
+      { icon: 'github', link: 'https://github.com/MrityunjayBhardwaj/SonicWeb' },
     ],
 
     footer: {

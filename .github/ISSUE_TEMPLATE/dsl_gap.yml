@@ -6,7 +6,7 @@ body:
     id: code
     attributes:
       label: Sonic Pi code
-      description: Paste the code that works in desktop Sonic Pi but fails in SonicPi.js.
+      description: Paste the code that works in desktop Sonic Pi but fails in SonicWeb.
       render: ruby
     validations:
       required: true

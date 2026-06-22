@@ -222,7 +222,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>SonicPi.js — Parity Dashboard</title>
+<title>SonicWeb — Parity Dashboard</title>
 <style>
   :root {
     --bg:#1a1b26; --bg-elev:#1f2335; --bg-card:#16161e; --border:#2a2e46;
@@ -317,7 +317,7 @@ const html = `<!doctype html>
 <body>
 ${navBlock('desktop ↔ web parity · #446 event diff')}
 <div class="wrap">
-  <h1>SonicPi.js — Parity Dashboard</h1>
+  <h1>SonicWeb — Parity Dashboard</h1>
   <p class="sub">${PUBLIC
     ? `Desktop Sonic Pi &harr; browser engine, every example pool. Built <b>${esc(now)}</b>. <b>Pitch is the verdict</b>; consistency scores are timbre/level support only.`
     : `Desktop Sonic Pi ↔ browser engine, every example pool. Built <b>${esc(now)}</b> from the freshly-captured manifests. <b>Tier-1 pitch is the verdict</b> (SV46); consistency scores are timbre/level support only.`}</p>

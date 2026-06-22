@@ -146,7 +146,7 @@ for (const row of ROWS) {
     <p class="note">${esc(scrub(row.note))}</p>
     <div class="players">
       <figure><figcaption>🖥️ Desktop Sonic Pi</figcaption>${desktopRel ? `<audio controls preload="none" src="${desktopRel}"></audio>` : '<em>audio unavailable</em>'}</figure>
-      <figure><figcaption>🌐 SonicPi.js (web)</figcaption>${webRel ? `<audio controls preload="none" src="${webRel}"></audio>` : '<em>audio unavailable</em>'}</figure>
+      <figure><figcaption>🌐 SonicWeb (web)</figcaption>${webRel ? `<audio controls preload="none" src="${webRel}"></audio>` : '<em>audio unavailable</em>'}</figure>
     </div>
     <details class="snippet"><summary>📄 ${esc(row.snippet.split('/').pop() ?? 'snippet')}</summary><pre><code>${esc(snippet)}</code></pre></details>
     ${spectroRel ? `<details open class="spectro"><summary>🎛️ A/B spectrogram</summary><img loading="lazy" src="${spectroRel}" alt="${esc(row.ex)} spectrogram"></details>` : ''}
@@ -158,7 +158,7 @@ const generatedNote = missing.length ? `<p class="missing">⚠ missing artifacts
 
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SonicPi.js — Launch-Gate Detail (7 rows)</title>
+<title>SonicWeb — Launch-Gate Detail (7 rows)</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }

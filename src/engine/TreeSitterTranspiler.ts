@@ -2233,7 +2233,7 @@ function transpileScopeResolution(node: any, ctx: TranspileContext): string {
 // in the editor error panel.
 // ---------------------------------------------------------------------------
 
-const REPORT_BUG_URL = 'https://github.com/MrityunjayBhardwaj/SonicPi.js/issues/new'
+const REPORT_BUG_URL = 'https://github.com/MrityunjayBhardwaj/SonicWeb/issues/new'
 
 function pushUnsupported(
   ctx: TranspileContext,

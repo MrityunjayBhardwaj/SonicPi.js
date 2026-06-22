@@ -1,5 +1,5 @@
 /**
- * Canonical list of FX synthdef names available in Sonic Pi Web.
+ * Canonical list of FX synthdef names available in Sonic Web.
  *
  * Sourced from synthinfo.rb FX classes (desktop Sonic Pi). Each entry maps to
  * a `sonic-pi-fx_<name>.scsyndef` binary on the SuperSonic CDN. Loaded on demand

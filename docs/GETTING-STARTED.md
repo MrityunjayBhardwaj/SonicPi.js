@@ -1,6 +1,6 @@
-# Getting Started with SonicPi.js
+# Getting Started with SonicWeb
 
-SonicPi.js lets you make music by writing code in your browser. No downloads, no installs -- just open the page and start playing.
+SonicWeb lets you make music by writing code in your browser. No downloads, no installs -- just open the page and start playing.
 
 Based on [Sonic Pi](https://sonic-pi.net) by Sam Aaron.
 
@@ -11,7 +11,7 @@ Based on [Sonic Pi](https://sonic-pi.net) by Sam Aaron.
 **Option A:** Run locally with Node.js:
 
 ```
-npx sonicpijs
+npx @mjayb/sonicweb
 ```
 
 **Option B:** Visit [sonicweb.cc](https://sonicweb.cc) (hosted, zero install).
@@ -535,7 +535,7 @@ The Examples menu contains 10 built-in programs organized by difficulty. Load on
 
 ## Differences from Desktop Sonic Pi
 
-SonicPi.js aims to be compatible with the desktop version's Ruby DSL. Here is what to know:
+SonicWeb aims to be compatible with the desktop version's Ruby DSL. Here is what to know:
 
 **Works the same:**
 - `play`, `sleep`, `sample`, `live_loop`, `in_thread`
@@ -548,7 +548,7 @@ SonicPi.js aims to be compatible with the desktop version's Ruby DSL. Here is wh
 **Different:**
 - Runs in the browser using WebAudio + SuperSonic (scsynth compiled to WebAssembly), not a native SuperCollider server.
 - Synth and sample sets are limited to those listed above. Desktop Sonic Pi has a larger library.
-- **Random values differ from desktop.** `rrand`, `choose`, `one_in`, `use_random_seed` etc. are fully deterministic and seed-stable *within* SonicPi.js — the same seed always produces the same sequence here. But the actual values are **not** identical to desktop Sonic Pi: desktop replays a frozen random-number table, while SonicPi.js computes a live Mersenne Twister (MT19937). So a randomness-driven piece (e.g. `play scale(:c, :minor).choose`) sounds *different* from desktop — same shape, different notes. Matching desktop's exact random stream is a deliberate non-goal for v1.
+- **Random values differ from desktop.** `rrand`, `choose`, `one_in`, `use_random_seed` etc. are fully deterministic and seed-stable *within* SonicWeb — the same seed always produces the same sequence here. But the actual values are **not** identical to desktop Sonic Pi: desktop replays a frozen random-number table, while SonicWeb computes a live Mersenne Twister (MT19937). So a randomness-driven piece (e.g. `play scale(:c, :minor).choose`) sounds *different* from desktop — same shape, different notes. Matching desktop's exact random stream is a deliberate non-goal for v1.
 - Audio latency depends on your browser. Chrome typically performs best.
 - MIDI and OSC output are not yet supported.
 - `run_file` and `load_sample` from disk are not available in the browser.

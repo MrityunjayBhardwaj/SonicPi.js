@@ -1,25 +1,25 @@
-# Sonic Pi Web
+# Sonic Web
 
 **Your Sonic Pi code, now portable.**
 
 <p align="center">
-  <img src="assets/sonicpi_screenshot.png" alt="Sonic Pi Web — live coding in the browser" width="100%">
+  <img src="assets/sonicpi_screenshot.png" alt="Sonic Web — live coding in the browser" width="100%">
 </p>
 
-[![CI](https://github.com/MrityunjayBhardwaj/SonicPiWeb/actions/workflows/ci.yml/badge.svg)](https://github.com/MrityunjayBhardwaj/SonicPiWeb/actions/workflows/ci.yml)
-[![Deploy](https://github.com/MrityunjayBhardwaj/SonicPiWeb/actions/workflows/deploy.yml/badge.svg)](https://github.com/MrityunjayBhardwaj/SonicPiWeb/actions/workflows/deploy.yml)
-[![npm beta](https://img.shields.io/npm/v/@mjayb/sonicpijs/beta?label=npm%20beta&color=orange)](https://www.npmjs.com/package/@mjayb/sonicpijs/v/beta)
+[![CI](https://github.com/MrityunjayBhardwaj/SonicWeb/actions/workflows/ci.yml/badge.svg)](https://github.com/MrityunjayBhardwaj/SonicWeb/actions/workflows/ci.yml)
+[![Deploy](https://github.com/MrityunjayBhardwaj/SonicWeb/actions/workflows/deploy.yml/badge.svg)](https://github.com/MrityunjayBhardwaj/SonicWeb/actions/workflows/deploy.yml)
+[![npm beta](https://img.shields.io/npm/v/@mjayb/sonicweb/beta?label=npm%20beta&color=orange)](https://www.npmjs.com/package/@mjayb/sonicweb/v/beta)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
 **[Try it now at sonicweb.cc](https://sonicweb.cc)**
 
-> v1.5 is in **beta** — published under both the `latest` and `beta` npm tags during stabilization. `npm install @mjayb/sonicpijs` gets you the current beta; pin with `@1.5.0-beta.3` for a fixed version.
+> v1.5 is in **beta** — published under both the `latest` and `beta` npm tags during stabilization. `npm install @mjayb/sonicweb` gets you the current beta; pin with `@1.5.0-beta.3` for a fixed version.
 
 ---
 
 ## Make music with code. In your browser.
 
-Sonic Pi Web is a browser-native reimplementation of [Sonic Pi](https://sonic-pi.net/)'s live coding engine. Same Ruby DSL. Same synths. Same samples. No install.
+Sonic Web is a browser-native reimplementation of [Sonic Pi](https://sonic-pi.net/)'s live coding engine. Same Ruby DSL. Same synths. Same samples. No install.
 
 I built this because Sonic Pi changed how I think about music and code, and I wanted that experience to be one click away for anyone with a browser.
 
@@ -73,7 +73,7 @@ The bass joins in. Change a number. Hit Run again. The music updates instantly. 
 
 **Teach** — zero setup means students open a URL and start coding. Friendly error messages with line numbers. Built-in examples from simple beats to full compositions.
 
-**Embed anywhere** — drop the engine into any web page, LMS, or creative coding tool as an [npm package](https://www.npmjs.com/package/@mjayb/sonicpijs).
+**Embed anywhere** — drop the engine into any web page, LMS, or creative coding tool as an [npm package](https://www.npmjs.com/package/@mjayb/sonicweb).
 
 ---
 
@@ -86,17 +86,17 @@ The bass joins in. Change a number. Hit Run again. The music updates instantly. 
 ### Option 2: Run locally
 
 ```bash
-npx sonicpijs@beta
+npx @mjayb/sonicweb@beta
 ```
 
 ### Option 3: Embed in your app
 
 ```bash
-npm install @mjayb/sonicpijs@beta
+npm install @mjayb/sonicweb@beta
 ```
 
 ```ts
-import { SonicPiEngine } from '@mjayb/sonicpijs'
+import { SonicPiEngine } from '@mjayb/sonicweb'
 
 const engine = new SonicPiEngine()
 await engine.init()
@@ -112,7 +112,7 @@ engine.play()
 No wiring needed — the engine loads SuperSonic (the GPL scsynth WASM core, from
 CDN, never bundled), the tree-sitter transpiler, and its PRNG table itself.
 Using a `<script type="module">` with **no bundler**? Import the self-contained
-browser entry instead: `import { SonicPiEngine } from '@mjayb/sonicpijs/browser'`.
+browser entry instead: `import { SonicPiEngine } from '@mjayb/sonicweb/browser'`.
 
 ---
 
@@ -188,7 +188,7 @@ Every Ruby snippet on the dashboards is **playable in the browser** — ▶ Run 
 
 - **63/66 synths** working end-to-end (3 upstream WASM LOAD-FAIL: `dark_sea_horn`, `singer`, `winwood_lead`)
 - **197/197 samples**
-- **38 FX** wired end-to-end and A/B WAV-verified against desktop (`tools/fx-sweep.ts`). No FX produces silence or wrong audio — every wired FX routes signal; differences are level/spectral-shape, not engine bugs. (`delay` and `chorus` are excluded — the upstream SuperSonic WASM synthdef package doesn't ship them, [#301](https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/301).)
+- **38 FX** wired end-to-end and A/B WAV-verified against desktop (`tools/fx-sweep.ts`). No FX produces silence or wrong audio — every wired FX routes signal; differences are level/spectral-shape, not engine bugs. (`delay` and `chorus` are excluded — the upstream SuperSonic WASM synthdef package doesn't ship them, [#301](https://github.com/MrityunjayBhardwaj/SonicWeb/issues/301).)
 - **~148/170 DSL functions** (~87% of upstream's user-facing surface)
 
 **Identical to desktop:** seeded PRNG (Mersenne Twister), synth definitions, sample library, music theory, timing semantics, hot-swap, sync/cue.
@@ -203,7 +203,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) for permanent constraints and [
 
 ### How does this compare to Sonic Tau?
 
-[Sonic Tau](https://sonic-pi.net/tau/) is Sam Aaron's official next-gen Sonic Pi for the browser, built on Elixir + Phoenix LiveView. Sonic Pi Web is an independent JS-native engine you can `npm install` and embed in any web page. Tau is the future of the Sonic Pi project; this is for embedding the live-coding model into your own apps, courses, and tools.
+[Sonic Tau](https://sonic-pi.net/tau/) is Sam Aaron's official next-gen Sonic Pi for the browser, built on Elixir + Phoenix LiveView. Sonic Web is an independent JS-native engine you can `npm install` and embed in any web page. Tau is the future of the Sonic Pi project; this is for embedding the live-coding model into your own apps, courses, and tools.
 
 ---
 
@@ -216,7 +216,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) for permanent constraints and [
 - **Mixer:** live Pre-Amp / Amp sliders, gain staging aligned to Sonic Tau (browser-WASM safe headroom)
 - **Per-loop audio isolation** — first Sonic Pi implementation to ship this
 
-Full changelog: [Releases](https://github.com/MrityunjayBhardwaj/SonicPiWeb/releases).
+Full changelog: [Releases](https://github.com/MrityunjayBhardwaj/SonicWeb/releases).
 
 ---
 
@@ -239,7 +239,7 @@ Full changelog: [Releases](https://github.com/MrityunjayBhardwaj/SonicPiWeb/rele
 
 ## Contributing
 
-Issues and PRs welcome. Pick an issue from the [SonicPi.js Roadmap](https://github.com/users/MrityunjayBhardwaj/projects) board — `area: audio`, `area: scheduler`, and `area: transpiler` labels are good entry points. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and workflow.
+Issues and PRs welcome. Pick an issue from the [SonicWeb Roadmap](https://github.com/users/MrityunjayBhardwaj/projects) board — `area: audio`, `area: scheduler`, and `area: transpiler` labels are good entry points. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and workflow.
 
 ## License
 

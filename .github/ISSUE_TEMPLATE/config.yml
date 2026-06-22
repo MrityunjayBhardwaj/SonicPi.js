@@ -1,13 +1,13 @@
 blank_issues_enabled: false
 contact_links:
   - name: Known Issues (read this first)
-    url: https://github.com/MrityunjayBhardwaj/SonicPi.js/blob/main/KNOWN_ISSUES.md
+    url: https://github.com/MrityunjayBhardwaj/SonicWeb/blob/main/KNOWN_ISSUES.md
     about: Audio parity gaps, browser support matrix, and other limitations we already know about
   - name: How we triage bugs
-    url: https://github.com/MrityunjayBhardwaj/SonicPi.js/blob/main/TRIAGE.md
+    url: https://github.com/MrityunjayBhardwaj/SonicWeb/blob/main/TRIAGE.md
     about: Severity ladder, response-time guide, label scheme, and what makes a bug land fast
   - name: Question or Discussion
-    url: https://github.com/MrityunjayBhardwaj/SonicPi.js/discussions
+    url: https://github.com/MrityunjayBhardwaj/SonicWeb/discussions
     about: Ask questions and share ideas in Discussions
   - name: Sonic Pi Desktop Issues
     url: https://github.com/sonic-pi-net/sonic-pi/issues

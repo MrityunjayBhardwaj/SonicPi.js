@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-test.describe('Sonic Pi Web — E2E Smoke Tests', () => {
+test.describe('Sonic Web — E2E Smoke Tests', () => {
 
   test('app loads without JS errors', async ({ page }) => {
     const errors: string[] = []

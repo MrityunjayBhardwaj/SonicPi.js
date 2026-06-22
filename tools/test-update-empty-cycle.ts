@@ -183,7 +183,7 @@ async function main() {
   await page.goto(BASE_URL)
   await page.waitForTimeout(2000)
   if (!(await page.evaluate(() => Boolean(document.querySelector('#app'))))) {
-    throw new Error(`[update-empty-cycle] ${BASE_URL} doesn't look like Sonic Pi Web`)
+    throw new Error(`[update-empty-cycle] ${BASE_URL} doesn't look like Sonic Web`)
   }
 
   const runBtn = page.locator('.spw-btn-label').filter({ hasText: /^(Run|Update)$/ }).first()

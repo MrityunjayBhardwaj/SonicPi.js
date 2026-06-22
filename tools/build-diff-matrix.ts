@@ -218,7 +218,7 @@ const detailCards = ordered.map(detailCard).join('\n')
 const html = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>SonicPi.js — Diff Matrix (construct×context)</title>
+<title>SonicWeb — Diff Matrix (construct×context)</title>
 <style>
   :root{--bg:#1a1b26;--bg-elev:#1f2335;--bg-card:#16161e;--border:#2a2e46;
     --text:#c0caf5;--text-dim:#7a85b3;--text-mute:#565f89;--accent:#7aa2f7;--accent2:#ff1493;

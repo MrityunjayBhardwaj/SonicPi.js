@@ -1,6 +1,6 @@
 # Known Limitations
 
-Current known limitations and browser-specific behaviors for Sonic Pi Web.
+Current known limitations and browser-specific behaviors for Sonic Web.
 
 ## Browser Requirements
 
@@ -48,15 +48,15 @@ The same composition will sound recognizably similar but not bit-identical to de
   - Drum samples (`:bd_haus`, `:drum_cymbal_closed`) within ~2% of desktop
 - Mixer levels (`pre_amp`, `amp`) are calibrated for browser playback (no native driver attenuation), following the Sonic Tau reference rather than raw desktop Sonic Pi values.
 - **Workaround for users:** adjust master volume when porting compositions from desktop, and use `amp:` per-synth to fine-tune.
-- Tracking: a per-synth amp calibration phase is planned but deferred. Issue: [#268](https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/268).
+- Tracking: a per-synth amp calibration phase is planned but deferred. Issue: [#268](https://github.com/MrityunjayBhardwaj/SonicWeb/issues/268).
 
 ### FX coverage
 
-- 38 FX are wired end-to-end. The full A/B WAV-verify sweep (`tools/fx-sweep.ts`) categorizes them as: **4 HIGH · 26 MID · 8 LOW**. No FX produces silence or wrong audio on web — every wired FX routes signal. Differences against Desktop SP are level / spectral-shape divergences, not engine bugs. Tier definitions ([#278](https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/278)):
+- 38 FX are wired end-to-end. The full A/B WAV-verify sweep (`tools/fx-sweep.ts`) categorizes them as: **4 HIGH · 26 MID · 8 LOW**. No FX produces silence or wrong audio on web — every wired FX routes signal. Differences against Desktop SP are level / spectral-shape divergences, not engine bugs. Tier definitions ([#278](https://github.com/MrityunjayBhardwaj/SonicWeb/issues/278)):
   - **HIGH (4)** — score ≥ 70 AND MFCC dist ≤ 180 (close in level AND timbre): `panslicer`, `slicer`, `wobble`, `tremolo`. All sustained-flavor — those use `:prophet` pad snippets where the FX shape is directly comparable.
-  - **MID (26)** — score 50–70 (audible divergence; recognizable but not parity): `mono`, `pan`, `ping_pong`, `lpf`, `compressor`, `flanger`, `band_eq`, `eq`, `reverb`, `level`, `rlpf`, `bitcrusher`, `vowel`, `hpf`, `tanh`, `pitch_shift`, `ring_mod`, `rhpf`, `whammy`, `octaver`, `echo`, `krush`, `gverb`, `distortion`, `ixi_techno`, `nrbpf`. Spectral-shape divergence audit at [#273](https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/273).
-  - **LOW (8)** — score < 50 (significantly different): `bpf`, `rbpf`, `nbpf`, `nlpf`, `nrlpf`, `nhpf`, `nrhpf`, `normaliser`. The filter-family gain gap is the dominant cause — notch filters 0.35–0.40× quieter, `bpf`/`rbpf` 2.5× louder. Tracked in [#272](https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/272).
-  - **Excluded (2)** — `delay` and `chorus` are not wired: their compiled `.scsyndef` binaries are not shipped in the upstream `supersonic-scsynth-synthdefs` CDN package (404 across all known versions). Use `:echo` for delay and `:flanger`/`:ring_mod` for chorus. Tracked in [#301](https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/301).
+  - **MID (26)** — score 50–70 (audible divergence; recognizable but not parity): `mono`, `pan`, `ping_pong`, `lpf`, `compressor`, `flanger`, `band_eq`, `eq`, `reverb`, `level`, `rlpf`, `bitcrusher`, `vowel`, `hpf`, `tanh`, `pitch_shift`, `ring_mod`, `rhpf`, `whammy`, `octaver`, `echo`, `krush`, `gverb`, `distortion`, `ixi_techno`, `nrbpf`. Spectral-shape divergence audit at [#273](https://github.com/MrityunjayBhardwaj/SonicWeb/issues/273).
+  - **LOW (8)** — score < 50 (significantly different): `bpf`, `rbpf`, `nbpf`, `nlpf`, `nrlpf`, `nhpf`, `nrhpf`, `normaliser`. The filter-family gain gap is the dominant cause — notch filters 0.35–0.40× quieter, `bpf`/`rbpf` 2.5× louder. Tracked in [#272](https://github.com/MrityunjayBhardwaj/SonicWeb/issues/272).
+  - **Excluded (2)** — `delay` and `chorus` are not wired: their compiled `.scsyndef` binaries are not shipped in the upstream `supersonic-scsynth-synthdefs` CDN package (404 across all known versions). Use `:echo` for delay and `:flanger`/`:ring_mod` for chorus. Tracked in [#301](https://github.com/MrityunjayBhardwaj/SonicWeb/issues/301).
 - Run `npx tsx tools/fx-sweep.ts` against any branch to regenerate `.captures/fx-baseline.json` and diff. To re-classify under different thresholds without re-recording, run `npx tsx tools/fx-sweep.ts --reclassify-only`.
 - Audition the sweep results side-by-side: `npm run inspect` builds `test_results/fx/<fx>/` from the cached `.captures/` artifacts and serves the inspector at `http://localhost:8080`. Each FX shows desktop ↔ web `<audio>` players, sync-play, spectrogram, per-beat divergence, snippet, and metrics.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * SonicPi.js CLI — starts the dev server and opens the browser.
+ * SonicWeb CLI — starts the dev server and opens the browser.
  * Usage: npx sonicpi
  */
 
@@ -16,7 +16,7 @@ async function main() {
   const port = parseInt(process.env.PORT || '3000', 10)
 
   console.log('')
-  console.log('  ♫ SonicPi.js')
+  console.log('  ♫ SonicWeb')
   console.log('  The Live Coding Music Synth for Everyone')
   console.log('')
 

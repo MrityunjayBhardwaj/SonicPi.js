@@ -1,6 +1,6 @@
 /**
  * A/B comparator — runs the same Sonic Pi snippet through BOTH desktop
- * Sonic Pi.app (via tools/capture-desktop.ts) and the SonicPi.js browser app
+ * Sonic Pi.app (via tools/capture-desktop.ts) and the SonicWeb browser app
  * (via tools/capture.ts), then writes a side-by-side stats report.
  *
  * Useful for parity verification: "does our engine produce the same audio
@@ -223,7 +223,7 @@ function writeComparisonReport(r: ComparisonResult): void {
 
   lines.push('## Stats (Level 3 — observation, not inference)')
   lines.push('')
-  lines.push('| Metric        | Desktop SP             | SonicPi.js (web)        | Δ (desk − web) |')
+  lines.push('| Metric        | Desktop SP             | SonicWeb (web)        | Δ (desk − web) |')
   lines.push('|---------------|------------------------|-------------------------|----------------|')
 
   const fmt = (v: number | undefined, digits = 4) =>

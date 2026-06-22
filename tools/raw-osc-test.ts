@@ -1,5 +1,5 @@
 /**
- * Raw OSC Isolation Test — BYPASSES the entire Sonic Pi Web engine.
+ * Raw OSC Isolation Test — BYPASSES the entire Sonic Web engine.
  *
  * Purpose: Prove whether the 2.3x louder output is from SuperSonic's scsynth WASM
  * or from our engine code.
@@ -522,7 +522,7 @@ function buildReport(
 
 ## Purpose
 
-This test BYPASSES the entire Sonic Pi Web engine (no SonicPiEngine, no SoundLayer,
+This test BYPASSES the entire Sonic Web engine (no SonicPiEngine, no SoundLayer,
 no AudioInterpreter, no ProgramBuilder). It loads SuperSonic directly from CDN and
 sends raw OSC commands with desktop-identical settings.
 

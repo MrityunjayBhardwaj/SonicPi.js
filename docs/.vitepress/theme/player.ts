@@ -30,7 +30,7 @@ async function getEngine(): Promise<Engine> {
   if (engine) return engine
   if (!enginePromise) {
     enginePromise = (async () => {
-      // Same engine as the live editor + the @mjayb/sonicpijs package. #604/SV80:
+      // Same engine as the live editor + the @mjayb/sonicweb package. #604/SV80:
       // the engine is self-sufficient — it loads SuperSonic (GPL, never bundled),
       // the tree-sitter wasm, and the frozen PRNG table from the CDN itself. So
       // the docs need no SuperSonic wiring, no asset hosting, and no warm-up loop:

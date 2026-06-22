@@ -1,4 +1,4 @@
-# Triage — How Sonic Pi Web bugs land
+# Triage — How Sonic Web bugs land
 
 > **Purpose of this document:** make the bug-handling workflow predictable so the community knows what to expect, and so duplicate / known issues don't drown out the real ones.
 
@@ -75,7 +75,7 @@ For non-trivial bugs we write a Playwright + WAV-analysis reproducer first, then
 
 We follow [AnviDev workflow](./CLAUDE.md): one issue → one branch → one focused commit (or a small chain) → PR with `closes #N` → reviewer feedback → merge.
 
-Commits use gitmoji + a Problem/Fix body so the git log reads like a changelog. Example: see [`6df8dbe`](https://github.com/MrityunjayBhardwaj/SonicPiWeb/commit/6df8dbe) (drain scsynth queue on Stop).
+Commits use gitmoji + a Problem/Fix body so the git log reads like a changelog. Example: see [`6df8dbe`](https://github.com/MrityunjayBhardwaj/SonicWeb/commit/6df8dbe) (drain scsynth queue on Stop).
 
 ### 4. Verify + close
 
@@ -120,7 +120,7 @@ If you find something that could be a security issue (XSS via shared buffer URL,
 
 ## Roadmap visibility
 
-The active milestone work lives on the [SonicPi.js Roadmap](https://github.com/users/MrityunjayBhardwaj/projects) board. The board's columns are the source of truth for "what's actually being worked on right now" — labels alone aren't enough to tell you that. Anything outside the active milestone is best-effort.
+The active milestone work lives on the [SonicWeb Roadmap](https://github.com/users/MrityunjayBhardwaj/projects) board. The board's columns are the source of truth for "what's actually being worked on right now" — labels alone aren't enough to tell you that. Anything outside the active milestone is best-effort.
 
 ---
 

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SonicPi.js — Launch-Gate Detail (7 rows)</title>
+<title>SonicWeb — Launch-Gate Detail (7 rows)</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -74,7 +74,7 @@
     <p class="note">Instrument-friendly projection of the chord-inversion logic; PITCH/onset parity over the shared layer.</p>
     <div class="players">
       <figure><figcaption>🖥️ Desktop Sonic Pi</figcaption><audio controls preload="none" src="gate-detail/chord_inversions/desktop.wav"></audio></figure>
-      <figure><figcaption>🌐 SonicPi.js (web)</figcaption><audio controls preload="none" src="gate-detail/chord_inversions/web.wav"></audio></figure>
+      <figure><figcaption>🌐 SonicWeb (web)</figcaption><audio controls preload="none" src="gate-detail/chord_inversions/web.wav"></audio></figure>
     </div>
     <details class="snippet"><summary>📄 chord_inversions.rb</summary><pre><code># Gate reproducer for chord_inversions.rb (#374 / #407)
 # WHY: the original plays play_chord arpeggios that change inversion every 0.25s.
@@ -129,7 +129,7 @@ end
 <tr>
 <th>Metric</th>
 <th>Desktop SP</th>
-<th>SonicPi.js (web)</th>
+<th>SonicWeb (web)</th>
 <th>Δ (desk − web)</th>
 </tr>
 </thead>
@@ -283,7 +283,7 @@ No errors detected.
     <p class="note">Projection of the phasing live_loops; first-12-note prefix identical desktop↔web.</p>
     <div class="players">
       <figure><figcaption>🖥️ Desktop Sonic Pi</figcaption><audio controls preload="none" src="gate-detail/reich_phase/desktop.wav"></audio></figure>
-      <figure><figcaption>🌐 SonicPi.js (web)</figcaption><audio controls preload="none" src="gate-detail/reich_phase/web.wav"></audio></figure>
+      <figure><figcaption>🌐 SonicWeb (web)</figcaption><audio controls preload="none" src="gate-detail/reich_phase/web.wav"></audio></figure>
     </div>
     <details class="snippet"><summary>📄 reich_phase.rb</summary><pre><code># Gate reproducer for reich_phase.rb (#377 / #428)
 # WHY: the original runs two live_loops (:slow sleep 0.3, :faster sleep 0.295)
@@ -340,7 +340,7 @@ end
 <tr>
 <th>Metric</th>
 <th>Desktop SP</th>
-<th>SonicPi.js (web)</th>
+<th>SonicWeb (web)</th>
 <th>Δ (desk − web)</th>
 </tr>
 </thead>
@@ -494,7 +494,7 @@ No errors detected.
     <p class="note">Projection of the driving-pulse sequence.</p>
     <div class="players">
       <figure><figcaption>🖥️ Desktop Sonic Pi</figcaption><audio controls preload="none" src="gate-detail/driving_pulse/desktop.wav"></audio></figure>
-      <figure><figcaption>🌐 SonicPi.js (web)</figcaption><audio controls preload="none" src="gate-detail/driving_pulse/web.wav"></audio></figure>
+      <figure><figcaption>🌐 SonicWeb (web)</figcaption><audio controls preload="none" src="gate-detail/driving_pulse/web.wav"></audio></figure>
     </div>
     <details class="snippet"><summary>📄 driving_pulse.rb</summary><pre><code># Gate reproducer for driving_pulse.rb (#368 / #428)
 # WHY: the original layers a sustained :mod_pulse melody (release 0.6, slewed,
@@ -552,7 +552,7 @@ end
 <tr>
 <th>Metric</th>
 <th>Desktop SP</th>
-<th>SonicPi.js (web)</th>
+<th>SonicWeb (web)</th>
 <th>Δ (desk − web)</th>
 </tr>
 </thead>
@@ -706,7 +706,7 @@ No errors detected.
     <p class="note">Projection of the monday_blues melody.</p>
     <div class="players">
       <figure><figcaption>🖥️ Desktop Sonic Pi</figcaption><audio controls preload="none" src="gate-detail/monday_blues/desktop.wav"></audio></figure>
-      <figure><figcaption>🌐 SonicPi.js (web)</figcaption><audio controls preload="none" src="gate-detail/monday_blues/web.wav"></audio></figure>
+      <figure><figcaption>🌐 SonicWeb (web)</figcaption><audio controls preload="none" src="gate-detail/monday_blues/web.wav"></audio></figure>
     </div>
     <details class="snippet"><summary>📄 monday_blues.rb</summary><pre><code># Gate reproducer for monday_blues.rb (#376 / #407)
 # WHY: the original has 3 live_loops (kick drums + :synths melody + snare). The
@@ -767,7 +767,7 @@ end
 <tr>
 <th>Metric</th>
 <th>Desktop SP</th>
-<th>SonicPi.js (web)</th>
+<th>SonicWeb (web)</th>
 <th>Δ (desk − web)</th>
 </tr>
 </thead>
@@ -921,7 +921,7 @@ No errors detected.
     <p class="note">Re-measured on the fixed engine (SV55 #419/#420 + FX-ordering fix 30d2d4a). Raw Tier-1 PITCH-MATCH (note 45 = correct tb303). ~3% residual silent-run flake tracked in #424.</p>
     <div class="players">
       <figure><figcaption>🖥️ Desktop Sonic Pi</figcaption><audio controls preload="none" src="gate-detail/mod_303_phade/desktop.wav"></audio></figure>
-      <figure><figcaption>🌐 SonicPi.js (web)</figcaption><audio controls preload="none" src="gate-detail/mod_303_phade/web.wav"></audio></figure>
+      <figure><figcaption>🌐 SonicWeb (web)</figcaption><audio controls preload="none" src="gate-detail/mod_303_phade/web.wav"></audio></figure>
     </div>
     <details class="snippet"><summary>📄 snippet.rb</summary><pre><code>use_synth :tb303
 
@@ -964,7 +964,7 @@ end
 <tr>
 <th>Metric</th>
 <th>Desktop SP</th>
-<th>SonicPi.js (web)</th>
+<th>SonicWeb (web)</th>
 <th>Δ (desk − web)</th>
 </tr>
 </thead>
@@ -1118,7 +1118,7 @@ No errors detected.
     <p class="note">Gradeable for the first time post-#502 (window bounded 103.68s → 7.68s). STRUCTURE + onset-sequence parity = EVENT-MATCH.</p>
     <div class="players">
       <figure><figcaption>🖥️ Desktop Sonic Pi</figcaption><audio controls preload="none" src="gate-detail/bach/desktop.wav"></audio></figure>
-      <figure><figcaption>🌐 SonicPi.js (web)</figcaption><audio controls preload="none" src="gate-detail/bach/web.wav"></audio></figure>
+      <figure><figcaption>🌐 SonicWeb (web)</figcaption><audio controls preload="none" src="gate-detail/bach/web.wav"></audio></figure>
     </div>
     <details class="snippet"><summary>📄 snippet.rb</summary><pre><code># Bach Minuet in G
 #
@@ -1395,7 +1395,7 @@ end
 <tr>
 <th>Metric</th>
 <th>Desktop SP</th>
-<th>SonicPi.js (web)</th>
+<th>SonicWeb (web)</th>
 <th>Δ (desk − web)</th>
 </tr>
 </thead>
@@ -1558,7 +1558,7 @@ No errors detected.
     <p class="note">Sustained note + sample texture; SV61 onset-sequence parity grades it without a pitch-melody axis = EVENT-MATCH.</p>
     <div class="players">
       <figure><figcaption>🖥️ Desktop Sonic Pi</figcaption><audio controls preload="none" src="gate-detail/dark_neon/desktop.wav"></audio></figure>
-      <figure><figcaption>🌐 SonicPi.js (web)</figcaption><audio controls preload="none" src="gate-detail/dark_neon/web.wav"></audio></figure>
+      <figure><figcaption>🌐 SonicWeb (web)</figcaption><audio controls preload="none" src="gate-detail/dark_neon/web.wav"></audio></figure>
     </div>
     <details class="snippet"><summary>📄 snippet.rb</summary><pre><code># Coded by Sam Aaron
 
@@ -1611,7 +1611,7 @@ end
 <tr>
 <th>Metric</th>
 <th>Desktop SP</th>
-<th>SonicPi.js (web)</th>
+<th>SonicWeb (web)</th>
 <th>Δ (desk − web)</th>
 </tr>
 </thead>

@@ -1,8 +1,8 @@
-# Known Issues — Sonic Pi Web (Beta)
+# Known Issues — Sonic Web (Beta)
 
 > **This is a beta.** It runs in the browser, plays your Sonic Pi code, and gets ~85% of the way to the desktop experience. The other ~15% is what this document is about.
 >
-> **Beta means:** report bugs, expect rough edges, give us your patience. We move fast on issues that come with a clear repro. Open one at <https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues> — there's a "Report Bug" button in the toolbar that pre-fills the URL with your composition.
+> **Beta means:** report bugs, expect rough edges, give us your patience. We move fast on issues that come with a clear repro. Open one at <https://github.com/MrityunjayBhardwaj/SonicWeb/issues> — there's a "Report Bug" button in the toolbar that pre-fills the URL with your composition.
 
 Last updated: 2026-06-19. Mirrors what we know honestly today; this list grows with the project.
 
@@ -31,7 +31,7 @@ Legend: ✅ ready · 🟡 partial / known limitations · ❌ broken / not implem
 
 ### 1.1 WASM gain deficit (~0.6× vs native scsynth)
 
-**Symptom:** Playing the same code on Sonic Pi desktop and Sonic Pi Web at the same listening volume, the web version sounds quieter on per-hit transients. Sustained drones sound roughly equal.
+**Symptom:** Playing the same code on Sonic Pi desktop and Sonic Web at the same listening volume, the web version sounds quieter on per-hit transients. Sustained drones sound roughly equal.
 
 **Root cause:** The WebAssembly build of scsynth has a uniform ~0.6× output deficit compared to native scsynth. This is upstream — we cannot fix it inside our engine.
 
@@ -114,7 +114,7 @@ If you hit something that looks like a hot-swap glitch we haven't listed, **plea
 
 - **Sample preview** plays each sample 5 times back-to-back (using `sample_duration` for spacing). Click ⏸ on the row to stop early. The button auto-reverts to ▶ after 60 s — long ambient samples may finish playing audibly while the button is already reset.
 - **MIDI dropdown shows a "Loading MIDI devices…" state** on first open while Web MIDI permission is being granted. If you grant permission and the list is still empty, your devices may genuinely be invisible to the browser — try Chrome.
-- **The progress preloader** (Sonic Pi Web logo + bar at startup) preloads the editor, parser, and audio runtime modules so first-Run is fast. If a CDN is slow or down, the preloader will continue past failed steps; the app's normal lazy paths will retry the same URL on first use.
+- **The progress preloader** (Sonic Web logo + bar at startup) preloads the editor, parser, and audio runtime modules so first-Run is fast. If a CDN is slow or down, the preloader will continue past failed steps; the app's normal lazy paths will retry the same URL on first use.
 - **No keyboard accessibility audit yet.** Tab navigation works in some places, not in others. Screen reader support is untested.
 
 ---
@@ -148,7 +148,7 @@ If you hit something that looks like a hot-swap glitch we haven't listed, **plea
 
 For the full triage workflow — severity ladder, label scheme, what makes a bug land fast — see [`TRIAGE.md`](./TRIAGE.md).
 
-We use the project board at <https://github.com/MrityunjayBhardwaj/SonicPiWeb/projects> to track active work. Bugs with clear repros usually land a fix within a few days.
+We use the project board at <https://github.com/MrityunjayBhardwaj/SonicWeb/projects> to track active work. Bugs with clear repros usually land a fix within a few days.
 
 ---
 

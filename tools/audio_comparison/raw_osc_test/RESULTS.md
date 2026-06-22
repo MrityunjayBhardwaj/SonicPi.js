@@ -5,7 +5,7 @@
 
 ## Purpose
 
-This test BYPASSES the entire Sonic Pi Web engine (no SonicPiEngine, no SoundLayer,
+This test BYPASSES the entire Sonic Web engine (no SonicPiEngine, no SoundLayer,
 no AudioInterpreter, no ProgramBuilder). It loads SuperSonic directly from CDN and
 sends raw OSC commands with desktop-identical settings.
 

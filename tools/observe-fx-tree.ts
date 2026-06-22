@@ -100,7 +100,7 @@ async function main() {
     await page.goto(BASE_URL)
     await page.waitForTimeout(1500)
     const isApp = await page.evaluate(() => Boolean(document.querySelector('#app')))
-    if (!isApp) throw new Error(`[observe] ${BASE_URL} is not the SonicPi.js app`)
+    if (!isApp) throw new Error(`[observe] ${BASE_URL} is not the SonicWeb app`)
     return { browser, page }
   }
 

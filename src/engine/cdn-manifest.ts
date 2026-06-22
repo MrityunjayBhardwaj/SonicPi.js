@@ -26,7 +26,7 @@
  * supersonic-scsynth-samples    0.57.0    unpkg     SuperSonicBridge.ts
  * supersonic-scsynth-synthdefs  0.57.0    unpkg     SuperSonicBridge.ts
  *
- * SV22 (Sonic Pi Web invariant): the four supersonic-scsynth-* packages
+ * SV22 (Sonic Web invariant): the four supersonic-scsynth-* packages
  * MUST be pinned to the same version. The JS module's exported worker /
  * WASM URLs hard-reference the matching core/samples/synthdefs versions;
  * mixing versions produces silent failures (worker fails to load,
@@ -56,6 +56,14 @@ export const TREE_SITTER_WASMS_VERSION = '0.1.13' as const
  * package. It is immutable by construction, so we serve it from the repo via
  * jsdelivr pinned to a commit SHA (immutable, cacheable forever). Bump only if
  * the frozen table itself is ever regenerated.
+ *
+ * NOTE (rebrand 2026-06-23, SV82): the repo slug intentionally stays
+ * `SonicPiWeb` even though the product/repo is renamed to "SonicWeb". This
+ * string feeds a runtime jsdelivr fetch of the PRNG table; flipping it to
+ * `SonicWeb` would 404 (SP5 silent no-audio) until the GitHub repo rename
+ * lands, and GitHub permanently redirects the old slug after a rename, so the
+ * old path stays valid forever. Flip to `SonicWeb` only AFTER the repo is
+ * renamed AND the jsdelivr URL is re-verified to return 200 (see #612).
  */
 export const RAND_STREAM_REPO = 'MrityunjayBhardwaj/SonicPiWeb' as const
 export const RAND_STREAM_PIN = '68cf288' as const

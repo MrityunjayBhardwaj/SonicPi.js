@@ -477,7 +477,7 @@ def main() -> int:
         mel_w, sr=sr_w, hop_length=HOP_LENGTH, y_axis="mel", x_axis="time",
         ax=axes[1], cmap="magma", vmin=-80, vmax=0,
     )
-    axes[1].set_title(f"SonicPi.js (web)\n{os.path.basename(web_path)}\n{sr_w} Hz · {audio_w.shape[0]/sr_w:.2f}s")
+    axes[1].set_title(f"SonicWeb (web)\n{os.path.basename(web_path)}\n{sr_w} Hz · {audio_w.shape[0]/sr_w:.2f}s")
 
     img = librosa.display.specshow(
         diff, sr=sr_d, hop_length=HOP_LENGTH, y_axis="mel", x_axis="time",

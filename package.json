@@ -1,7 +1,7 @@
 {
-  "name": "@mjayb/sonicpijs",
+  "name": "@mjayb/sonicweb",
   "version": "1.5.0-beta.3",
-  "description": "SonicPi.js — browser-native Sonic Pi with real SuperCollider synthesis via WebAssembly",
+  "description": "SonicWeb — browser-native Sonic Pi with real SuperCollider synthesis via WebAssembly",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -18,7 +18,7 @@
     }
   },
   "bin": {
-    "sonicpi": "./bin/cli.js"
+    "sonicweb": "./bin/cli.js"
   },
   "files": [
     "bin",
@@ -83,10 +83,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/MrityunjayBhardwaj/SonicPi.js.git"
+    "url": "https://github.com/MrityunjayBhardwaj/SonicWeb.git"
   },
   "bugs": {
-    "url": "https://github.com/MrityunjayBhardwaj/SonicPi.js/issues"
+    "url": "https://github.com/MrityunjayBhardwaj/SonicWeb/issues"
   },
   "homepage": "https://sonicweb.cc",
   "license": "MIT",

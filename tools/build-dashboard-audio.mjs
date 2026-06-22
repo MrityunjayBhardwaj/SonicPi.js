@@ -2,7 +2,7 @@
 // Build the runtime needed to make the parity dashboards' code snippets
 // PLAYABLE in-place (the Run/Stop control in audio-controls.js).
 //
-// Why a local bundle and not the npm CDN: the published @mjayb/sonicpijs's
+// Why a local bundle and not the npm CDN: the published @mjayb/sonicweb's
 // dist/index.js is a code-split *library* — it dynamically imports a tree-sitter
 // chunk that isn't even in the package, so a raw CDN load inits audio but never
 // transpiles ("parser not available"). We reuse the SAME self-contained browser

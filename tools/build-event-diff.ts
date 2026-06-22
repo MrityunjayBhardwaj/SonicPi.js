@@ -315,7 +315,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>SonicPi.js — Event Diff (/s_new)</title>
+<title>SonicWeb — Event Diff (/s_new)</title>
 <style>
   :root{
     --bg:#1a1b26;--bg-elev:#1f2335;--bg-card:#16161e;--border:#2a2e46;

@@ -1,5 +1,5 @@
 /**
- * App shell — SonicPi.js.
+ * App shell — SonicWeb.
  * Matches Sonic Pi desktop layout with welcome experience.
  */
 
@@ -27,7 +27,7 @@ const WELCOME_CODE = `#
 #  Press Stop (Esc or Alt+S) to silence everything.
 #  Edit the code while it plays — changes apply instantly!
 #
-#  github.com/MrityunjayBhardwaj/SonicPi.js
+#  github.com/MrityunjayBhardwaj/SonicWeb
 #  Also checkout Sonic Tau: https://sonic-pi.net/tau/
 #
 #  Standing on the shoulders of giants:
@@ -144,7 +144,7 @@ end`
 // Welcome log — credits and shortcuts
 const WELCOME_LOG = [
   '',
-  `  Sonic Pi Web v${APP_VERSION}`,
+  `  Sonic Web v${APP_VERSION}`,
   '',
   '  -------------------------------------------------------',
   '  Standing on the shoulders of giants:',

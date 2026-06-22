@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>SonicPi.js — FX A/B Inspector</title>
+    <title>SonicWeb — FX A/B Inspector</title>
     <style>
       :root {
         --bg: #1a1b26;
@@ -854,7 +854,7 @@
               }
             </div>
             <div class="audio-card">
-              <h3>SonicPi.js (web) <span>${webStats.duration.toFixed(2)}s · RMS ${webStats.rms.toFixed(4)} · peak ${webStats.peak.toFixed(4)}</span></h3>
+              <h3>SonicWeb (web) <span>${webStats.duration.toFixed(2)}s · RMS ${webStats.rms.toFixed(4)} · peak ${webStats.peak.toFixed(4)}</span></h3>
               ${
                 webUrl
                   ? `<audio id="audio-web" controls preload="metadata" src="${webUrl}"></audio>`
@@ -917,7 +917,7 @@
 
           <div class="section-h">Stats</div>
           <table class="metrics">
-            <thead><tr><th>Metric</th><th>Desktop SP</th><th>SonicPi.js</th><th>ratio (web/desktop)</th></tr></thead>
+            <thead><tr><th>Metric</th><th>Desktop SP</th><th>SonicWeb</th><th>ratio (web/desktop)</th></tr></thead>
             <tbody>
               <tr><td>Duration (s)</td><td>${desktopStats.duration.toFixed(3)}</td><td>${webStats.duration.toFixed(3)}</td><td>${ratioCell(webStats.duration, desktopStats.duration)}</td></tr>
               <tr><td>Peak</td><td>${desktopStats.peak.toFixed(4)}</td><td>${webStats.peak.toFixed(4)}</td><td>${ratioCell(webStats.peak, desktopStats.peak)}</td></tr>

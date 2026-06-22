@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>SonicPi.js — Official Examples Sweep (34/34)</title>
+    <title>SonicWeb — Official Examples Sweep (34/34)</title>
     <style>
       :root {
         --bg: #1a1b26;
@@ -265,7 +265,7 @@
             <b>Sweep state (2026-06-18):</b> all 34 bundled Sonic Pi examples ran through <code>compare-desktop-vs-web.ts</code>.
             <b>34/34 gradeable · 0 DIVERGE</b> — <b>4 MATCH</b> + <b>30 EVENT-MATCH</b>.
             <b>27/34</b> rows are PRNG-driven: graded at the <code>/s_new</code> emission boundary by event-parity — the engine emits the right notes at the right times (SV61/SV69) — not by raw audio Tier-1 pitch, which here measures WASM-vs-native scsynth DSP, not the engine. <b>0 PRNG-free genuine divergences.</b>
-            The old web-WAV-resolver confound (<a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/358">#358</a>, SV27/SV30 class) no longer gates the reading — <b>heavy / tool-fail = 0</b>.
+            The old web-WAV-resolver confound (<a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/358">#358</a>, SV27/SV30 class) no longer gates the reading — <b>heavy / tool-fail = 0</b>.
           </div>
           <div class="controls">
             <input id="search" type="search" placeholder="search examples (e.g. ambient, acid)" autocomplete="off" spellcheck="false" />
@@ -471,12 +471,12 @@
               <div style="margin-top:4px">
                 <b>${c.match} clean match</b> + <b>${c.prngVariant ?? 0} PRNG-VARIANT</b> (musically equivalent — same
                 composition, different random walk; cross-engine seed parity is <em>not</em> a v1 goal, see
-                <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/358">#358</a> /
-                <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/364">#364</a>).
+                <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/358">#358</a> /
+                <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/364">#364</a>).
                 The <b>actionable backlog is the ${c.prngFreeReal} PRNG-free real divergences</b> — those deserve
                 per-example triage. <b>${c.diverge} DIVERGE</b> remain after PRNG demotion; <b>${c.invalid} INVALID</b>
                 are the heavy-snippet capture residual
-                (<a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/363">#363</a>), not engine failures.
+                (<a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/363">#363</a>), not engine failures.
               </div>
             </div>
             <div class="stat-grid">
@@ -487,7 +487,7 @@
               <div class="stat invalid" data-only="invalid"><div class="n">${c.invalid}</div><div class="label">⚠ invalid</div></div>
               <div class="stat inconcl" data-only="inconcl"><div class="n">${c.inconcl}</div><div class="label">⚠ inconcl</div></div>
             </div>
-            <div class="section-h">Confound 1 — comparator can't measure heavy examples (filed as <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/358">#358</a>)</div>
+            <div class="section-h">Confound 1 — comparator can't measure heavy examples (filed as <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/358">#358</a>)</div>
             <p>
               The 6 INVALID rows say <em>"Web produced no WAV"</em>, but the engine renders audio in every one.
               <b>bach.rb</b> run web-only via <code>capture.ts</code> produced 15.10s of audio (RMS 2710); <b>acid.rb</b>'s capture log shows a healthy <code>/s_new "sonic-pi-tb303"</code> stream — the engine is rendering, the tool can't pick up the WAV.
@@ -503,17 +503,17 @@
             <div class="section-h">What's actually trustworthy</div>
             <p>
               <b style="color:var(--pass)">2 clean MATCH:</b> <code>incubation/mod_303_phade</code>, <code>sorcerer/driving_pulse</code> — both deterministic, no PRNG, light enough to measure.<br>
-              <b style="color:var(--flag)">5 PRNG-free genuine divergences:</b> <code>illusionist/ambient_experiment</code>, <code>illusionist/chord_inversions</code> (likely <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/355">#355</a>), <code>illusionist/reich_phase</code>, <code>incubation/dark_neon</code>, <code>sorcerer/monday_blues</code>.
+              <b style="color:var(--flag)">5 PRNG-free genuine divergences:</b> <code>illusionist/ambient_experiment</code>, <code>illusionist/chord_inversions</code> (likely <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/355">#355</a>), <code>illusionist/reich_phase</code>, <code>incubation/dark_neon</code>, <code>sorcerer/monday_blues</code>.
             </p>
             <div class="section-h">Issues filed across this session</div>
             <ul class="issue-list">
-              <li><span class="num-tag">#358</span><span class="sev block">BLOCKER</span> Comparator can't resolve web WAV for heavy examples (SV30/SV27). <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/358">view ↗</a></li>
-              <li><span class="num-tag">#354</span><span class="sev p2">P2</span> <code>Ring#mirror</code> / <code>#reflect</code> three-way divergence vs desktop. <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/354">view ↗</a></li>
-              <li><span class="num-tag">#355</span><span class="sev p2">P2</span> <code>chord_degree</code> returns 3 notes; desktop returns 4 (7th chord). <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/355">view ↗</a></li>
-              <li><span class="num-tag">#357</span><span class="sev p2">P2</span> <code>time_warp</code> sequence + tempo diverges. <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/357">view ↗</a></li>
-              <li><span class="num-tag">#356</span><span class="sev p3">P3</span> <code>with_swing</code> not implemented on web. <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/356">view ↗</a></li>
-              <li><span class="num-tag">#353</span><span class="sev p4">P4</span> <code>currentBuildBuilder</code> osc-target follow-up (SP72 class). <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/353">view ↗</a></li>
-              <li><span class="num-tag">PR #352</span><span class="sev merged">MERGED</span> <code>forkBuilder</code> threads <code>_oscHost</code>/<code>_oscPort</code> (closes #345). <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/pull/352">view ↗</a></li>
+              <li><span class="num-tag">#358</span><span class="sev block">BLOCKER</span> Comparator can't resolve web WAV for heavy examples (SV30/SV27). <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/358">view ↗</a></li>
+              <li><span class="num-tag">#354</span><span class="sev p2">P2</span> <code>Ring#mirror</code> / <code>#reflect</code> three-way divergence vs desktop. <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/354">view ↗</a></li>
+              <li><span class="num-tag">#355</span><span class="sev p2">P2</span> <code>chord_degree</code> returns 3 notes; desktop returns 4 (7th chord). <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/355">view ↗</a></li>
+              <li><span class="num-tag">#357</span><span class="sev p2">P2</span> <code>time_warp</code> sequence + tempo diverges. <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/357">view ↗</a></li>
+              <li><span class="num-tag">#356</span><span class="sev p3">P3</span> <code>with_swing</code> not implemented on web. <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/356">view ↗</a></li>
+              <li><span class="num-tag">#353</span><span class="sev p4">P4</span> <code>currentBuildBuilder</code> osc-target follow-up (SP72 class). <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/353">view ↗</a></li>
+              <li><span class="num-tag">PR #352</span><span class="sev merged">MERGED</span> <code>forkBuilder</code> threads <code>_oscHost</code>/<code>_oscPort</code> (closes #345). <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/pull/352">view ↗</a></li>
             </ul>
             <div class="footer-meta">
               <strong>How to read each row:</strong> click an example in the sidebar to load its desktop ↔ web detail panel —
@@ -561,9 +561,9 @@
         if (e.verdict === 'match') {
           tldr = `<div class="tldr-banner pass"><div class="label">trustworthy match</div><div style="margin-top:4px">Tier-1 PITCH-MATCH — pitch sequence identical. Tier-0 SOFT (window misalign) does not affect this verdict. Deterministic example, light enough for the comparator to measure.</div></div>`;
         } else if (e.verdict === 'prng-variant') {
-          tldr = `<div class="tldr-banner pass"><div class="label">musically equivalent — different random walk</div><div style="margin-top:4px">Pitch sequence diverges, but the note-set, tempo, and onset count all match: this is the SAME composition resolved through a different random stream. Desktop reads a frozen <code>rand-stream.wav</code> table; we use MT19937 — categorically different sequences from the same seed (see <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/364">#364</a>). Cross-engine seed parity is <em>not</em> a v1 goal (<a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/358">#358</a> Option A). NOT a bug.</div></div>`;
+          tldr = `<div class="tldr-banner pass"><div class="label">musically equivalent — different random walk</div><div style="margin-top:4px">Pitch sequence diverges, but the note-set, tempo, and onset count all match: this is the SAME composition resolved through a different random stream. Desktop reads a frozen <code>rand-stream.wav</code> table; we use MT19937 — categorically different sequences from the same seed (see <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/364">#364</a>). Cross-engine seed parity is <em>not</em> a v1 goal (<a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/358">#358</a> Option A). NOT a bug.</div></div>`;
         } else if (e.verdict === 'invalid' && e.heavy) {
-          tldr = `<div class="tldr-banner warn"><div class="label">tool artifact, NOT engine failure</div><div style="margin-top:4px">"Web produced no WAV" — but the engine is rendering. This is the <a href="https://github.com/MrityunjayBhardwaj/SonicPiWeb/issues/358">#358</a> comparator-resolver bug for heavy multi-loop examples. The audio exists; the tool can't resolve it.</div></div>`;
+          tldr = `<div class="tldr-banner warn"><div class="label">tool artifact, NOT engine failure</div><div style="margin-top:4px">"Web produced no WAV" — but the engine is rendering. This is the <a href="https://github.com/MrityunjayBhardwaj/SonicWeb/issues/358">#358</a> comparator-resolver bug for heavy multi-loop examples. The audio exists; the tool can't resolve it.</div></div>`;
         } else if (e.verdict === 'diverge' && e.prng && !e.prngFreeReal) {
           tldr = `<div class="tldr-banner warn"><div class="label">cross-engine PRNG divergence — known</div><div style="margin-top:4px">This example uses PRNG (<code>rrand</code> / <code>.choose</code> / <code>.shuffle</code>). Ruby PRNG ≠ our <code>SeededRandom</code> → different sequences <em>by construction</em>. Not a per-example bug; one open product decision.</div></div>`;
         } else if (e.verdict === 'diverge' && e.prngFreeReal) {
@@ -581,7 +581,7 @@
                 : '<div class="missing">desktop.wav missing</div>'}
             </div>
             <div class="audio-card">
-              <h3>SonicPi.js (web) ${e.webStats ? `<span>${e.webStats.duration.toFixed(2)}s · RMS ${e.webStats.rms.toFixed(4)} · peak ${e.webStats.peak.toFixed(4)}</span>` : ''}</h3>
+              <h3>SonicWeb (web) ${e.webStats ? `<span>${e.webStats.duration.toFixed(2)}s · RMS ${e.webStats.rms.toFixed(4)} · peak ${e.webStats.peak.toFixed(4)}</span>` : ''}</h3>
               ${webUrl
                 ? `<audio id="audio-web" controls preload="metadata" src="${webUrl}"></audio>`
                 : `<div class="missing">web.wav missing${e.heavy ? ' — comparator resolver failed (#358), engine likely rendered audio' : ''}</div>`}
@@ -624,7 +624,7 @@
 
         const statsHtml = e.desktopStats && e.webStats ? `
           <table class="metrics">
-            <thead><tr><th>Metric</th><th>Desktop SP</th><th>SonicPi.js</th><th>web / desktop</th></tr></thead>
+            <thead><tr><th>Metric</th><th>Desktop SP</th><th>SonicWeb</th><th>web / desktop</th></tr></thead>
             <tbody>
               ${statsRow('Duration (s)', e.desktopStats.duration, e.webStats.duration, 3)}
               ${statsRow('Peak', e.desktopStats.peak, e.webStats.peak, 4)}

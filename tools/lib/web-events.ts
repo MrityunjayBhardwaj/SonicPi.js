@@ -115,7 +115,7 @@ export async function captureWebEvents(
 
     const isSonicPi = await page.evaluate(() => Boolean(document.querySelector('#app')))
     if (!isSonicPi) {
-      throw new Error(`${BASE_URL} is not serving the SonicPi.js app (no #app mount).`)
+      throw new Error(`${BASE_URL} is not serving the SonicWeb app (no #app mount).`)
     }
 
     // Paste code

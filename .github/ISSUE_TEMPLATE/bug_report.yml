@@ -8,15 +8,15 @@ body:
       label: Pre-flight check
       description: A quick scan of the docs saves everyone time.
       options:
-        - label: "I've checked [KNOWN_ISSUES.md](https://github.com/MrityunjayBhardwaj/SonicPi.js/blob/main/KNOWN_ISSUES.md) and this isn't already documented as a known limitation"
+        - label: "I've checked [KNOWN_ISSUES.md](https://github.com/MrityunjayBhardwaj/SonicWeb/blob/main/KNOWN_ISSUES.md) and this isn't already documented as a known limitation"
           required: true
-        - label: "I've searched [open issues](https://github.com/MrityunjayBhardwaj/SonicPi.js/issues?q=is%3Aissue) for a duplicate"
+        - label: "I've searched [open issues](https://github.com/MrityunjayBhardwaj/SonicWeb/issues?q=is%3Aissue) for a duplicate"
           required: true
 
   - type: input
     id: version
     attributes:
-      label: SonicPi.js version
+      label: SonicWeb version
       description: Click the version label in the top-right of the app's menu bar to copy it. If reporting via the in-app "Report Bug" button, this is pre-filled automatically.
       placeholder: "e.g., 1.4.0 or 1.5.0-beta.0"
     validations:
