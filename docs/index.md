@@ -10,8 +10,8 @@ hero:
     alt: SonicPi.js
   actions:
     - theme: brand
-      text: Try it at sonicpi.cc
-      link: https://sonicpi.cc
+      text: Try it at sonicweb.cc
+      link: https://sonicweb.cc
     - theme: alt
       text: Get Started
       link: /getting-started

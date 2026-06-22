@@ -1,6 +1,20 @@
 {
   "buildCommand": "npm run build:all",
   "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "sonicpi.cc" }],
+      "destination": "https://sonicweb.cc/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.sonicpi.cc" }],
+      "destination": "https://sonicweb.cc/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/docs/:path*", "destination": "/docs/:path*" },
     { "source": "/((?!docs).*)", "destination": "/index.html" }

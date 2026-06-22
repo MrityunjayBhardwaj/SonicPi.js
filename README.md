@@ -11,7 +11,7 @@
 [![npm beta](https://img.shields.io/npm/v/@mjayb/sonicpijs/beta?label=npm%20beta&color=orange)](https://www.npmjs.com/package/@mjayb/sonicpijs/v/beta)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
-**[Try it now at sonicpi.cc](https://sonicpi.cc)**
+**[Try it now at sonicweb.cc](https://sonicweb.cc)**
 
 > v1.5 is in **beta** — published under both the `latest` and `beta` npm tags during stabilization. `npm install @mjayb/sonicpijs` gets you the current beta; pin with `@1.5.0-beta.3` for a fixed version.
 
@@ -81,7 +81,7 @@ The bass joins in. Change a number. Hit Run again. The music updates instantly. 
 
 ### Option 1: Just open the website
 
-**[sonicpi.cc](https://sonicpi.cc)** — nothing to install.
+**[sonicweb.cc](https://sonicweb.cc)** — nothing to install.
 
 ### Option 2: Run locally
 
@@ -182,7 +182,7 @@ The 3 non-gradeable fixtures are excluded by design (a counter probe, a density 
 
 Every fixture is browsable in the live **[parity dashboard](https://dashboard-dist-five.vercel.app)** — one overview links the official roster, the differential matrix, per-`/s_new` event-diffs, the launch gate, and the FX A/B inspector, each with desktop ↔ web spectrograms.
 
-Every Ruby snippet on the dashboards is **playable in the browser** — ▶ Run / ■ Stop through the same engine that powers the editor — and carries an **↗ open in sonicpi.cc** link that loads it straight into the live editor. Locally, open `test_results/index.html`, or serve the dashboards with inline audio via `npm run dashboard:serve`.
+Every Ruby snippet on the dashboards is **playable in the browser** — ▶ Run / ■ Stop through the same engine that powers the editor — and carries an **↗ open in sonicweb.cc** link that loads it straight into the live editor. Locally, open `test_results/index.html`, or serve the dashboards with inline audio via `npm run dashboard:serve`.
 
 ### Feature coverage
 

@@ -115,7 +115,7 @@ npx tsx tools/capture.ts "play 60; sleep 0.5; sample :bd_haus"
 
 The vitest run includes `src/app/__tests__/version.test.ts` which enforces the `package.json` ↔ `src/app/version.ts` composition pair from dharana §10. If you bumped one file and forgot the other, this test fails immediately. Do not skip it, do not `--no-verify` around it.
 
-Both build commands must be run — `build:single` produces the sonicpi.cc deploy artifact, `build:lib` produces the npm package. A release that passes one but not the other ships a broken half-product.
+Both build commands must be run — `build:single` produces the sonicweb.cc deploy artifact, `build:lib` produces the npm package. A release that passes one but not the other ships a broken half-product.
 
 ### 4. Commit and push
 ```bash
@@ -211,8 +211,8 @@ npm view @mjayb/sonicpijs dist-tags
 ```
 **If `latest` moved on a prerelease, STOP and fix.** Recovery: `npm dist-tag add @mjayb/sonicpijs@<previous-stable> latest`.
 
-### 13. Verify sonicpi.cc deploy
-- Open sonicpi.cc in a fresh **incognito** window (your normal browser may serve a cached build)
+### 13. Verify sonicweb.cc deploy
+- Open sonicweb.cc in a fresh **incognito** window (your normal browser may serve a cached build)
 - Read the version label in the top-right of the menu bar
 - It MUST display `v1.X.Y-beta.N`
 - If the old version shows:
@@ -305,7 +305,7 @@ Post-merge (after this PR is squash-merged to main):
 - [ ] publish.yml workflow watched to completion, all steps green
 - [ ] Post-publish dist-tag check: npm view @mjayb/sonicpijs dist-tags
       (latest unchanged, beta points to new version)
-- [ ] sonicpi.cc incognito check — menu bar footer shows new version
+- [ ] sonicweb.cc incognito check — menu bar footer shows new version
 - [ ] Announcement (separate step — drafts in ~/.anvideck/.../drafts/)
 ```
 
@@ -315,5 +315,5 @@ Post-merge (after this PR is squash-merged to main):
 
 - [ ] Script to extract per-version CHANGELOG sections automatically (currently awk one-liner)
 - [ ] Automated check that `v${package.json.version}` matches the git tag being pushed (currently manual)
-- [ ] Second Vercel deploy target for `beta.sonicpi.cc` — deferred until after v1.5.0 stable (dharana §10 Distribution Channels subsection)
+- [ ] Second Vercel deploy target for `beta.sonicweb.cc` — deferred until after v1.5.0 stable (dharana §10 Distribution Channels subsection)
 - [ ] Rollback automation for "prerelease accidentally became latest" — currently manual dist-tag reassignment

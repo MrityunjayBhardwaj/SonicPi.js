@@ -15,7 +15,7 @@
  *   PCM signal scsynth produced — apples-to-apples with desktop's recording_save.
  *
  * Why not SuperSonic.startCapture / stopCapture?
- *   SAB-mode-only. Our deploy serves without COOP/COEP headers (sonicpi.cc,
+ *   SAB-mode-only. Our deploy serves without COOP/COEP headers (sonicweb.cc,
  *   the npm-published lib, sandboxed iframes), so SuperSonic boots in
  *   postMessage mode. ScriptProcessor works in both modes and gives us the
  *   same final-mix tap point we had before.

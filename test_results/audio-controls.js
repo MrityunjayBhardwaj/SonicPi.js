@@ -8,7 +8,7 @@
 //                        wasm, and the rand-stream from the CDN itself, so the
 //                        dashboard hosts nothing but the engine bundle. Only
 //                        shown over http(s); file:// can't load an ES module.
-//   ↗ Open in sonicpi.cc opens the snippet in the live editor, ready to run.
+//   ↗ Open in sonicweb.cc opens the snippet in the live editor, ready to run.
 //                        Pure link, no deps — shown everywhere (file:// included).
 //
 // The engine bundle is produced by `npm run dashboard:audio` and served from
@@ -17,7 +17,7 @@
 (function () {
   'use strict'
 
-  var SONICPI_CC = 'https://sonicpi.cc/'
+  var SONICPI_CC = 'https://sonicweb.cc/'
 
   // Resolve sibling assets relative to THIS script (currentScript is only valid
   // during synchronous top-level execution — capture it now, not in callbacks).
@@ -168,7 +168,7 @@
       link.className = 'spw-link'
       link.target = '_blank'
       link.rel = 'noopener'
-      link.textContent = '↗ Open in sonicpi.cc'
+      link.textContent = '↗ Open in sonicweb.cc'
       bar.appendChild(link)
       bar.__spwLink = link
 
@@ -224,7 +224,7 @@
   }
 
   // Opened from disk (file://), browsers block the ES-module engine load, so only
-  // the "open in sonicpi.cc" link works. Show a one-time banner explaining how to
+  // the "open in sonicweb.cc" link works. Show a one-time banner explaining how to
   // get the in-page Run/Stop controls.
   function injectFileHintOnce() {
     if (HTTP_SERVED || document.getElementById('spw-file-hint')) return
@@ -234,7 +234,7 @@
       'ui-monospace,Menlo,monospace;color:#0b0d12;background:#e0af68;text-align:center'
     bar.innerHTML = '▶ Run/Stop needs the dashboards served over http — run ' +
       '<code style="background:rgba(0,0,0,.15);padding:1px 5px;border-radius:4px">npm run dashboard:serve</code>' +
-      ' (or use the live site). Opened from disk, only the ↗ open-in-sonicpi.cc link works.'
+      ' (or use the live site). Opened from disk, only the ↗ open-in-sonicweb.cc link works.'
     document.body.insertBefore(bar, document.body.firstChild)
   }
 

@@ -10,7 +10,7 @@
  * 1. Keeps tsconfig include clean (package.json lives outside src/)
  * 2. Works identically in dev and production — no Vite define wiring
  *
- * Failure mode this prevents: users on sonicpi.cc hit a bug, open the
+ * Failure mode this prevents: users on sonicweb.cc hit a bug, open the
  * Report Bug button, and have no way to tell which engine version they
  * were running. Without this, every bug report starts with "which version?"
  */

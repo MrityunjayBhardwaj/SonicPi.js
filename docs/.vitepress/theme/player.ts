@@ -3,16 +3,16 @@
 // whole page). The engine is the project's own browser engine, imported lazily
 // on the first Run so the docs stay fast and SSR-safe.
 
-// Reuse the editor's own share-link encoder so the docs' "open in sonicpi.cc"
+// Reuse the editor's own share-link encoder so the docs' "open in sonicweb.cc"
 // link and the app's permalinks stay byte-for-byte identical (#c=<base64url>).
 // config.ts allows fs access to the repo root, so importing from ../src works.
 import { encodeShareCode } from '../../../src/app/ShareLink'
 
-// The live editor at sonicpi.cc loads a shared buffer verbatim from the URL
+// The live editor at sonicweb.cc loads a shared buffer verbatim from the URL
 // fragment on startup (App.loadBuffers → decodeShareCode). It does NOT auto-run
 // — autoplay needs a user gesture in the destination tab — so the snippet lands
 // ready-to-run and the user clicks Run there.
-const SONICPI_CC = 'https://sonicpi.cc/'
+const SONICPI_CC = 'https://sonicweb.cc/'
 
 type Engine = {
   init(): Promise<void>
@@ -122,13 +122,13 @@ export function decorateRubyBlocks() {
       else run(block, code, btn)
     })
 
-    // Third control: open this snippet in the live editor at sonicpi.cc.
+    // Third control: open this snippet in the live editor at sonicweb.cc.
     const link = document.createElement('a')
     link.className = 'spw-link'
     link.href = SONICPI_CC + encodeShareCode(code)
     link.target = '_blank'
     link.rel = 'noopener'
-    link.innerHTML = '<span class="spw-label">↗ Open in sonicpi.cc</span>'
+    link.innerHTML = '<span class="spw-label">↗ Open in sonicweb.cc</span>'
 
     bar.appendChild(btn)
     bar.appendChild(link)

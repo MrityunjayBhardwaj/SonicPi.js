@@ -57,8 +57,8 @@ describe('ShareLink', () => {
   })
 
   it('buildShareURL appends the fragment to an explicit base', () => {
-    const url = buildShareURL('play 72', 'https://sonicpi.cc/')
-    expect(url).toBe('https://sonicpi.cc/' + encodeShareCode('play 72'))
+    const url = buildShareURL('play 72', 'https://sonicweb.cc/')
+    expect(url).toBe('https://sonicweb.cc/' + encodeShareCode('play 72'))
     expect(decodeShareCode(new URL(url).hash)).toBe('play 72')
   })
 

@@ -50,7 +50,7 @@ const DEFAULT_META = 'desktop ↔ web parity'
 export function navBlock(meta: string = DEFAULT_META): string {
   const safe = String(meta).replace(/"/g, '&quot;')
   // audio-controls.js (committed alongside nav.js) makes every Ruby snippet
-  // playable in-page + adds an "open in sonicpi.cc" link. Same file://-safe
+  // playable in-page + adds an "open in sonicweb.cc" link. Same file://-safe
   // classic-script pattern as nav.js; harmless on snippet-less pages.
   return `<nav class="tab-bar" id="topnav" data-meta="${safe}"></nav>\n<script src="nav.js"></script>\n<script src="audio-controls.js"></script>`
 }

@@ -18,7 +18,7 @@
  *        <audio controls preload="metadata" src="community/.../web.wav"></audio>
  *
  * Usage:
- *   R2_BASE="https://imgs.sonicpi.cc" node tools/build-dashboard-publish.mjs
+ *   R2_BASE="https://imgs.sonicweb.cc" node tools/build-dashboard-publish.mjs
  *   node tools/build-dashboard-publish.mjs --r2-base https://<bucket>.<acct>.r2.dev \
  *        [--src test_results] [--out dashboard-dist]
  *

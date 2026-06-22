@@ -1,6 +1,6 @@
 # SonicPi.js Roadmap
 
-> Live at [sonicpi.cc](https://sonicpi.cc) | npm: [`@mjayb/sonicpijs`](https://www.npmjs.com/package/@mjayb/sonicpijs)
+> Live at [sonicweb.cc](https://sonicweb.cc) | npm: [`@mjayb/sonicpijs`](https://www.npmjs.com/package/@mjayb/sonicpijs)
 
 ---
 

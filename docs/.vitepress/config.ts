@@ -25,7 +25,7 @@ export default defineConfig({
     logo: { src: '/docs/favicon.svg', alt: 'SonicPi.js' },
 
     nav: [
-      { text: 'Try it', link: 'https://sonicpi.cc' },
+      { text: 'Try it', link: 'https://sonicweb.cc' },
       { text: 'npm', link: 'https://www.npmjs.com/package/@mjayb/sonicpijs' },
       { text: 'GitHub', link: 'https://github.com/MrityunjayBhardwaj/SonicPi.js' },
     ],

@@ -19,7 +19,7 @@
 // Inline audio still requires the dashboards to be SERVED over http (test_results/
 // as the web root: `npm run dashboard:serve`, or the Vercel publish bundle) — a
 // file:// page can't load the ES-module bundle. There audio-controls.js shows
-// only the "open in sonicpi.cc" link, by design.
+// only the "open in sonicweb.cc" link, by design.
 
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'

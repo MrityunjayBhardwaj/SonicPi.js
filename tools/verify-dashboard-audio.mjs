@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Headless end-to-end verification (SV79: render, don't trust 200+parse) for the
-// dashboard inline-audio + "open in sonicpi.cc" controls. Serves test_results/ as
+// dashboard inline-audio + "open in sonicweb.cc" controls. Serves test_results/ as
 // the web root over http (so the engine can fetch /tree-sitter.wasm + rand-stream)
 // and, for each target page: decorates snippets, round-trips the share link, and
 // actually clicks Run to confirm the engine reaches hasAudio + playing.
@@ -64,7 +64,7 @@ for (const pg of pages) {
       const pre = document.querySelector('pre.snippet, pre.src, details.snippet pre')
       return { href: a?.getAttribute('href') || null, code: (pre?.textContent || '').replace(/\n$/, ''), target: a?.target, rel: a?.rel }
     })
-    const decoded = link.href && link.href.startsWith('https://sonicpi.cc/') ? decodeShareCode(link.href.slice('https://sonicpi.cc/'.length)) : null
+    const decoded = link.href && link.href.startsWith('https://sonicweb.cc/') ? decodeShareCode(link.href.slice('https://sonicweb.cc/'.length)) : null
     const linkOk = decoded === link.code && link.target === '_blank' && /noopener/.test(link.rel || '')
 
     // 2) inline Run → engine reaches audio + playing
