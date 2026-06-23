@@ -57,15 +57,14 @@ export const TREE_SITTER_WASMS_VERSION = '0.1.13' as const
  * jsdelivr pinned to a commit SHA (immutable, cacheable forever). Bump only if
  * the frozen table itself is ever regenerated.
  *
- * NOTE (rebrand 2026-06-23, SV82): the repo slug intentionally stays
- * `SonicPiWeb` even though the product/repo is renamed to "SonicWeb". This
- * string feeds a runtime jsdelivr fetch of the PRNG table; flipping it to
- * `SonicWeb` would 404 (SP5 silent no-audio) until the GitHub repo rename
- * lands, and GitHub permanently redirects the old slug after a rename, so the
- * old path stays valid forever. Flip to `SonicWeb` only AFTER the repo is
- * renamed AND the jsdelivr URL is re-verified to return 200 (see #612).
+ * Repo slug = `SonicWeb` (renamed from `SonicPiWeb` 2026-06-23, #613). This
+ * string feeds a RUNTIME jsdelivr fetch, so it MUST track the live GitHub repo
+ * name — a stale slug 404s the PRNG table = SP5 silent no-audio. GitHub does
+ * permanently redirect the old `SonicPiWeb` slug, so the pin keeps resolving
+ * either way; the slug is updated here for correctness (#612). The `@<SHA>` pin
+ * is immutable and lives under the repo's history regardless of its name.
  */
-export const RAND_STREAM_REPO = 'MrityunjayBhardwaj/SonicPiWeb' as const
+export const RAND_STREAM_REPO = 'MrityunjayBhardwaj/SonicWeb' as const
 export const RAND_STREAM_PIN = '68cf288' as const
 
 /**
