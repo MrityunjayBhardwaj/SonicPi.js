@@ -13,7 +13,7 @@
 
 **[Try it now at sonicweb.cc](https://sonicweb.cc)**
 
-> v1.5 is in **beta** — published under both the `latest` and `beta` npm tags during stabilization. `npm install @mjayb/sonicweb` gets you the current beta; pin with `@1.5.0-beta.3` for a fixed version.
+> v1.5 is in **beta** — published under both the `latest` and `beta` npm tags during stabilization. `npm install @mjayb/sonicweb` gets you the current beta; pin with `@1.5.0-beta.4` for a fixed version.
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "@mjayb/sonicweb",
-  "version": "1.5.0-beta.3",
+  "version": "1.5.0-beta.4",
   "description": "SonicWeb — browser-native Sonic Pi with real SuperCollider synthesis via WebAssembly",
   "type": "module",
   "main": "./dist/index.cjs",

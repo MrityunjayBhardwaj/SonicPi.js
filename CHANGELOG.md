@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.5.0-beta.4
+
+**Prerelease.** First release under the new name **`@mjayb/sonicweb`** (formerly `@mjayb/sonicpijs`). The project is now **Sonic Web**, live at [sonicweb.cc](https://sonicweb.cc). Bundles all work merged since beta.3. Install: `npm install @mjayb/sonicweb`.
+
+### Rebrand
+
+- **Sonic Pi Web → Sonic Web.** npm `@mjayb/sonicpijs → @mjayb/sonicweb`, repo `SonicPiWeb → SonicWeb`, domain `sonicpi.cc → sonicweb.cc` (308 redirect, old paths preserved). Upstream Sonic Pi attribution and the audio-critical `sonic-pi-*` synthdef/OSC identifiers are unchanged. (#610, #611, #614)
+
+### Engine
+
+- **Self-sufficient by default** (#604) — the engine auto-loads SuperSonic (the GPL scsynth WASM core, from CDN), the tree-sitter transpiler, and its PRNG table itself. A bare consumer needs zero runtime wiring.
+- **`Hash#length` / `#size` / `#count`** transpile correctly via a runtime `__spSize` helper (#603) — fixes loops over Hash literals silently dropping layers.
+- **`spread(hits, total)`** matches Desktop Sonic Pi's `redistribute` placement byte-for-byte for all `(hits, total)` (#597, #598).
+- Parity fixes: dynamic / non-literal `use_synth`, inline-loop RNG continuity, cross-loop `get`/`set` time-frame alignment, and bang-only mixer/volume linting (#585, #586, #588–#593, #595, #596).
+
+### Docs & tooling
+
+- Parity dashboards and every docs code snippet are now playable (Run/Stop) with an "open in sonicweb.cc" link; dashboards published to Vercel + Cloudflare R2.
+- Fixed the "Engine not ready" race when Run is pressed during engine init.
+- CI: `actions/checkout` / `actions/setup-node` bumped to v6/v7 (#607).
+
 ## v1.5.0-beta.2
 
 **Prerelease.** Two PRs since v1.5.0-beta.0 — transpiler stability work (#165) and four new features from the Desktop Sonic Pi tutorial (#166). Installed via `npm install @mjayb/sonicweb@beta`.
