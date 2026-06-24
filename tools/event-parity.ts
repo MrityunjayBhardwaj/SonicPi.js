@@ -135,7 +135,14 @@ export interface OnsetSeqRow {
   // same synthdef fires at the same times but with DIFFERENT notes (a real
   // transposition/wrong-note bug, or — for PRNG — a divergent random walk).
   noteMatched: boolean | null
-  // matched = timingMatched AND (noteMatched !== false). The promotion gate.
+  // RATE-value parity per onset, for SAMPLE streams (note is null, rate carries
+  // the musical signal — e.g. a hi-hat's `rate: rrand(...)`). null = the stream
+  // carries no rate (a pitched synth, or rate-less sample like bd_808). false =
+  // same sample fires at the same times but with DIFFERENT rate (a PRNG desync,
+  // #618/SP167 family). Prefix-compared with RATE_EPS, parallel to the timing axis.
+  rateMatched: boolean | null
+  firstRateMismatchIdx: number // -1 when rate matched (or nothing to compare)
+  // matched = timingMatched AND (noteMatched !== false) AND (rateMatched !== false).
   matched: boolean
 }
 
@@ -237,25 +244,71 @@ const ONSET_GAP_SEC = 3
 // PREFIX-compare below (not full-length) absorbs the cold-start window-trim.
 const ONSET_EPS_SEC = 0.015
 
-interface VoiceEvent { t: number; note: number | null }
+// Per-onset tolerance for the sample RATE axis. Web logs `rate` rounded to ~4
+// decimals; desktop carries 6 — so the same PRNG draw agrees to ≤1e-4. 5e-3 sits
+// far above that representation noise and far below a real desync (a diverged
+// rrand(0.8,1.1) draw differs by O(0.1)). Too loose masks a desync; too tight
+// makes the decimal-rounding a false-DIVERGE.
+const RATE_EPS = 0.005
 
-/** Voice-only /s_new {time, note} per synthdef, sorted by (time, note). FX/infra
- *  excluded (same `classify` partition the multiset diff uses); null tRel
- *  (immediate, unscheduled) dropped — only scheduled events are comparable. The
- *  secondary sort by note canonicalises the order WITHIN a simultaneous cluster
- *  (e.g. bizet plays two octave-stacked beeps at one tick) so the two engines'
- *  intra-tick serialisation order — which is musically inaudible and arbitrary —
- *  does not register as a divergence. */
-function voiceEventsBySynthdef(events: OscEvent[]): Record<string, VoiceEvent[]> {
-  const out: Record<string, VoiceEvent[]> = {}
+interface VoiceEvent { t: number; note: number | null; rate: number | null }
+
+interface RawVoice { synthdef: string; ev: VoiceEvent }
+
+/** Voice-only /s_new (note, rate) — FX/infra excluded (same `classify` partition
+ *  the multiset diff uses); null tRel (immediate, unscheduled) dropped as only
+ *  scheduled events are comparable. */
+function rawVoiceEvents(events: OscEvent[]): RawVoice[] {
+  const out: RawVoice[] = []
   for (const e of events) {
     if (e.addr !== '/s_new' || !e.synthdef || e.tRel === null) continue
     if (classify(e.synthdef) !== 'voice') continue
     const note = typeof e.params?.note === 'number' ? (e.params.note as number) : null
-    ;(out[e.synthdef] ??= []).push({ t: e.tRel, note })
+    const rate = typeof e.params?.rate === 'number' ? (e.params.rate as number) : null
+    out.push({ synthdef: e.synthdef, ev: { t: e.tRel, note, rate } })
+  }
+  return out
+}
+
+/** Strip a `#rate`/`#norate` layer suffix back to the bare synthdef. */
+function baseSynthdef(layerKey: string): string {
+  return layerKey.replace(/#(rate|norate)$/, '')
+}
+
+/** Group voice events into per-LAYER streams, sorted by (time, note, rate).
+ *
+ *  A "layer" is normally one synthdef — but Sonic Pi's generic sample players
+ *  (basic_mono_player, basic_stereo_player, …) are SHARED by every `sample`
+ *  call, so two unrelated live_loops can both emit `basic_mono_player` (e.g.
+ *  Pocket Groove's :kick `bd_808` and :hats `drum_cymbal_closed`, #618). Merging
+ *  them into one per-synthdef stream makes the onset prefix-compare fragile: a
+ *  single SV83 window-edge gap in one sample desyncs the merged sequence for the
+ *  other, producing a false onset-DIVERGE.
+ *
+ *  So when a synthdef carries BOTH rated and unrated events (the shared-player
+ *  case — a plain drum hit `sample :bd_808` vs a rate-varied `sample :x, rate:`),
+ *  split it into `synthdef#rate` / `synthdef#norate` sub-streams. We key on
+ *  rate-PRESENCE, not the buffer id: buf numbers are engine-local (desktop
+ *  allocates bd_808→buf7, web→buf0) and would mis-align across engines, whereas
+ *  rate-presence is invariant (desktop omits `rate` for an unrated sample exactly
+ *  as web does). Pitched synths and single-profile samples are untouched.
+ *
+ *  `splitSynths` MUST be computed over the union of both engines so the two maps
+ *  use the same key scheme and align. The secondary (note) then tertiary (rate)
+ *  sort canonicalises intra-tick serialisation order — inaudible and arbitrary. */
+function voiceLayers(
+  raw: RawVoice[],
+  splitSynths: Set<string>,
+): Record<string, VoiceEvent[]> {
+  const out: Record<string, VoiceEvent[]> = {}
+  for (const { synthdef, ev } of raw) {
+    const key = splitSynths.has(synthdef)
+      ? `${synthdef}#${ev.rate !== null ? 'rate' : 'norate'}`
+      : synthdef
+    ;(out[key] ??= []).push(ev)
   }
   for (const k of Object.keys(out))
-    out[k].sort((a, b) => a.t - b.t || (a.note ?? 0) - (b.note ?? 0))
+    out[k].sort((a, b) => a.t - b.t || (a.note ?? 0) - (b.note ?? 0) || (a.rate ?? 0) - (b.rate ?? 0))
   return out
 }
 
@@ -302,16 +355,35 @@ function computeSequenceParity(
   checkNotes: boolean,
   eps = ONSET_EPS_SEC,
 ): SequenceParity {
-  const dEv = voiceEventsBySynthdef(desktop)
-  const wEv = voiceEventsBySynthdef(web)
+  const dRaw = rawVoiceEvents(desktop)
+  const wRaw = rawVoiceEvents(web)
+  // Split a synthdef into rate / no-rate sub-streams when it carries BOTH across
+  // the union of both engines (the shared sample-player case, #618 — a rate-less
+  // drum hit + a rate-varied sample on the same generic player).
+  const rateProfile = new Map<string, { rated: boolean; unrated: boolean }>()
+  for (const { synthdef, ev } of [...dRaw, ...wRaw]) {
+    const p = rateProfile.get(synthdef) ?? { rated: false, unrated: false }
+    if (ev.rate !== null) p.rated = true
+    else p.unrated = true
+    rateProfile.set(synthdef, p)
+  }
+  const splitSynths = new Set(
+    [...rateProfile].filter(([, p]) => p.rated && p.unrated).map(([sd]) => sd),
+  )
+  const dEv = voiceLayers(dRaw, splitSynths)
+  const wEv = voiceLayers(wRaw, splitSynths)
   const shared = rows.filter(
     (r) => r.significant && r.status !== 'only-desktop' && r.status !== 'only-web',
   )
+  // Expand each shared synthdef into its per-layer keys (a split sample-player
+  // contributes one key per buf; everything else is one key === the synthdef).
+  const layerKeys = [...new Set([...Object.keys(dEv), ...Object.keys(wEv)])].sort()
   const seqRows: OnsetSeqRow[] = []
   const reasons: string[] = []
   for (const r of shared) {
-    const d = dEv[r.synthdef] ?? []
-    const w = wEv[r.synthdef] ?? []
+    for (const key of layerKeys.filter((k) => baseSynthdef(k) === r.synthdef)) {
+    const d = dEv[key] ?? []
+    const w = wEv[key] ?? []
     const dT = d.map((e) => e.t)
     const wT = w.map((e) => e.t)
     const len = Math.min(dT.length, wT.length)
@@ -335,9 +407,45 @@ function computeSequenceParity(
       for (let i = 0; i < bn; i++) if (dB[i] !== wB[i]) { ok = false; break }
       noteMatched = ok
     }
-    const matched = timingMatched && noteMatched !== false
+    // Axis 3 — rate (sample streams only). Note is null for a sample; its musical
+    // value lives in `rate` (e.g. `sample :drum_cymbal_closed, rate: rrand(...)`).
+    // Prefix-compare the per-onset rate, parallel to timing — catches a PRNG rate
+    // desync (#618/SP167 family) that the note axis is blind to. null when neither
+    // side carries a rate (pitched synth, or rate-less sample like bd_808).
+    //
+    // TAIL GUARD: skip the final look-ahead overhang. Desktop pre-schedules ~one
+    // scheduler window further than web (SV83), so each stream's last few onsets
+    // sit in the uncommitted look-ahead region. There, a known #599-family
+    // cross-loop-`get` transient (a section-boundary read that lands one iteration
+    // apart across engines) momentarily shifts the conditional rrand draw count,
+    // making those tail rates diverge run-to-run — it disappears with a longer
+    // window (verified: 16_neon_grid diverges in last 4 of a 14s window, all 179
+    // match at 22s). The overhang ≈ the per-stream count gap, so we compare rate
+    // only over [0, len − guard). A REAL desync is permanent and begins inside the
+    // committed region (so it survives the guard); a tail-confined one is benign,
+    // exactly like SV83's count gap. Timing/note axes don't need this — coincident
+    // onsets share times/notes; only the continuous rate value is draw-position
+    // sensitive.
+    let rateMatched: boolean | null = null
+    let firstRateMismatchIdx = -1
+    if (len > 0) {
+      const dR = d.map((e) => e.rate)
+      const wR = w.map((e) => e.rate)
+      const hasRate = dR.some((x) => x !== null) || wR.some((x) => x !== null)
+      if (hasRate) {
+        const tailGuard = Math.max(2, Math.abs(dR.length - wR.length) + 1)
+        const committedLen = Math.max(0, len - tailGuard)
+        for (let i = 0; i < committedLen; i++) {
+          const a = dR[i], b = wR[i]
+          const ok = a !== null && b !== null ? Math.abs(a - b) <= RATE_EPS : a === b
+          if (!ok && firstRateMismatchIdx < 0) firstRateMismatchIdx = i
+        }
+        rateMatched = committedLen > 0 ? firstRateMismatchIdx < 0 : null
+      }
+    }
+    const matched = timingMatched && noteMatched !== false && rateMatched !== false
     seqRows.push({
-      synthdef: r.synthdef,
+      synthdef: key,
       desktopOnsets: dT,
       webOnsets: wT,
       comparedLen: len,
@@ -345,25 +453,33 @@ function computeSequenceParity(
       firstMismatchIdx,
       maxDevMs: Math.round(maxDevMs * 10) / 10,
       noteMatched,
+      rateMatched,
+      firstRateMismatchIdx,
       matched,
     })
     if (len === 0) {
-      reasons.push(`${short(r.synthdef)}: no scheduled onsets to compare on one side`)
+      reasons.push(`${short(key)}: no scheduled onsets to compare on one side`)
     } else if (!timingMatched) {
       const i = firstMismatchIdx
       reasons.push(
-        `${short(r.synthdef)}: onset #${i} desktop ${dT[i]}s vs web ${wT[i]}s ` +
+        `${short(key)}: onset #${i} desktop ${dT[i]}s vs web ${wT[i]}s ` +
           `(Δ ${Math.round(Math.abs(dT[i] - wT[i]) * 1000)}ms > ${eps * 1000}ms ε) — mis-timed layer`,
       )
     } else if (noteMatched === false) {
       reasons.push(
-        `${short(r.synthdef)}: onset times match but per-tick NOTE multiset differs — wrong notes (transposition?)`,
+        `${short(key)}: onset times match but per-tick NOTE multiset differs — wrong notes (transposition?)`,
+      )
+    } else if (rateMatched === false) {
+      const i = firstRateMismatchIdx
+      reasons.push(
+        `${short(key)}: onset #${i} times match but rate desktop ${d[i].rate} vs web ${w[i].rate} — wrong sample rate (PRNG desync?)`,
       )
     } else {
       reasons.push(
-        `${short(r.synthdef)}: ${len} onsets match within ε (max Δ ${Math.round(maxDevMs * 10) / 10}ms)` +
-          `${noteMatched ? ', notes match' : ''}`,
+        `${short(key)}: ${len} onsets match within ε (max Δ ${Math.round(maxDevMs * 10) / 10}ms)` +
+          `${noteMatched ? ', notes match' : ''}${rateMatched ? ', rate match' : ''}`,
       )
+    }
     }
   }
   const judged = seqRows.filter((s) => s.comparedLen > 0)
@@ -539,7 +655,9 @@ function printReport(name: string, r: ParityReport): void {
         ? `mis-timed @#${row.firstMismatchIdx} (max Δ ${row.maxDevMs}ms)`
         : row.noteMatched === false
           ? `times match but NOTES differ (wrong notes)`
-          : `${row.comparedLen} onsets, max Δ ${row.maxDevMs}ms${row.noteMatched ? ', notes ✓' : ''}`
+          : row.rateMatched === false
+            ? `times match but RATE differs @#${row.firstRateMismatchIdx} (PRNG desync?)`
+            : `${row.comparedLen} onsets, max Δ ${row.maxDevMs}ms${row.noteMatched ? ', notes ✓' : ''}${row.rateMatched ? ', rate ✓' : ''}`
     console.log(`  ${ic} ${short(row.synthdef).padEnd(22)} ${detail}`)
   }
   if (r.verdict === 'STRUCTURE-MATCH' && sp.match === true)
